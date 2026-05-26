@@ -1,0 +1,38 @@
+{
+  "vocal": {
+    "target_db": -14.5,
+    "gain_min_db": 6.0,
+    "gain_max_db": 20.0,
+    "compressor": {
+      "threshold": 0.14,
+      "ratio": 2.2,
+      "attack_ms": 5.0,
+      "release_ms": 90.0,
+      "makeup": 1.0
+    },
+    "limiter_ceiling": 0.97
+  },
+  "accompaniment": {
+    "base_gain_db": -1.5,
+    "body_gap_db": 4.5,
+    "body_extra_duck_db": -1.0,
+    "gain_min_db": -6.0,
+    "gain_max_db": 2.0,
+    "compressor": {
+      "threshold": 0.1,
+      "ratio": 1.7,
+      "attack_ms": 20.0,
+      "release_ms": 180.0,
+      "makeup": 1.0
+    },
+    "limiter_ceiling": 0.98
+  },
+  "detection": {
+    "silence_noise_db": -38.0,
+    "min_silence_sec": 0.2,
+    "merge_gap_sec": 0.14,
+    "min_voiced_sec": 0.08,
+    "paragraph_gap_sec": 1.2,
+    "paragraph_pad_sec": 0.08
+  }
+}

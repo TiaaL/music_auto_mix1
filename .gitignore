@@ -1,0 +1,52 @@
+# macOS / editor
+.DS_Store
+*.swp
+*.swo
+*~
+.claude/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Faust / plugin build outputs
+build/
+*.dSYM/
+*.component/
+*.vst/
+*.vst3/
+*.clap/
+*.lv2/
+*.app/
+*.jucer.user
+faustAUtmp.*/
+faust2appls-*/
+
+# Local audio inputs, renders, and web-run outputs
+audio_data/
+audio_files/
+debug_steps/
+run_outputs/
+*.wav
+*.wave
+*.aif
+*.aiff
+*.flac
+*.mp3
+*.m4a
+*.ogg
+*.aac
+
+# Generated reports / diagrams
+*-svg/
+*.svg
+*.pdf
+*.png
+
+# Local env / logs
+.env
+.venv/
+*.log

@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BC / VO Mix Tuner</title>
+  <style>
+    :root {
+      --bg: #f5efe4;
+      --panel: #fffaf2;
+      --ink: #1e1a16;
+      --muted: #756a5d;
+      --line: #d9cdbd;
+      --accent: #d4632f;
+      --accent-2: #275d63;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Avenir Next", "PingFang SC", "Noto Sans SC", sans-serif;
+      background: radial-gradient(circle at top, #fffaf4 0%, var(--bg) 55%, #ece1d1 100%);
+      color: var(--ink);
+    }
+    .wrap {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 32px 20px 48px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 38px;
+      letter-spacing: 0.02em;
+    }
+    p {
+      margin: 0 0 18px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 18px;
+      margin-top: 20px;
+    }
+    .panel {
+      background: linear-gradient(180deg, rgba(255,255,255,0.82), rgba(255,250,242,0.98));
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 16px 36px rgba(44, 30, 10, 0.08);
+    }
+    .panel h2 {
+      margin: 0 0 14px;
+      font-size: 20px;
+    }
+    .row {
+      margin-bottom: 14px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid rgba(217,205,189,0.65);
+    }
+    .row:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+    label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+      margin-bottom: 8px;
+      gap: 12px;
+    }
+    .value {
+      color: var(--accent-2);
+      font-weight: 700;
+    }
+    input[type="range"] { width: 100%; accent-color: var(--accent); }
+    textarea {
+      width: 100%;
+      min-height: 260px;
+      resize: vertical;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      padding: 14px;
+      font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: #fffdf8;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    button {
+      border: none;
+      border-radius: 999px;
+      padding: 10px 16px;
+      font-weight: 700;
+      cursor: pointer;
+      background: var(--accent);
+      color: white;
+    }
+    button.secondary {
+      background: var(--accent-2);
+    }
+    .hint {
+      margin-top: 12px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    code {
+      padding: 2px 6px;
+      border-radius: 8px;
+      background: rgba(39,93,99,0.08);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>BC / VO 调参面板</h1>
+    <p>拖动滑杆后，右侧会实时生成 JSON。下载后把它传给 <code>scripts/auto_volume_mix.py --config your_rules.json</code> 即可生效。</p>
+
+    <div class="grid">
+      <section class="panel" id="vo-panel">
+        <h2>VO 人声</h2>
+      </section>
+      <section class="panel" id="bc-panel">
+        <h2>BC 伴奏</h2>
+      </section>
+      <section class="panel">
+        <h2>检测</h2>
+        <div id="detect-panel"></div>
+      </section>
+      <section class="panel">
+        <h2>配置 JSON</h2>
+        <textarea id="json-output"></textarea>
+        <div class="actions">
+          <button id="download-btn">下载 JSON</button>
+          <button id="reset-btn" class="secondary">恢复默认</button>
+        </div>
+        <div class="hint">
+          推荐命令：
+          <code>python3 scripts/auto_volume_mix.py vo.wav bc.wav --config /path/to/your_rules.json --vocal-out vo_proc.wav --accomp-out bc_proc.wav</code>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const defaults = {
+      vocal: {
+        target_db: -14.5,
+        gain_min_db: 6.0,
+        gain_max_db: 20.0,
+        compressor: { threshold: 0.14, ratio: 2.2, attack_ms: 5.0, release_ms: 90.0, makeup: 1.0 },
+        limiter_ceiling: 0.97
+      },
+      accompaniment: {
+        base_gain_db: -1.5,
+        body_gap_db: 4.5,
+        body_extra_duck_db: -1.0,
+        gain_min_db: -6.0,
+        gain_max_db: 2.0,
+        compressor: { threshold: 0.10, ratio: 1.7, attack_ms: 20.0, release_ms: 180.0, makeup: 1.0 },
+        limiter_ceiling: 0.98
+      },
+      detection: {
+        silence_noise_db: -38.0,
+        min_silence_sec: 0.2,
+        merge_gap_sec: 0.14,
+        min_voiced_sec: 0.08,
+        paragraph_gap_sec: 1.20,
+        paragraph_pad_sec: 0.08
+      }
+    };
+
+    let state = JSON.parse(JSON.stringify(defaults));
+
+    const controls = [
+      ["vo-panel", "vocal.target_db", "目标 RMS (dBFS)", -24, -8, 0.1],
+      ["vo-panel", "vocal.gain_min_db", "最小增益 (dB)", 0, 20, 0.1],
+      ["vo-panel", "vocal.gain_max_db", "最大增益 (dB)", 0, 30, 0.1],
+      ["vo-panel", "vocal.compressor.threshold", "压缩阈值", 0.01, 1.0, 0.01],
+      ["vo-panel", "vocal.compressor.ratio", "压缩比", 1.0, 8.0, 0.1],
+      ["vo-panel", "vocal.compressor.attack_ms", "Attack (ms)", 1, 80, 1],
+      ["vo-panel", "vocal.compressor.release_ms", "Release (ms)", 20, 400, 1],
+      ["vo-panel", "vocal.compressor.makeup", "Makeup", 1.0, 8.0, 0.1],
+      ["vo-panel", "vocal.limiter_ceiling", "Limiter Ceiling", 0.80, 1.0, 0.001],
+      ["bc-panel", "accompaniment.base_gain_db", "基础增益 (dB)", -12, 6, 0.1],
+      ["bc-panel", "accompaniment.body_gap_db", "相对人声间距 (dB)", 0, 12, 0.1],
+      ["bc-panel", "accompaniment.body_extra_duck_db", "额外 Duck (dB)", -8, 4, 0.1],
+      ["bc-panel", "accompaniment.gain_min_db", "最小增益 (dB)", -12, 0, 0.1],
+      ["bc-panel", "accompaniment.gain_max_db", "最大增益 (dB)", -2, 8, 0.1],
+      ["bc-panel", "accompaniment.compressor.threshold", "压缩阈值", 0.01, 1.0, 0.01],
+      ["bc-panel", "accompaniment.compressor.ratio", "压缩比", 1.0, 6.0, 0.1],
+      ["bc-panel", "accompaniment.compressor.attack_ms", "Attack (ms)", 1, 120, 1],
+      ["bc-panel", "accompaniment.compressor.release_ms", "Release (ms)", 20, 500, 1],
+      ["bc-panel", "accompaniment.compressor.makeup", "Makeup", 1.0, 8.0, 0.1],
+      ["bc-panel", "accompaniment.limiter_ceiling", "Limiter Ceiling", 0.80, 1.0, 0.001],
+      ["detect-panel", "detection.silence_noise_db", "静音阈值 (dB)", -70, -20, 0.5],
+      ["detect-panel", "detection.min_silence_sec", "最短静音 (sec)", 0.05, 1.0, 0.01],
+      ["detect-panel", "detection.merge_gap_sec", "短间隙合并 (sec)", 0.00, 0.5, 0.01],
+      ["detect-panel", "detection.min_voiced_sec", "最短有效人声段 (sec)", 0.01, 0.5, 0.01],
+      ["detect-panel", "detection.paragraph_gap_sec", "段落间隔阈值 (sec)", 0.30, 4.0, 0.05],
+      ["detect-panel", "detection.paragraph_pad_sec", "段落边界预留 (sec)", 0.00, 0.5, 0.01]
+    ];
+
+    const jsonOutput = document.getElementById("json-output");
+
+    function getByPath(obj, path) {
+      return path.split(".").reduce((acc, key) => acc[key], obj);
+    }
+
+    function setByPath(obj, path, value) {
+      const keys = path.split(".");
+      const last = keys.pop();
+      const target = keys.reduce((acc, key) => acc[key], obj);
+      target[last] = value;
+    }
+
+    function renderJson() {
+      jsonOutput.value = JSON.stringify(state, null, 2);
+    }
+
+    function addControl(parentId, path, labelText, min, max, step) {
+      const parent = document.getElementById(parentId);
+      const row = document.createElement("div");
+      row.className = "row";
+      const label = document.createElement("label");
+      const title = document.createElement("span");
+      title.textContent = labelText;
+      const value = document.createElement("span");
+      value.className = "value";
+      label.append(title, value);
+      const input = document.createElement("input");
+      input.type = "range";
+      input.min = min;
+      input.max = max;
+      input.step = step;
+      input.value = getByPath(state, path);
+      const update = () => {
+        const numeric = parseFloat(input.value);
+        setByPath(state, path, numeric);
+        value.textContent = numeric.toFixed(String(step).includes(".") ? String(step).split(".")[1].length : 0);
+        renderJson();
+      };
+      input.addEventListener("input", update);
+      update();
+      row.append(label, input);
+      parent.append(row);
+    }
+
+    controls.forEach(([parentId, path, label, min, max, step]) => addControl(parentId, path, label, min, max, step));
+    renderJson();
+
+    document.getElementById("download-btn").addEventListener("click", () => {
+      const blob = new Blob([jsonOutput.value + "\n"], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "bc_vo_mix_rules.json";
+      link.click();
+      URL.revokeObjectURL(url);
+    });
+
+    document.getElementById("reset-btn").addEventListener("click", () => {
+      state = JSON.parse(JSON.stringify(defaults));
+      document.body.innerHTML = document.body.innerHTML;
+      window.location.reload();
+    });
+  </script>
+</body>
+</html>
