@@ -1,0 +1,427 @@
+{
+  "source_file": "D:\\cubase\\project\\混音模版0512\\混音参数0512\\vocal_a\\Pro-Q3.vstpreset",
+  "relative_path": "vocal_a/Pro-Q3.vstpreset",
+  "file_size_bytes": 2057,
+  "file_sha256": "562686680b4a70706754bc5dbd456f37532132a845da3d52d19d6a3fba2add55",
+  "vst3_class_id": "72C4DB717A4D459AB97E51745D84B39D",
+  "meta": {
+    "MediaType": "VstPreset",
+    "PlugInCategory": "Fx|EQ",
+    "PlugInName": "Pro-Q 3",
+    "PlugInVendor": "FabFilter"
+  },
+  "plugin_name": "Pro-Q 3",
+  "plugin_vendor": "FabFilter",
+  "plugin_category": "Fx|EQ",
+  "extraction": {
+    "waves_presets": [],
+    "valhalla_settings": null,
+    "fabfilter_state": {
+      "parameter_format": "FabFilter binary state",
+      "state_size_bytes": 1533,
+      "state_sha256": "4d5ec387903ebffb4ca881091f0eca1b73432842d0adf5c47874a51222962147",
+      "state_base64": "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",
+      "known_markers": [
+        "FQ3p",
+        "FFpr",
+        "FFed",
+        "Default Setting"
+      ],
+      "diagnostic_float_candidates": [
+        {
+          "offset": 12,
+          "value": 1.0
+        },
+        {
+          "offset": 16,
+          "value": 1.0
+        },
+        {
+          "offset": 20,
+          "value": 6.073795795440674
+        },
+        {
+          "offset": 32,
+          "value": 1.0
+        },
+        {
+          "offset": 36,
+          "value": 1.0
+        },
+        {
+          "offset": 40,
+          "value": 0.5198295712471008
+        },
+        {
+          "offset": 44,
+          "value": 2.0
+        },
+        {
+          "offset": 48,
+          "value": 5.0
+        },
+        {
+          "offset": 52,
+          "value": 2.0
+        },
+        {
+          "offset": 56,
+          "value": 1.0
+        },
+        {
+          "offset": 64,
+          "value": 1.0
+        },
+        {
+          "offset": 68,
+          "value": 1.0
+        },
+        {
+          "offset": 72,
+          "value": 10.347036361694336
+        },
+        {
+          "offset": 76,
+          "value": 2.5996627807617188
+        },
+        {
+          "offset": 84,
+          "value": 1.0
+        },
+        {
+          "offset": 88,
+          "value": 1.0
+        },
+        {
+          "offset": 92,
+          "value": 0.711207389831543
+        },
+        {
+          "offset": 100,
+          "value": 1.0
+        },
+        {
+          "offset": 104,
+          "value": 2.0
+        },
+        {
+          "offset": 108,
+          "value": 1.0
+        },
+        {
+          "offset": 116,
+          "value": 1.0
+        },
+        {
+          "offset": 120,
+          "value": 1.0
+        },
+        {
+          "offset": 124,
+          "value": 14.060348510742188
+        },
+        {
+          "offset": 136,
+          "value": 1.0
+        },
+        {
+          "offset": 140,
+          "value": 1.0
+        },
+        {
+          "offset": 142,
+          "value": -0.4321250915527344
+        },
+        {
+          "offset": 144,
+          "value": 0.5029123425483704
+        },
+        {
+          "offset": 148,
+          "value": 4.0
+        },
+        {
+          "offset": 152,
+          "value": 4.0
+        },
+        {
+          "offset": 156,
+          "value": 2.0
+        },
+        {
+          "offset": 160,
+          "value": 1.0
+        },
+        {
+          "offset": 168,
+          "value": 1.0
+        },
+        {
+          "offset": 173,
+          "value": -2.0
+        },
+        {
+          "offset": 176,
+          "value": 12.98699951171875
+        },
+        {
+          "offset": 180,
+          "value": 30.0
+        },
+        {
+          "offset": 188,
+          "value": 1.0
+        },
+        {
+          "offset": 192,
+          "value": 1.0
+        },
+        {
+          "offset": 196,
+          "value": 0.798966109752655
+        },
+        {
+          "offset": 204,
+          "value": 1.0
+        },
+        {
+          "offset": 208,
+          "value": 2.0
+        },
+        {
+          "offset": 212,
+          "value": 1.0
+        },
+        {
+          "offset": 220,
+          "value": 1.0
+        },
+        {
+          "offset": 226,
+          "value": -0.0537109375
+        },
+        {
+          "offset": 228,
+          "value": 7.116865158081055
+        },
+        {
+          "offset": 232,
+          "value": -2.5011119842529297
+        },
+        {
+          "offset": 240,
+          "value": 1.0
+        },
+        {
+          "offset": 244,
+          "value": 1.0
+        },
+        {
+          "offset": 248,
+          "value": 0.7014876008033752
+        },
+        {
+          "offset": 256,
+          "value": 1.0
+        },
+        {
+          "offset": 260,
+          "value": 2.0
+        },
+        {
+          "offset": 264,
+          "value": 1.0
+        },
+        {
+          "offset": 272,
+          "value": 1.0
+        },
+        {
+          "offset": 276,
+          "value": 1.0
+        },
+        {
+          "offset": 278,
+          "value": -0.4907188415527344
+        },
+        {
+          "offset": 280,
+          "value": 8.046626091003418
+        },
+        {
+          "offset": 284,
+          "value": -2.7453079223632812
+        },
+        {
+          "offset": 292,
+          "value": 1.0
+        },
+        {
+          "offset": 296,
+          "value": 1.0
+        },
+        {
+          "offset": 299,
+          "value": -7.293487071990967
+        },
+        {
+          "offset": 300,
+          "value": 0.37678062915802
+        },
+        {
+          "offset": 308,
+          "value": 1.0
+        },
+        {
+          "offset": 312,
+          "value": 2.0
+        },
+        {
+          "offset": 316,
+          "value": 1.0
+        },
+        {
+          "offset": 324,
+          "value": 1.0
+        },
+        {
+          "offset": 328,
+          "value": 1.0
+        },
+        {
+          "offset": 330,
+          "value": -0.0655508041381836
+        },
+        {
+          "offset": 332,
+          "value": 8.608770370483398
+        },
+        {
+          "offset": 336,
+          "value": -1.3372859954833984
+        },
+        {
+          "offset": 344,
+          "value": 1.0
+        },
+        {
+          "offset": 348,
+          "value": 1.0
+        },
+        {
+          "offset": 352,
+          "value": 0.6391666531562805
+        },
+        {
+          "offset": 360,
+          "value": 1.0
+        },
+        {
+          "offset": 364,
+          "value": 2.0
+        },
+        {
+          "offset": 368,
+          "value": 1.0
+        },
+        {
+          "offset": 376,
+          "value": 1.0
+        },
+        {
+          "offset": 380,
+          "value": 1.0
+        },
+        {
+          "offset": 384,
+          "value": 11.593494415283203
+        },
+        {
+          "offset": 388,
+          "value": 2.33160400390625
+        },
+        {
+          "offset": 396,
+          "value": 1.0
+        },
+        {
+          "offset": 400,
+          "value": 1.0
+        },
+        {
+          "offset": 404,
+          "value": 0.5
+        },
+        {
+          "offset": 412,
+          "value": 1.0
+        },
+        {
+          "offset": 416,
+          "value": 2.0
+        },
+        {
+          "offset": 420,
+          "value": 1.0
+        },
+        {
+          "offset": 432,
+          "value": 1.0
+        },
+        {
+          "offset": 436,
+          "value": 9.965784072875977
+        },
+        {
+          "offset": 448,
+          "value": 1.0
+        },
+        {
+          "offset": 452,
+          "value": 1.0
+        },
+        {
+          "offset": 456,
+          "value": 0.5
+        },
+        {
+          "offset": 464,
+          "value": 1.0
+        },
+        {
+          "offset": 468,
+          "value": 2.0
+        },
+        {
+          "offset": 472,
+          "value": 1.0
+        },
+        {
+          "offset": 484,
+          "value": 1.0
+        },
+        {
+          "offset": 488,
+          "value": 9.965784072875977
+        },
+        {
+          "offset": 500,
+          "value": 1.0
+        },
+        {
+          "offset": 504,
+          "value": 1.0
+        },
+        {
+          "offset": 508,
+          "value": 0.5
+        }
+      ],
+      "decoded": false,
+      "requires_parser": true
+    },
+    "formats": [
+      "fabfilter_binary_state"
+    ]
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "source_file": "D:\\cubase\\project\\混音模版0512\\混音参数0512\\fx\\fx_reverb_valhalla.vstpreset",
+  "relative_path": "fx/fx_reverb_valhalla.vstpreset",
+  "file_size_bytes": 1196,
+  "file_sha256": "d7d0cdd841e3f217608dbd13b83f312dfccdd3257dc116087a58efb0457f3730",
+  "vst3_class_id": "56535473686D7276616C68616C6C6173",
+  "meta": {
+    "MediaType": "VstPreset",
+    "PlugInCategory": "Fx|Reverb",
+    "PlugInName": "ValhallaShimmer",
+    "PlugInVendor": "Valhalla DSP, LLC"
+  },
+  "plugin_name": "ValhallaShimmer",
+  "plugin_vendor": "Valhalla DSP, LLC",
+  "plugin_category": "Fx|Reverb",
+  "extraction": {
+    "waves_presets": [],
+    "valhalla_settings": {
+      "parameter_format": "Valhalla MYPLUGINSETTINGS",
+      "parameter_count": 12,
+      "parameters": {
+        "parameter0": 0.5899999737739563,
+        "parameter1": 1.0,
+        "parameter2": 0.0,
+        "parameter3": 0.9191919565200806,
+        "parameter4": 0.5,
+        "parameter5": 0.0,
+        "parameter6": 0.5302013158798218,
+        "parameter7": 0.1000000014901161,
+        "parameter8": 0.300000011920929,
+        "parameter9": 0.5,
+        "parameter10": 0.0,
+        "parameter11": 0.0
+      },
+      "ui": {
+        "pluginVersion": 1.0,
+        "currentProgram": 0.0,
+        "uiWidth": 694.0,
+        "uiHeight": 275.0
+      }
+    },
+    "fabfilter_state": null,
+    "formats": [
+      "valhalla_xml"
+    ]
+  }
+}

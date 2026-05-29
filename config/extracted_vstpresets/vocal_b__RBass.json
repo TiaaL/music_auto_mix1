@@ -1,0 +1,92 @@
+{
+  "source_file": "D:\\cubase\\project\\混音模版0512\\混音参数0512\\vocal_b\\RBass.vstpreset",
+  "relative_path": "vocal_b/RBass.vstpreset",
+  "file_size_bytes": 1528,
+  "file_sha256": "785d70d7c7343009e6897184cb8a95dd9137a744a2ff08fc9f8047413bb4e423",
+  "vst3_class_id": "565354524E424D7262617373206D6F6E",
+  "meta": {
+    "MediaType": "VstPreset",
+    "PlugInCategory": "Fx|Bass",
+    "PlugInName": "RBass Mono",
+    "PlugInVendor": "Waves"
+  },
+  "plugin_name": "RBass Mono",
+  "plugin_vendor": "Waves",
+  "plugin_category": "Fx|Bass",
+  "extraction": {
+    "waves_presets": [
+      {
+        "preset_name": "Acappella Bass Voice",
+        "generic_type": "RNB ",
+        "header": {
+          "Group": "Artists/Dave Darlington",
+          "PluginName": "Renaissance Bass",
+          "PluginSubComp": "RNBM",
+          "PluginVersion": "12.7.0.209",
+          "ActiveSetup": "SETUP_A",
+          "LoadMenuCategory": "Factory",
+          "ReadOnly": "true"
+        },
+        "setups": [
+          {
+            "setup": "SETUP_A",
+            "setup_name": "Acappella Bass Voice",
+            "parameter_format": "Waves PresetChunkXMLTree RealWorld",
+            "parameter_count": 18,
+            "parameters": [
+              0.0,
+              153.0,
+              30.0,
+              0.63,
+              0.0,
+              -2.6,
+              0.0,
+              -2.0,
+              1.0,
+              "*",
+              "*",
+              "*",
+              "*",
+              20.0,
+              20.0,
+              10.0,
+              1.0,
+              "*"
+            ]
+          },
+          {
+            "setup": "SETUP_B",
+            "setup_name": "",
+            "parameter_format": "Waves PresetChunkXMLTree RealWorld",
+            "parameter_count": 18,
+            "parameters": [
+              0.0,
+              80.0,
+              30.0,
+              0.63,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              "*",
+              "*",
+              "*",
+              "*",
+              20.0,
+              20.0,
+              10.0,
+              1.0,
+              "*"
+            ]
+          }
+        ]
+      }
+    ],
+    "valhalla_settings": null,
+    "fabfilter_state": null,
+    "formats": [
+      "waves_realworld"
+    ]
+  }
+}

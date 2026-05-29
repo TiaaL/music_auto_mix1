@@ -1,0 +1,125 @@
+{
+  "source_file": "D:\\cubase\\project\\混音模版0512\\混音参数0512\\bus\\GW MixCentric.vstpreset",
+  "relative_path": "bus/GW MixCentric.vstpreset",
+  "file_size_bytes": 1827,
+  "file_sha256": "e11c12c298902c5b91a91c5ba879e3132afe2d43ce070b3f9f365ef2f3885ed8",
+  "vst3_class_id": "56535447574D536777206D697863656E",
+  "meta": {
+    "MediaType": "VstPreset",
+    "PlugInCategory": "Fx|Mastering",
+    "PlugInName": "GW MixCentric Stereo",
+    "PlugInVendor": "Waves"
+  },
+  "plugin_name": "GW MixCentric Stereo",
+  "plugin_vendor": "Waves",
+  "plugin_category": "Fx|Mastering",
+  "extraction": {
+    "waves_presets": [
+      {
+        "preset_name": "GW You Clean Up Real Nice",
+        "generic_type": "GWMC",
+        "header": {
+          "PluginName": "Greg Wells MixCentric",
+          "PluginSubComp": "GWMS",
+          "PluginVersion": "12.7.0.209",
+          "ActiveSetup": "SETUP_A",
+          "LoadMenuCategory": "Factory",
+          "ReadOnly": "true"
+        },
+        "setups": [
+          {
+            "setup": "SETUP_A",
+            "setup_name": "GW You Clean Up Real Nice",
+            "parameter_format": "Waves PresetChunkXMLTree RealWorld",
+            "parameter_count": 35,
+            "parameters": [
+              "*",
+              "*",
+              "*",
+              "*",
+              0.0,
+              34.0,
+              7.0,
+              3.0,
+              1130.0,
+              -138.0,
+              1.0,
+              1.0,
+              "*",
+              "*",
+              0.0,
+              "*",
+              0.0,
+              "*",
+              "*",
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              18.1,
+              0.0,
+              -1.2999999999999998,
+              0.0
+            ]
+          },
+          {
+            "setup": "SETUP_B",
+            "setup_name": "Full Reset",
+            "parameter_format": "Waves PresetChunkXMLTree RealWorld",
+            "parameter_count": 35,
+            "parameters": [
+              "*",
+              "*",
+              "*",
+              "*",
+              0.0,
+              0.0,
+              7.0,
+              3.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              "*",
+              "*",
+              0.0,
+              "*",
+              0.0,
+              "*",
+              "*",
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        ]
+      }
+    ],
+    "valhalla_settings": null,
+    "fabfilter_state": null,
+    "formats": [
+      "waves_realworld"
+    ]
+  }
+}

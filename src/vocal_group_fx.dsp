@@ -73,10 +73,10 @@ SHIMMER_XFADE_MS   = 28.0;    // ms: pitch shifter crossfade
 // ----------------------------------------------------------------
 
 RVERB_SEND         = 1.0;     // base send scaler
-RVERB_SEND_PRE_DB  = -5.39;   // dB: pre-fader send level
+RVERB_SEND_PRE_DB  = -12.5;   // dB: pre-fader send level
 RVERB_TYPE         = 1;       // 0 = hall, 1 = plate, 2 = room (approximate voicing)
-RVERB_PREDELAY_MS  = 0.0;     // ms: matches plugin "PreDelay"
-RVERB_TIME_S       = 2.40;    // sec: plugin "Time"
+RVERB_PREDELAY_MS  = 12.0;    // ms: matches plugin "PreDelay"
+RVERB_TIME_S       = 1.75;    // sec: plugin "Time"
 RVERB_SIZE         = 100.0;   // 0..100: plugin "Size"
 RVERB_DIFFUSION    = 0.0;     // 0..100: plugin "Diffusion"
 RVERB_DECAY_SHAPE  = 0.5;     // 0..1: approximates "Decay Linear" style control
@@ -97,7 +97,7 @@ RVERB_EQ_HI_GAIN_DB = -4.0;   // dB: post-reverb high contour
 // ----------------------------------------------------------------
 
 SUPERTAP_SEND      = 1.0;     // base send scaler
-SUPERTAP_SEND_PRE_DB = -24.0; // dB: pre-fader send level
+SUPERTAP_SEND_PRE_DB = -27.0; // dB: pre-fader send level
 SUPERTAP_MIX       = 100.0;   // % wet inside the delay return
 SUPERTAP_GAIN_DB   = -18.5;   // dB: delay return trim
 SUPERTAP_BPM       = 89.0;    // BPM: tempo reference
@@ -107,7 +107,7 @@ SUPERTAP_TAP1_DB   = 0.0;     // dB: tap 1 level
 SUPERTAP_TAP2_DB   = -3.0;    // dB: tap 2 level
 SUPERTAP_TAP1_PAN  = -0.22;   // -1..+1: tap 1 pan graph position
 SUPERTAP_TAP2_PAN  = 0.22;    // -1..+1: tap 2 pan graph position
-SUPERTAP_FEEDBACK  = 0.12;    // 0..1: repeat depth
+SUPERTAP_FEEDBACK  = 0.10;    // 0..1: repeat depth
 SUPERTAP_WIDTH     = 0.45;    // 0..1: stereo spread
 SUPERTAP_COLOR_HZ  = 2400.0;  // Hz: darken repeats
 SUPERTAP_PINGPONG  = 0;       // 0 = normal stereo spread, 1 = ping-pong

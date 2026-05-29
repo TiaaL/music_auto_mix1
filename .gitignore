@@ -30,6 +30,9 @@ audio_data/
 audio_files/
 debug_steps/
 run_outputs/
+calibration_outputs/
+downloads/
+.browser_profiles/
 *.wav
 *.wave
 *.aif
@@ -49,4 +52,7 @@ run_outputs/
 # Local env / logs
 .env
 .venv/
+.python/
+python/
+.tools/
 *.log

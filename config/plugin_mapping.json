@@ -1,0 +1,138 @@
+{
+  "description": "Maps Cubase template plugins to available Faust processors or required approximations.",
+  "mappings": [
+    {
+      "plugin_name": "C1 comp Mono",
+      "vendor": "Waves",
+      "local_processor": "c1_comp",
+      "status": "available_approximation",
+      "notes": "Current Faust processor approximates C1-style compression; exact preset mapping still needed."
+    },
+    {
+      "plugin_name": "C1 gate Mono",
+      "vendor": "Waves",
+      "local_processor": "c1_gate",
+      "status": "available_approximation",
+      "notes": "Standalone soft gate/expander approximation tuned from the Classic gate snapshot."
+    },
+    {
+      "plugin_name": "DeEsser Mono",
+      "vendor": "Waves",
+      "local_processor": "rdeesser",
+      "status": "available_legacy_approximation",
+      "notes": "Kept for legacy/template_d and calibration research only. User-confirmed A/B/C active chains do not use the red-boxed DeEsser inserts."
+    },
+    {
+      "plugin_name": "Sibilance Mono",
+      "vendor": "Waves",
+      "local_processor": "sibilance_mono",
+      "status": "available_approximation",
+      "notes": "Dedicated focused high-band sibilance controller tuned from the Voice-over snapshot."
+    },
+    {
+      "plugin_name": "Pro-Q 3",
+      "vendor": "FabFilter",
+      "local_processor": "template_*_proq3",
+      "status": "template_specific_approximations",
+      "notes": "Template-specific vocal/music/bus EQ approximations exist; FabFilter binary state is still not fully decoded."
+    },
+    {
+      "plugin_name": "C6-SideChain Stereo",
+      "vendor": "Waves",
+      "local_processor": "accomp_c6_sc",
+      "status": "disabled_in_runtime",
+      "notes": "Kept as an experimental approximation only. The active mix chains skip it because Faust C6 renders have caused noise/instability; user previously removed C6 for the same reason."
+    },
+    {
+      "plugin_name": "L2 Stereo",
+      "vendor": "Waves",
+      "local_processor": "master_l2_stereo",
+      "status": "available_approximation",
+      "notes": "Also used as accomp_l2_stereo for accompaniment chain."
+    },
+    {
+      "plugin_name": "L1 limiter Mono",
+      "vendor": "Waves",
+      "local_processor": "l1_limiter_mono",
+      "status": "available_approximation",
+      "notes": "Mono lookahead limiter tuned from the Voice preset threshold, ceiling, and release values."
+    },
+    {
+      "plugin_name": "RVerb Stereo",
+      "vendor": "Waves",
+      "local_processor": "vocal_group_fx",
+      "status": "available_inside_group_fx",
+      "notes": "Group send level is confirmed post-fader; internal RVerb parameters are extracted."
+    },
+    {
+      "plugin_name": "SuperTap 2-Taps Stereo",
+      "vendor": "Waves",
+      "local_processor": "vocal_group_fx",
+      "status": "available_inside_group_fx",
+      "notes": "Group send level is confirmed post-fader; internal SuperTap parameters are extracted."
+    },
+    {
+      "plugin_name": "ValhallaShimmer",
+      "vendor": "Valhalla DSP",
+      "local_processor": "vocal_group_fx",
+      "status": "available_inside_group_fx",
+      "notes": "XML parameters are extracted; parameter-name mapping should be checked against official manual."
+    },
+    {
+      "plugin_name": "RBass Mono",
+      "vendor": "Waves",
+      "local_processor": "rbass_mono",
+      "status": "available_approximation",
+      "notes": "Low-frequency harmonic enhancer tuned from the Acappella Bass Voice snapshot."
+    },
+    {
+      "plugin_name": "F6-RTA Mono",
+      "vendor": "Waves",
+      "local_processor": "f6_rta_mono",
+      "status": "available_approximation",
+      "notes": "Dynamic EQ approximation using readable frequency anchors from the exported F6 snapshot."
+    },
+    {
+      "plugin_name": "Aphex Vintage Exciter Mono",
+      "vendor": "Waves",
+      "local_processor": null,
+      "status": "inactive_ignored",
+      "notes": "Red-boxed/inactive in the user-confirmed Cubase insert screenshot for A/B/C; do not implement or calibrate."
+    },
+    {
+      "plugin_name": "Vocal Rider Mono",
+      "vendor": "Waves",
+      "local_processor": "vocal_rider_mono",
+      "status": "available_approximation",
+      "notes": "Slow transparent gain rider tuned from the extracted target/range/sensitivity values."
+    },
+    {
+      "plugin_name": "OneKnob Brighter Mono",
+      "vendor": "Waves",
+      "local_processor": "oneknob_brighter_mono",
+      "status": "available_approximation",
+      "notes": "High-shelf plus subtle excitation approximation guided by the exported macro amount."
+    },
+    {
+      "plugin_name": "GW MixCentric Stereo",
+      "vendor": "Waves",
+      "local_processor": "gw_mixcentric_stereo",
+      "status": "available_approximation",
+      "notes": "Stereo glue/tone/saturation macro approximation guided by the extracted preset."
+    },
+    {
+      "plugin_name": "SoftClipper",
+      "vendor": "Steinberg/Cubase",
+      "local_processor": "master_softclipper",
+      "status": "available_but_not_active_in_cubase_templates",
+      "notes": "Current template D uses master_softclipper. User confirmed templates A/B/C do not use SoftClipper."
+    },
+    {
+      "plugin_name": "EQ",
+      "vendor": "Steinberg/Cubase",
+      "local_processor": null,
+      "status": "not_active_in_cubase_templates",
+      "notes": "User confirmed templates do not use Cubase EQ as an active plugin."
+    }
+  ]
+}

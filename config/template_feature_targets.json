@@ -1,0 +1,74 @@
+{
+  "description": "Heuristic vocal feature targets for checking whether a selected template chain corrected the issue found by the classifier.",
+  "neutral_ratio_ranges": {
+    "sub": [0.0, 0.01],
+    "low": [0.005, 0.06],
+    "lowmid": [0.16, 0.30],
+    "mid": [0.18, 0.38],
+    "upper": [0.18, 0.38],
+    "harsh": [0.0, 0.055],
+    "sib": [0.0, 0.018],
+    "air": [0.0, 0.04]
+  },
+  "diagnostic_ratio_ranges": {
+    "sub_30_80": [0.0, 0.01],
+    "low_80_200": [0.005, 0.08],
+    "lowmid_200_500": [0.12, 0.30],
+    "honky_600_800": [0.0, 0.12],
+    "nasal_800_1200": [0.0, 0.12],
+    "presence_2k_5k": [0.12, 0.36],
+    "harsh_5k_8k": [0.0, 0.055],
+    "sibilance_6k_10k": [0.0, 0.035],
+    "air_10k_16k": [0.0, 0.04]
+  },
+  "spectral_target_curve_db": {
+    "sub": -18.0,
+    "low": -6.0,
+    "lowmid": -3.0,
+    "mid": 0.0,
+    "upper": 2.0,
+    "harsh": -1.0,
+    "sib": -4.0,
+    "air": -8.0
+  },
+  "template_objectives": {
+    "template_a": {
+      "description": "Muddy/boxy vocal: reduce low-mid and mid body dominance without making the vocal thin.",
+      "reduce": ["lowmid", "mid", "body_to_presence"],
+      "watch_high": ["harsh", "sib"],
+      "primary_processors": ["template_a_vocal_proq3", "c1_comp", "sibilance_mono"]
+    },
+    "template_b": {
+      "description": "Peaky/harsh vocal: reduce harsh peakiness and high-band spikes while preserving body.",
+      "reduce": ["peakiness_harsh", "peakiness_upper", "harsh", "sib"],
+      "watch_low": ["lowmid", "mid"],
+      "primary_processors": ["f6_rta_mono", "sibilance_mono", "l1_limiter_mono"]
+    },
+    "template_c": {
+      "description": "Imbalanced/heavy low-mid vocal: reduce body dominance and add usable upper presence.",
+      "reduce": ["lowmid", "body_to_presence"],
+      "increase": ["upper"],
+      "watch_high": ["harsh", "sib"],
+      "primary_processors": ["template_c_vocal_proq3", "vocal_rider_mono", "oneknob_brighter_mono"]
+    }
+  },
+  "processor_hints": {
+    "sub": "RBass or low shelf/high-pass balance",
+    "low": "low shelf or low-mid EQ",
+    "lowmid": "Pro-Q3 low-mid cut / C1 body control",
+    "mid": "Pro-Q3 mid bell / compressor tone",
+    "upper": "OneKnob Brighter / upper-mid EQ",
+    "harsh": "F6 dynamic harsh band / Sibilance focus",
+    "sib": "Sibilance threshold/range",
+    "air": "high shelf/exciter/reverb brightness",
+    "sub_30_80": "high-pass / plosive and rumble control",
+    "low_80_200": "low shelf or proximity control",
+    "honky_600_800": "narrow mid bell cut",
+    "nasal_800_1200": "nasal mid bell cut",
+    "presence_2k_5k": "presence EQ / OneKnob amount",
+    "air_10k_16k": "air shelf / reverb brightness",
+    "peakiness_upper": "F6 upper dynamic band",
+    "peakiness_harsh": "F6 harsh band or Sibilance detection",
+    "body_to_presence": "overall body-vs-presence EQ balance"
+  }
+}

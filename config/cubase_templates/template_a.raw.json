@@ -1,0 +1,151 @@
+{
+  "id": "template_a",
+  "display_name": "模版a",
+  "source": {
+    "cpr_file": "d:/cubase/project/混音模版0512/通用混音模板_纯净版.cpr",
+    "vocal_track_name": "模版a",
+    "accompaniment_track_name": "伴奏轨处理-模版a&模版b",
+    "shared_group_fx_file": "config/cubase_templates/common_group_fx.raw.json",
+    "extraction_method": "UTF-8/printable-string scan anchored by named Cubase tracks",
+    "confidence": "medium"
+  },
+  "vocal_track": {
+    "name": "模版a",
+    "cubase_type_hint": "AudioTrack",
+    "routing": {
+      "output_bus_uid": "R",
+      "output_bus_name": "Group 01",
+      "output_level_db": 0.0,
+      "output_level_confidence": "low",
+      "notes": [
+        "OutputBusValue points to bus UID R, which is Group 01's input bus.",
+        "The visible channel Volume/Output fields look like unity, but Cubase's binary fader value was not fully decoded; 0.0 dB is recorded as an assumed unity feed."
+      ]
+    },
+    "insert_chain": [
+      {
+        "slot": 1,
+        "plugin_name": "C1 gate Mono",
+        "vendor_family": "Waves",
+        "preset": "Classic gate",
+        "plugin_sub_component": "GATM",
+        "plugin_version": "12.7.0.209",
+        "confidence": "high"
+      },
+      {
+        "slot": 2,
+        "plugin_name": "Pro-Q 3",
+        "vendor_family": "FabFilter",
+        "preset": "Default Setting",
+        "confidence": "medium"
+      },
+      {
+        "slot": 3,
+        "plugin_name": "Aphex Vintage Exciter Mono",
+        "vendor_family": "Waves",
+        "preset": "VG Vocal",
+        "plugin_sub_component": "APHM",
+        "plugin_version": "12.7.0.209",
+        "enabled": false,
+        "bypass_source": "user_screenshot_red_box",
+        "confidence": "high",
+        "skip_reason": "inactive in the Cubase insert screenshot; do not implement or calibrate"
+      },
+      {
+        "slot": 4,
+        "plugin_name": "C1 comp Mono",
+        "vendor_family": "Waves",
+        "preset": "Classic compressor",
+        "plugin_sub_component": "CMPM",
+        "plugin_version": "12.7.0.209",
+        "confidence": "high"
+      },
+      {
+        "slot": 5,
+        "plugin_name": "DeEsser Mono",
+        "vendor_family": "Waves",
+        "preset": "Full Mix",
+        "plugin_sub_component": "DSAM",
+        "plugin_version": "12.7.0.209",
+        "enabled": false,
+        "bypass_source": "user_screenshot_red_box",
+        "confidence": "high",
+        "skip_reason": "inactive in the Cubase insert screenshot; do not implement or calibrate"
+      },
+      {
+        "slot": 6,
+        "plugin_name": "Sibilance Mono",
+        "vendor_family": "Waves",
+        "preset": "Voice-over",
+        "plugin_sub_component": "SIBM",
+        "plugin_version": "12.7.0.209",
+        "confidence": "high"
+      },
+      {
+        "slot": 7,
+        "plugin_name": "EQ",
+        "role": "Cubase channel EQ/module state",
+        "enabled": false,
+        "preset": null,
+        "confidence": "high",
+        "notes": [
+          "User confirmed templates do not use Cubase EQ as an active plugin."
+        ]
+      }
+    ],
+    "notes": [
+      "Active vocal chain per user-confirmed Cubase screenshot: C1 gate -> Pro-Q 3 -> C1 comp -> Sibilance. Red-boxed Aphex and DeEsser records are inactive and intentionally ignored."
+    ]
+  },
+  "accompaniment_track": {
+    "name": "伴奏轨处理-模版a&模版b",
+    "cubase_type_hint": "AudioTrack",
+    "routing": {
+      "output_bus_uid": "&",
+      "output_bus_name": "Stereo Out",
+      "output_level_db": 0.0,
+      "output_level_confidence": "low",
+      "notes": [
+        "OutputBusValue points to bus UID &, which matches the Stereo Out input bus.",
+        "This means the shared A/B accompaniment track appears to bypass Group 01 and feed Stereo Out directly."
+      ]
+    },
+    "insert_chain": [
+      {
+        "slot": 1,
+        "plugin_name": "Pro-Q 3",
+        "vendor_family": "FabFilter",
+        "preset": "Default Setting",
+        "confidence": "medium"
+      },
+      {
+        "slot": 2,
+        "plugin_name": "C6-SideChain Stereo",
+        "vendor_family": "Waves",
+        "preset": "Lead A",
+        "plugin_sub_component": "C6SS",
+        "plugin_version": "12.7.0.209",
+        "runtime_enabled": false,
+        "confidence": "high",
+        "skip_reason": "kept as extracted DAW context only; default render skips C6 because prior Faust C6 renders caused noise"
+      },
+      {
+        "slot": 3,
+        "plugin_name": "EQ",
+        "role": "Cubase channel EQ/module state",
+        "enabled": false,
+        "preset": "Default A",
+        "confidence": "high",
+        "notes": [
+          "User confirmed templates do not use Cubase EQ as an active plugin."
+        ]
+      }
+    ],
+    "notes": [
+      "This accompaniment track is shared by template A and template B according to the Cubase track name."
+    ]
+  },
+  "group_fx": {
+    "inherits": "common_group_fx"
+  }
+}

@@ -5,7 +5,7 @@
 # Signal flow:
 #   1) vocal/accompaniment volume automation
 #   2) vocal FX chain: rdeesser -> req6 -> c1_comp -> vocal_group_fx
-#   3) accompaniment FX chain: accomp_proq3 -> accomp_c6_sc -> accomp_l2_stereo
+#   3) accompaniment FX chain: accomp_proq3 -> accomp_l2_stereo
 #   4) stereo mixdown
 #
 # Usage:

@@ -1,0 +1,273 @@
+{
+  "id": "common_group_fx",
+  "source": {
+    "cpr_file": "d:/cubase/project/混音模版0512/通用混音模板_纯净版.cpr",
+    "cubase_version_found": "Cubase 12.0.0",
+    "extraction_method": "UTF-8/printable-string scan anchored by Cubase track names and plugin records",
+    "confidence": "medium"
+  },
+  "groups": [
+    {
+      "name": "Group 01",
+      "cubase_type_hint": "GroupChannel",
+      "bus_uids": {
+        "input_bus_uid": "R",
+        "recorder_bus_uid": "Q",
+        "output_bus_uid": "&",
+        "output_bus_name": "Stereo Out"
+      },
+      "routing": {
+        "output_level_db": 0.0,
+        "output_level_confidence": "low",
+        "fx_sends": [
+          {
+            "target": "FX 02-RVerb Stereo",
+            "send_level_db": -7.73,
+            "send_position": "post_fader",
+            "enabled": true,
+            "source": "user_screenshot",
+            "confidence": "high"
+          },
+          {
+            "target": "FX 03-ValhallaVintageVerb",
+            "actual_plugin": "ValhallaShimmer",
+            "send_level_db": -18.2,
+            "send_position": "post_fader",
+            "enabled": true,
+            "source": "user_screenshot",
+            "confidence": "high"
+          },
+          {
+            "target": "FX 01-SuperTap 2-Taps Stereo",
+            "send_level_db": -26.0,
+            "send_position": "post_fader",
+            "enabled": true,
+            "source": "user_screenshot",
+            "confidence": "high"
+          }
+        ],
+        "notes": [
+          "Group 01 receives the vocal template tracks via bus UID R and outputs to Stereo Out bus UID &.",
+          "The visible channel Volume/Output fields look like unity, but Cubase's binary fader value was not fully decoded; 0.0 dB is recorded as an assumed unity feed.",
+          "FX send levels and post-fader positions are taken from the user-provided Cubase Sends screenshot/context."
+        ]
+      },
+      "insert_chain": [
+        {
+          "slot": 1,
+          "plugin_name": "EQ",
+          "role": "Cubase channel EQ/module state",
+          "enabled": false,
+          "preset": null,
+          "confidence": "high",
+          "notes": [
+            "User confirmed templates do not use Cubase EQ as an active plugin."
+          ]
+        }
+      ],
+      "routing_notes": [
+        "The CPR exposes GroupChannel and Group 01 records. Template vocal tracks A/B/C resolve to Group 01 via output bus UID R.",
+        "FX send target levels are confirmed from the user-provided Sends screenshot."
+      ]
+    }
+  ],
+  "fx_returns": [
+    {
+      "name": "FX 01-SuperTap 2-Taps Stereo",
+      "cubase_type_hint": "FxChannel",
+      "bus_uids": {
+        "input_bus_uid": "T",
+        "recorder_bus_uid": "S",
+        "output_bus_uid": "&",
+        "output_bus_name": "Stereo Out"
+      },
+      "routing": {
+        "output_level_db": 0.0,
+        "output_level_confidence": "low"
+      },
+      "insert_chain": [
+        {
+          "slot": 1,
+          "plugin_name": "SuperTap 2-Taps Stereo",
+          "vendor_family": "Waves",
+          "preset": "Ping pong",
+          "plugin_sub_component": "MT2S",
+          "plugin_version": "12.7.0.209",
+          "parameter_snapshot_type": "Waves PresetChunkXMLTree RealWorld",
+          "confidence": "high"
+        },
+        {
+          "slot": 2,
+          "plugin_name": "EQ",
+          "role": "Cubase channel EQ/module state",
+          "enabled": false,
+          "preset": null,
+          "confidence": "high",
+          "notes": [
+            "User confirmed templates do not use Cubase EQ as an active plugin."
+          ]
+        }
+      ]
+    },
+    {
+      "name": "FX 02-RVerb Stereo",
+      "cubase_type_hint": "FxChannel 2",
+      "bus_uids": {
+        "input_bus_uid": "V",
+        "recorder_bus_uid": "U",
+        "output_bus_uid": "&",
+        "output_bus_name": "Stereo Out"
+      },
+      "routing": {
+        "output_level_db": 0.0,
+        "output_level_confidence": "low"
+      },
+      "insert_chain": [
+        {
+          "slot": 1,
+          "plugin_name": "RVerb Stereo",
+          "vendor_family": "Waves",
+          "preset": "Vocal Plate",
+          "plugin_sub_component": "RRFS",
+          "plugin_version": "12.7.0.209",
+          "parameter_snapshot_type": "Waves PresetChunkXMLTree RealWorld",
+          "confidence": "high"
+        },
+        {
+          "slot": 2,
+          "plugin_name": "EQ",
+          "role": "Cubase channel EQ/module state",
+          "enabled": false,
+          "preset": null,
+          "confidence": "high",
+          "notes": [
+            "User confirmed templates do not use Cubase EQ as an active plugin."
+          ]
+        }
+      ]
+    },
+    {
+      "name": "FX 03-ValhallaVintageVerb",
+      "cubase_type_hint": "FxChannel 3",
+      "bus_uids": {
+        "input_bus_uid": "X",
+        "recorder_bus_uid": "W",
+        "output_bus_uid": "&",
+        "output_bus_name": "Stereo Out"
+      },
+      "routing": {
+        "output_level_db": 0.0,
+        "output_level_confidence": "low"
+      },
+      "insert_chain": [
+        {
+          "slot": 1,
+          "plugin_name": "ValhallaShimmer",
+          "vendor_family": "Valhalla DSP",
+          "preset": null,
+          "parameter_snapshot_type": "MYPLUGINSETTINGS",
+          "parameter_snapshot": {
+            "parameter0": 0.5899999737739563,
+            "parameter1": 1.0,
+            "parameter2": 0.0,
+            "parameter3": 0.9191919565200806,
+            "parameter4": 0.5,
+            "parameter5": 0.1557788997888565,
+            "parameter6": 0.4020134210586548,
+            "parameter7": 0.1000000014901161,
+            "parameter8": 0.300000011920929,
+            "parameter9": 0.5,
+            "parameter10": 0.0,
+            "parameter11": 0.0
+          },
+          "confidence": "high"
+        },
+        {
+          "slot": 2,
+          "plugin_name": "EQ",
+          "role": "Cubase channel EQ/module state",
+          "enabled": false,
+          "preset": null,
+          "confidence": "high",
+          "notes": [
+            "User confirmed templates do not use Cubase EQ as an active plugin."
+          ]
+        }
+      ],
+      "notes": [
+        "The Cubase FX channel name says ValhallaVintageVerb, but the plugin record inside the channel is ValhallaShimmer."
+      ]
+    }
+  ],
+  "master_bus": {
+    "name": "Stereo Out",
+    "cubase_type_hint": "OutputChannel",
+    "bus_uids": {
+      "input_bus_uid": "&",
+      "output_bus_uid": "'",
+      "recorder_bus_uid": "%"
+    },
+    "routing": {
+      "hardware_outputs": [
+        "Focusrite USB ASIO|Output 1",
+        "Focusrite USB ASIO|Output 2"
+      ],
+      "output_level_db": 0.0,
+      "output_level_confidence": "low"
+    },
+    "insert_chain": [
+      {
+        "slot": 1,
+        "plugin_name": "Pro-Q 3",
+        "vendor_family": "FabFilter",
+        "preset": "Default Setting",
+        "confidence": "medium"
+      },
+      {
+        "slot": 2,
+        "plugin_name": "GW MixCentric Stereo",
+        "vendor_family": "Waves",
+        "preset": "GW You Clean Up Real Nice",
+        "plugin_sub_component": "GWMS",
+        "plugin_version": "12.7.0.209",
+        "confidence": "high"
+      },
+      {
+        "slot": 3,
+        "plugin_name": "SoftClipper",
+        "vendor_family": "Steinberg/Cubase",
+        "enabled": false,
+        "preset": null,
+        "confidence": "high",
+        "notes": [
+          "User confirmed templates A/B/C do not use SoftClipper."
+        ]
+      },
+      {
+        "slot": 4,
+        "plugin_name": "L2 Stereo",
+        "vendor_family": "Waves",
+        "preset": "Hi Res CD Master",
+        "plugin_sub_component": "L2MS",
+        "plugin_version": "12.7.0.209",
+        "confidence": "high"
+      },
+      {
+        "slot": 5,
+        "plugin_name": "EQ",
+        "role": "Cubase channel EQ/module state",
+        "enabled": false,
+        "preset": null,
+        "confidence": "high",
+        "notes": [
+          "User confirmed templates do not use Cubase EQ as an active plugin."
+        ]
+      }
+    ]
+  },
+  "undecoded": [
+    "FX send levels are confirmed from the user screenshot, not from CPR binary decoding.",
+    "SendFolder contains On/Volume/Output fields, but its target bus mapping is not stored as a nearby readable name in the CPR fragments.",
+    "Channel/output fader fields look like unity; they are recorded as 0.0 dB with low confidence until the Cubase binary fader encoding is decoded."
+  ]
+}

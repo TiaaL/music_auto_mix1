@@ -1,0 +1,107 @@
+{
+  "id": "template_d",
+  "display_name": "Current Faust Default Template",
+  "source": {
+    "type": "current_project",
+    "confidence": "high",
+    "notes": [
+      "Template D is the existing project chain, used as fallback/default when A/B/C are not selected or not sufficiently implemented."
+    ]
+  },
+  "vocal_track": {
+    "name": "template_d_vocal",
+    "insert_chain": [
+      {
+        "slot": 1,
+        "processor": "rdeesser",
+        "plugin_model": "Waves Renaissance DeEsser-style approximation"
+      },
+      {
+        "slot": 2,
+        "processor": "req6",
+        "plugin_model": "Waves REQ6 Renaissance EQ-style approximation"
+      },
+      {
+        "slot": 3,
+        "processor": "c1_comp",
+        "plugin_model": "Waves C1 Compressor-style approximation"
+      }
+    ],
+    "routing": {
+      "output_bus_name": "template_d_vocal_group"
+    }
+  },
+  "vocal_group": {
+    "name": "template_d_vocal_group",
+    "insert_chain": [
+      {
+        "slot": 1,
+        "processor": "vocal_group_fx",
+        "plugin_model": "Combined RVerb/SuperTap/ValhallaShimmer-style group FX rack"
+      }
+    ],
+    "fx_sends": [
+      {
+        "target": "RVerb-style path",
+        "send_level_db": -7.73,
+        "send_position": "post_fader",
+        "source_reference": "template A/B/C Cubase send screenshot"
+      },
+      {
+        "target": "ValhallaShimmer-style path",
+        "send_level_db": -18.2,
+        "send_position": "post_fader",
+        "source_reference": "template A/B/C Cubase send screenshot"
+      },
+      {
+        "target": "SuperTap-style path",
+        "send_level_db": -26.0,
+        "send_position": "post_fader",
+        "source_reference": "template A/B/C Cubase send screenshot"
+      }
+    ]
+  },
+  "accompaniment_track": {
+    "name": "template_d_accompaniment",
+    "insert_chain": [
+      {
+        "slot": 1,
+        "processor": "accomp_proq3",
+        "plugin_model": "FabFilter Pro-Q3-style accompaniment EQ"
+      },
+      {
+        "slot": 2,
+        "processor": "accomp_c6_sc",
+        "plugin_model": "Waves C6 SideChain Stereo-style multiband dynamics"
+      },
+      {
+        "slot": 3,
+        "processor": "accomp_l2_stereo",
+        "plugin_model": "Waves L2 Stereo-style limiter"
+      }
+    ],
+    "notes": [
+      "README describes this full chain. The current accomp_chain.sh should be checked because it may still skip accomp_c6_sc."
+    ]
+  },
+  "master_bus": {
+    "name": "template_d_master",
+    "insert_chain": [
+      {
+        "slot": 1,
+        "processor": "master_proq3",
+        "plugin_model": "FabFilter Pro-Q3-style master EQ"
+      },
+      {
+        "slot": 2,
+        "processor": "master_softclipper",
+        "plugin_model": "SoftClipper-style saturation/clip stage"
+      },
+      {
+        "slot": 3,
+        "processor": "master_l2_stereo",
+        "plugin_model": "Waves L2 Stereo-style limiter"
+      }
+    ]
+  }
+}

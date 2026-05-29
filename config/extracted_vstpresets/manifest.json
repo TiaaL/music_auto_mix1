@@ -1,0 +1,241 @@
+{
+  "preset_root": "D:\\cubase\\project\\混音模版0512\\混音参数0512",
+  "output_dir": "D:\\code\\music_auto_mix1\\music_auto_mix1\\config\\extracted_vstpresets",
+  "count": 26,
+  "items": [
+    {
+      "relative_path": "bus/eq.vstpreset",
+      "json_file": "bus__eq.json",
+      "plugin_name": "Pro-Q 3",
+      "plugin_vendor": "FabFilter",
+      "formats": [
+        "fabfilter_binary_state"
+      ]
+    },
+    {
+      "relative_path": "bus/GW MixCentric.vstpreset",
+      "json_file": "bus__GW_MixCentric.json",
+      "plugin_name": "GW MixCentric Stereo",
+      "plugin_vendor": "Waves",
+      "formats": [
+        "waves_realworld"
+      ]
+    },
+    {
+      "relative_path": "bus/limiter.vstpreset",
+      "json_file": "bus__limiter.json",
+      "plugin_name": "L2 Stereo",
+      "plugin_vendor": "Waves",
+      "formats": [
+        "waves_realworld"
+      ]
+    },
+    {
+      "relative_path": "fx/fx_delay.vstpreset",
+      "json_file": "fx__fx_delay.json",
+      "plugin_name": "SuperTap 2-Taps Stereo",
+      "plugin_vendor": "Waves",
+      "formats": [
+        "waves_realworld"
+      ]
+    },
+    {
+      "relative_path": "fx/fx_reverb.vstpreset",
+      "json_file": "fx__fx_reverb.json",
+      "plugin_name": "RVerb Stereo",
+      "plugin_vendor": "Waves",
+      "formats": [
+        "waves_realworld"
+      ]
+    },
+    {
+      "relative_path": "fx/fx_reverb_valhalla.vstpreset",
+      "json_file": "fx__fx_reverb_valhalla.json",
+      "plugin_name": "ValhallaShimmer",
+      "plugin_vendor": "Valhalla DSP, LLC",
+      "formats": [
+        "valhalla_xml"
+      ]
+    },
+    {
+      "relative_path": "music/music_comp.vstpreset",
+      "json_file": "music__music_comp.json",
+      "plugin_name": "C6-SideChain Stereo",
+      "plugin_vendor": "Waves",
+      "formats": [
+        "waves_realworld"
+      ]
+    },
+    {
+      "relative_path": "music/music_eq.vstpreset",
+      "json_file": "music__music_eq.json",
+      "plugin_name": "Pro-Q 3",
+      "plugin_vendor": "FabFilter",
+      "formats": [
+        "fabfilter_binary_state"
+      ]
+    },
+    {
+      "relative_path": "template_c/bus/eq.vstpreset",
+      "json_file": "template_c__bus__eq.json",
+      "plugin_name": "Pro-Q 3",
+      "plugin_vendor": "FabFilter",
+      "formats": [
+        "fabfilter_binary_state"
+      ]
+    },
+    {
+      "relative_path": "template_c/bus/GW MixCentric.vstpreset",
+      "json_file": "template_c__bus__GW_MixCentric.json",
+      "plugin_name": "GW MixCentric Stereo",
+      "plugin_vendor": "Waves",
+      "formats": [
+        "waves_realworld"
+      ]
+    },
+    {
+      "relative_path": "template_c/bus/limiter.vstpreset",
+      "json_file": "template_c__bus__limiter.json",
+      "plugin_name": "L2 Stereo",
+      "plugin_vendor": "Waves",
+      "formats": [
+        "waves_realworld"
+      ]
+    },
+    {
+      "relative_path": "template_c/music/music_comp.vstpreset",
+      "json_file": "template_c__music__music_comp.json",
+      "plugin_name": "C6-SideChain Stereo",
+      "plugin_vendor": "Waves",
+      "formats": [
+        "waves_realworld"
+      ]
+    },
+    {
+      "relative_path": "template_c/music/music_eq.vstpreset",
+      "json_file": "template_c__music__music_eq.json",
+      "plugin_name": "Pro-Q 3",
+      "plugin_vendor": "FabFilter",
+      "formats": [
+        "fabfilter_binary_state"
+      ]
+    },
+    {
+      "relative_path": "template_c/vocal/C1 comp.vstpreset",
+      "json_file": "template_c__vocal__C1_comp.json",
+      "plugin_name": "C1 comp Mono",
+      "plugin_vendor": "Waves",
+      "formats": [
+        "waves_realworld"
+      ]
+    },
+    {
+      "relative_path": "template_c/vocal/OneKnob Brighter.vstpreset",
+      "json_file": "template_c__vocal__OneKnob_Brighter.json",
+      "plugin_name": "OneKnob Brighter Mono",
+      "plugin_vendor": "Waves",
+      "formats": [
+        "waves_realworld"
+      ]
+    },
+    {
+      "relative_path": "template_c/vocal/Pro-Q3.vstpreset",
+      "json_file": "template_c__vocal__Pro-Q3.json",
+      "plugin_name": "Pro-Q 3",
+      "plugin_vendor": "FabFilter",
+      "formats": [
+        "fabfilter_binary_state"
+      ]
+    },
+    {
+      "relative_path": "template_c/vocal/Vocal Rider.vstpreset",
+      "json_file": "template_c__vocal__Vocal_Rider.json",
+      "plugin_name": "Vocal Rider Mono",
+      "plugin_vendor": "Waves",
+      "formats": [
+        "waves_realworld"
+      ]
+    },
+    {
+      "relative_path": "vocal_a/C1 comp.vstpreset",
+      "json_file": "vocal_a__C1_comp.json",
+      "plugin_name": "C1 comp Mono",
+      "plugin_vendor": "Waves",
+      "formats": [
+        "waves_realworld"
+      ]
+    },
+    {
+      "relative_path": "vocal_a/C1 gate.vstpreset",
+      "json_file": "vocal_a__C1_gate.json",
+      "plugin_name": "C1 gate Mono",
+      "plugin_vendor": "Waves",
+      "formats": [
+        "waves_realworld"
+      ]
+    },
+    {
+      "relative_path": "vocal_a/Pro-Q3.vstpreset",
+      "json_file": "vocal_a__Pro-Q3.json",
+      "plugin_name": "Pro-Q 3",
+      "plugin_vendor": "FabFilter",
+      "formats": [
+        "fabfilter_binary_state"
+      ]
+    },
+    {
+      "relative_path": "vocal_a/Sibilance.vstpreset",
+      "json_file": "vocal_a__Sibilance.json",
+      "plugin_name": "Sibilance Mono",
+      "plugin_vendor": "Waves",
+      "formats": [
+        "waves_realworld"
+      ]
+    },
+    {
+      "relative_path": "vocal_b/C1 comp.vstpreset",
+      "json_file": "vocal_b__C1_comp.json",
+      "plugin_name": "C1 comp Mono",
+      "plugin_vendor": "Waves",
+      "formats": [
+        "waves_realworld"
+      ]
+    },
+    {
+      "relative_path": "vocal_b/F6-RTA.vstpreset",
+      "json_file": "vocal_b__F6-RTA.json",
+      "plugin_name": "F6-RTA Mono",
+      "plugin_vendor": "Waves",
+      "formats": [
+        "waves_realworld"
+      ]
+    },
+    {
+      "relative_path": "vocal_b/L1 limiter.vstpreset",
+      "json_file": "vocal_b__L1_limiter.json",
+      "plugin_name": "L1 limiter Mono",
+      "plugin_vendor": "Waves",
+      "formats": [
+        "waves_realworld"
+      ]
+    },
+    {
+      "relative_path": "vocal_b/RBass.vstpreset",
+      "json_file": "vocal_b__RBass.json",
+      "plugin_name": "RBass Mono",
+      "plugin_vendor": "Waves",
+      "formats": [
+        "waves_realworld"
+      ]
+    },
+    {
+      "relative_path": "vocal_b/Sibilance.vstpreset",
+      "json_file": "vocal_b__Sibilance.json",
+      "plugin_name": "Sibilance Mono",
+      "plugin_vendor": "Waves",
+      "formats": [
+        "waves_realworld"
+      ]
+    }
+  ]
+}

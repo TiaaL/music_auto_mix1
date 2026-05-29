@@ -1,8 +1,8 @@
 {
   "vocal": {
-    "target_db": -14.5,
-    "gain_min_db": 6.0,
-    "gain_max_db": 20.0,
+    "target_db": -18.0,
+    "gain_min_db": -3.0,
+    "gain_max_db": 0.0,
     "compressor": {
       "threshold": 0.14,
       "ratio": 2.2,
@@ -13,11 +13,11 @@
     "limiter_ceiling": 0.97
   },
   "accompaniment": {
-    "base_gain_db": -1.5,
+    "base_gain_db": 0.0,
     "body_gap_db": 4.5,
-    "body_extra_duck_db": -1.0,
-    "gain_min_db": -6.0,
-    "gain_max_db": 2.0,
+    "body_extra_duck_db": 0.0,
+    "gain_min_db": -3.0,
+    "gain_max_db": 0.0,
     "compressor": {
       "threshold": 0.1,
       "ratio": 1.7,

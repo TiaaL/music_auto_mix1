@@ -1,0 +1,89 @@
+{
+  "source_file": "D:\\cubase\\project\\混音模版0512\\混音参数0512\\vocal_b\\L1 limiter.vstpreset",
+  "relative_path": "vocal_b/L1 limiter.vstpreset",
+  "file_size_bytes": 1447,
+  "file_sha256": "a0253746990f57468550c84e96bd47b1a4b077a08c14d603c56422f66cee4910",
+  "vst3_class_id": "5653544C31434D6C31206C696D697465",
+  "meta": {
+    "MediaType": "VstPreset",
+    "PlugInCategory": "Fx|Dynamics",
+    "PlugInName": "L1 limiter Mono",
+    "PlugInVendor": "Waves"
+  },
+  "plugin_name": "L1 limiter Mono",
+  "plugin_vendor": "Waves",
+  "plugin_category": "Fx|Dynamics",
+  "extraction": {
+    "waves_presets": [
+      {
+        "preset_name": "Voice",
+        "generic_type": "L1  ",
+        "header": {
+          "PluginName": "L1",
+          "PluginSubComp": "L1CM",
+          "PluginVersion": "12.7.0.209",
+          "ActiveSetup": "SETUP_A",
+          "LoadMenuCategory": "Factory",
+          "ReadOnly": "true"
+        },
+        "setups": [
+          {
+            "setup": "SETUP_A",
+            "setup_name": "Voice",
+            "parameter_format": "Waves PresetChunkXMLTree RealWorld",
+            "parameter_count": 17,
+            "parameters": [
+              138.01,
+              -3.6,
+              -2.7,
+              "*",
+              "*",
+              "*",
+              "*",
+              "*",
+              2.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              "*",
+              250.7
+            ]
+          },
+          {
+            "setup": "SETUP_B",
+            "setup_name": "",
+            "parameter_format": "Waves PresetChunkXMLTree RealWorld",
+            "parameter_count": 17,
+            "parameters": [
+              1.0,
+              0.0,
+              0.0,
+              "*",
+              "*",
+              "*",
+              "*",
+              "*",
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              0.0,
+              0.0,
+              "*",
+              250.0
+            ]
+          }
+        ]
+      }
+    ],
+    "valhalla_settings": null,
+    "fabfilter_state": null,
+    "formats": [
+      "waves_realworld"
+    ]
+  }
+}

@@ -1,0 +1,196 @@
+{
+  "source_preset_root": "D:/cubase/project/混音模版0512/混音参数0512",
+  "extracted_preset_dir": "config/extracted_vstpresets",
+  "notes": [
+    "This file links Cubase template plugin instances to exported .vstpreset JSON snapshots when available.",
+    "Missing entries are explicit and should be confirmed or exported before exact DSP cloning."
+  ],
+  "shared": {
+    "fx_returns": {
+      "FX 01-SuperTap 2-Taps Stereo": "fx__fx_delay.json",
+      "FX 02-RVerb Stereo": "fx__fx_reverb.json",
+      "FX 03-ValhallaVintageVerb": "fx__fx_reverb_valhalla.json"
+    }
+  },
+  "template_a": {
+    "vocal_track": {
+      "C1 gate Mono": "vocal_a__C1_gate.json",
+      "Pro-Q 3": "vocal_a__Pro-Q3.json",
+      "Aphex Vintage Exciter Mono": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "not active per user confirmation"
+      },
+      "C1 comp Mono": "vocal_a__C1_comp.json",
+      "DeEsser Mono": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "not active per user confirmation"
+      },
+      "Sibilance Mono": "vocal_a__Sibilance.json",
+      "EQ": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "Cubase channel EQ is not active in templates per user confirmation"
+      }
+    },
+    "accompaniment_track": {
+      "Pro-Q 3": "music__music_eq.json",
+      "C6-SideChain Stereo": {
+        "preset_json": "music__music_comp.json",
+        "runtime_enabled": false,
+        "reason": "default render skips C6 because prior Faust C6 renders caused noise"
+      },
+      "EQ": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "Cubase channel EQ is not active in templates per user confirmation"
+      }
+    },
+    "master_bus": {
+      "Pro-Q 3": "bus__eq.json",
+      "GW MixCentric Stereo": "bus__GW_MixCentric.json",
+      "SoftClipper": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "Templates A/B/C do not use SoftClipper per user confirmation"
+      },
+      "L2 Stereo": "bus__limiter.json",
+      "EQ": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "Cubase channel EQ is not active in templates per user confirmation"
+      }
+    }
+  },
+  "template_b": {
+    "vocal_track": {
+      "RBass Mono": "vocal_b__RBass.json",
+      "F6-RTA Mono": "vocal_b__F6-RTA.json",
+      "C1 comp Mono": "vocal_b__C1_comp.json",
+      "Pro-Q 3": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "bypassed in user screenshot"
+      },
+      "Aphex Vintage Exciter Mono": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "bypassed in user screenshot"
+      },
+      "Sibilance Mono": "vocal_b__Sibilance.json",
+      "L1 limiter Mono": "vocal_b__L1_limiter.json",
+      "EQ": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "Cubase channel EQ is not active in templates per user confirmation"
+      }
+    },
+    "accompaniment_track": {
+      "Pro-Q 3": "music__music_eq.json",
+      "C6-SideChain Stereo": {
+        "preset_json": "music__music_comp.json",
+        "runtime_enabled": false,
+        "reason": "default render skips C6 because prior Faust C6 renders caused noise"
+      },
+      "EQ": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "Cubase channel EQ is not active in templates per user confirmation"
+      }
+    },
+    "master_bus": {
+      "Pro-Q 3": "bus__eq.json",
+      "GW MixCentric Stereo": "bus__GW_MixCentric.json",
+      "SoftClipper": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "Template B bus has no SoftClipper per user confirmation"
+      },
+      "L2 Stereo": "bus__limiter.json",
+      "EQ": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "Cubase channel EQ is not active in templates per user confirmation"
+      }
+    }
+  },
+  "template_c": {
+    "vocal_track": {
+      "Pro-Q 3": "template_c__vocal__Pro-Q3.json",
+      "RBass Mono": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "not active per user confirmation"
+      },
+      "C1 gate Mono": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "not active per user confirmation"
+      },
+      "Vocal Rider Mono": "template_c__vocal__Vocal_Rider.json",
+      "C1 comp Mono": "template_c__vocal__C1_comp.json",
+      "DeEsser Mono": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "not active per user confirmation"
+      },
+      "OneKnob Brighter Mono": "template_c__vocal__OneKnob_Brighter.json",
+      "Sibilance Mono": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "not active per user confirmation"
+      },
+      "EQ": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "Cubase channel EQ is not active in templates per user confirmation"
+      }
+    },
+    "accompaniment_track": {
+      "Pro-Q 3": "template_c__music__music_eq.json",
+      "C6-SideChain Stereo": {
+        "preset_json": "template_c__music__music_comp.json",
+        "runtime_enabled": false,
+        "reason": "default render skips C6 because prior Faust C6 renders caused noise"
+      },
+      "EQ": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "Cubase channel EQ is not active in templates per user confirmation"
+      }
+    },
+    "master_bus": {
+      "Pro-Q 3": "template_c__bus__eq.json",
+      "GW MixCentric Stereo": "template_c__bus__GW_MixCentric.json",
+      "SoftClipper": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "Templates A/B/C do not use SoftClipper per user confirmation"
+      },
+      "L2 Stereo": "template_c__bus__limiter.json",
+      "EQ": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "Cubase channel EQ is not active in templates per user confirmation"
+      }
+    }
+  },
+  "missing_or_unexported": [
+    {
+      "template": "template_a",
+      "plugins": [],
+      "bypassed_plugins_not_required": ["Aphex Vintage Exciter Mono", "DeEsser Mono"]
+    },
+    {
+      "template": "template_b",
+      "plugins": [],
+      "bypassed_plugins_not_required": ["Pro-Q 3 vocal instance", "Aphex Vintage Exciter Mono", "SoftClipper bus instance"]
+    },
+    {
+      "template": "template_c",
+      "plugins": [],
+      "bypassed_plugins_not_required": ["RBass Mono", "C1 gate Mono", "DeEsser Mono", "Sibilance Mono"]
+    }
+  ]
+}

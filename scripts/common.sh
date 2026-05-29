@@ -25,14 +25,24 @@ ensure_binary() {
     local target="$1"
     local binary="$BUILD_DIR/$target"
     local make_target="build/$target"
+    local faust_cmd="${FAUST:-faust}"
+    local cxx_cmd="${CXX:-clang++}"
 
     if [[ -x "$binary" ]]; then
         return
     fi
 
     ensure_command "make"
-    ensure_command "faust" "Install Faust first, for example: brew install faust"
-    ensure_command "clang++" "Install Xcode Command Line Tools or another C++ toolchain"
+    if ! command -v "$faust_cmd" >/dev/null 2>&1 && [[ ! -x "$faust_cmd" ]]; then
+        echo "Error: required command not found: $faust_cmd" >&2
+        echo "Hint: install Faust or export FAUST=/path/to/faust" >&2
+        exit 1
+    fi
+    if ! command -v "$cxx_cmd" >/dev/null 2>&1 && [[ ! -x "$cxx_cmd" ]]; then
+        echo "Error: required command not found: $cxx_cmd" >&2
+        echo "Hint: install a C++ toolchain or export CXX=/path/to/compiler" >&2
+        exit 1
+    fi
 
     echo "[build] Missing $target, compiling it now..."
     mkdir -p "$BUILD_DIR"
@@ -42,9 +52,8 @@ ensure_binary() {
 make_temp_wav() {
     local prefix="${1:-faust_tmp}"
     local tmp
-    tmp="$(mktemp -t "${prefix}")"
-    mv "$tmp" "${tmp}.wav"
-    printf '%s.wav\n' "$tmp"
+    tmp="$(mktemp "${TMPDIR:-/tmp}/${prefix}.XXXXXX.wav")"
+    printf '%s\n' "$tmp"
 }
 
 audio_channels() {

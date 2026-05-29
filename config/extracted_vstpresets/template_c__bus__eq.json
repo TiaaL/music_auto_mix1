@@ -1,0 +1,407 @@
+{
+  "source_file": "D:\\cubase\\project\\混音模版0512\\混音参数0512\\template_c\\bus\\eq.vstpreset",
+  "relative_path": "template_c/bus/eq.vstpreset",
+  "file_size_bytes": 2060,
+  "file_sha256": "a2d78138e3119ff27f80b8e94cda462f30ebbf7057098a0265bc092c100810ee",
+  "vst3_class_id": "72C4DB717A4D459AB97E51745D84B39D",
+  "meta": {
+    "MediaType": "VstPreset",
+    "PlugInCategory": "Fx|EQ",
+    "PlugInName": "Pro-Q 3",
+    "PlugInVendor": "FabFilter"
+  },
+  "plugin_name": "Pro-Q 3",
+  "plugin_vendor": "FabFilter",
+  "plugin_category": "Fx|EQ",
+  "extraction": {
+    "waves_presets": [],
+    "valhalla_settings": null,
+    "fabfilter_state": {
+      "parameter_format": "FabFilter binary state",
+      "state_size_bytes": 1536,
+      "state_sha256": "75ab7b5c227da1fdeafc19f05fae47f05f3d29ab9b4153d347d36a5a932c5d31",
+      "state_base64": "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",
+      "known_markers": [
+        "FQ3p",
+        "FFpr",
+        "FFed",
+        "Default Setting"
+      ],
+      "diagnostic_float_candidates": [
+        {
+          "offset": 12,
+          "value": 1.0
+        },
+        {
+          "offset": 16,
+          "value": 1.0
+        },
+        {
+          "offset": 20,
+          "value": 4.552648544311523
+        },
+        {
+          "offset": 32,
+          "value": 1.0
+        },
+        {
+          "offset": 36,
+          "value": 1.0
+        },
+        {
+          "offset": 38,
+          "value": -13.1405029296875
+        },
+        {
+          "offset": 40,
+          "value": 0.5029498338699341
+        },
+        {
+          "offset": 44,
+          "value": 2.0
+        },
+        {
+          "offset": 48,
+          "value": 5.0
+        },
+        {
+          "offset": 52,
+          "value": 2.0
+        },
+        {
+          "offset": 56,
+          "value": 1.0
+        },
+        {
+          "offset": 64,
+          "value": 1.0
+        },
+        {
+          "offset": 68,
+          "value": 1.0
+        },
+        {
+          "offset": 72,
+          "value": 7.871100902557373
+        },
+        {
+          "offset": 76,
+          "value": -1.6278076171875
+        },
+        {
+          "offset": 84,
+          "value": 1.0
+        },
+        {
+          "offset": 88,
+          "value": 1.0
+        },
+        {
+          "offset": 92,
+          "value": 0.6564360857009888
+        },
+        {
+          "offset": 100,
+          "value": 1.0
+        },
+        {
+          "offset": 104,
+          "value": 2.0
+        },
+        {
+          "offset": 108,
+          "value": 1.0
+        },
+        {
+          "offset": 116,
+          "value": 1.0
+        },
+        {
+          "offset": 124,
+          "value": 8.250770568847656
+        },
+        {
+          "offset": 128,
+          "value": -0.5880889892578125
+        },
+        {
+          "offset": 136,
+          "value": 1.0
+        },
+        {
+          "offset": 140,
+          "value": 1.0
+        },
+        {
+          "offset": 144,
+          "value": 0.6146219372749329
+        },
+        {
+          "offset": 152,
+          "value": 1.0
+        },
+        {
+          "offset": 156,
+          "value": 2.0
+        },
+        {
+          "offset": 160,
+          "value": 1.0
+        },
+        {
+          "offset": 168,
+          "value": 1.0
+        },
+        {
+          "offset": 172,
+          "value": 1.0
+        },
+        {
+          "offset": 176,
+          "value": 6.128882884979248
+        },
+        {
+          "offset": 180,
+          "value": 0.8455638885498047
+        },
+        {
+          "offset": 188,
+          "value": 1.0
+        },
+        {
+          "offset": 192,
+          "value": 1.0
+        },
+        {
+          "offset": 196,
+          "value": 0.6321070790290833
+        },
+        {
+          "offset": 204,
+          "value": 1.0
+        },
+        {
+          "offset": 208,
+          "value": 2.0
+        },
+        {
+          "offset": 212,
+          "value": 1.0
+        },
+        {
+          "offset": 220,
+          "value": 1.0
+        },
+        {
+          "offset": 224,
+          "value": 1.0
+        },
+        {
+          "offset": 228,
+          "value": 13.96827507019043
+        },
+        {
+          "offset": 240,
+          "value": 1.0
+        },
+        {
+          "offset": 244,
+          "value": 1.0
+        },
+        {
+          "offset": 248,
+          "value": 0.5132091045379639
+        },
+        {
+          "offset": 252,
+          "value": 4.0
+        },
+        {
+          "offset": 256,
+          "value": 2.0
+        },
+        {
+          "offset": 260,
+          "value": 2.0
+        },
+        {
+          "offset": 264,
+          "value": 1.0
+        },
+        {
+          "offset": 272,
+          "value": 1.0
+        },
+        {
+          "offset": 276,
+          "value": 1.0
+        },
+        {
+          "offset": 280,
+          "value": 7.35004186630249
+        },
+        {
+          "offset": 281,
+          "value": 3.014355421066284
+        },
+        {
+          "offset": 284,
+          "value": -0.4676532745361328
+        },
+        {
+          "offset": 292,
+          "value": 1.0
+        },
+        {
+          "offset": 296,
+          "value": 1.0
+        },
+        {
+          "offset": 300,
+          "value": 0.6084607839584351
+        },
+        {
+          "offset": 308,
+          "value": 1.0
+        },
+        {
+          "offset": 312,
+          "value": 2.0
+        },
+        {
+          "offset": 316,
+          "value": 1.0
+        },
+        {
+          "offset": 324,
+          "value": 1.0
+        },
+        {
+          "offset": 328,
+          "value": 1.0
+        },
+        {
+          "offset": 332,
+          "value": 8.678794860839844
+        },
+        {
+          "offset": 336,
+          "value": -1.8442630767822266
+        },
+        {
+          "offset": 344,
+          "value": 1.0
+        },
+        {
+          "offset": 348,
+          "value": 1.0
+        },
+        {
+          "offset": 352,
+          "value": 0.6092068552970886
+        },
+        {
+          "offset": 360,
+          "value": 1.0
+        },
+        {
+          "offset": 364,
+          "value": 2.0
+        },
+        {
+          "offset": 368,
+          "value": 1.0
+        },
+        {
+          "offset": 380,
+          "value": 1.0
+        },
+        {
+          "offset": 384,
+          "value": 9.965784072875977
+        },
+        {
+          "offset": 396,
+          "value": 1.0
+        },
+        {
+          "offset": 400,
+          "value": 1.0
+        },
+        {
+          "offset": 404,
+          "value": 0.5
+        },
+        {
+          "offset": 412,
+          "value": 1.0
+        },
+        {
+          "offset": 416,
+          "value": 2.0
+        },
+        {
+          "offset": 420,
+          "value": 1.0
+        },
+        {
+          "offset": 432,
+          "value": 1.0
+        },
+        {
+          "offset": 436,
+          "value": 9.965784072875977
+        },
+        {
+          "offset": 448,
+          "value": 1.0
+        },
+        {
+          "offset": 452,
+          "value": 1.0
+        },
+        {
+          "offset": 456,
+          "value": 0.5
+        },
+        {
+          "offset": 464,
+          "value": 1.0
+        },
+        {
+          "offset": 468,
+          "value": 2.0
+        },
+        {
+          "offset": 472,
+          "value": 1.0
+        },
+        {
+          "offset": 484,
+          "value": 1.0
+        },
+        {
+          "offset": 488,
+          "value": 9.965784072875977
+        },
+        {
+          "offset": 500,
+          "value": 1.0
+        },
+        {
+          "offset": 504,
+          "value": 1.0
+        },
+        {
+          "offset": 508,
+          "value": 0.5
+        }
+      ],
+      "decoded": false,
+      "requires_parser": true
+    },
+    "formats": [
+      "fabfilter_binary_state"
+    ]
+  }
+}

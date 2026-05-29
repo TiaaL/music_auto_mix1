@@ -1,0 +1,83 @@
+{
+  "source_file": "D:\\cubase\\project\\混音模版0512\\混音参数0512\\template_c\\bus\\limiter.vstpreset",
+  "relative_path": "template_c/bus/limiter.vstpreset",
+  "file_size_bytes": 1409,
+  "file_sha256": "cb2d14bcc60f4592a67005573953b6304b6b955d88b1ffb5ffd31aa25ed1adb3",
+  "vst3_class_id": "5653544C324D536C322073746572656F",
+  "meta": {
+    "MediaType": "VstPreset",
+    "PlugInCategory": "Fx|Dynamics",
+    "PlugInName": "L2 Stereo",
+    "PlugInVendor": "Waves"
+  },
+  "plugin_name": "L2 Stereo",
+  "plugin_vendor": "Waves",
+  "plugin_category": "Fx|Dynamics",
+  "extraction": {
+    "waves_presets": [
+      {
+        "preset_name": "Hi Res CD Master",
+        "generic_type": "L2  ",
+        "header": {
+          "PluginName": "L2",
+          "PluginSubComp": "L2MS",
+          "PluginVersion": "12.7.0.209",
+          "ActiveSetup": "SETUP_A",
+          "LoadMenuCategory": "Factory",
+          "ReadOnly": "true"
+        },
+        "setups": [
+          {
+            "setup": "SETUP_A",
+            "setup_name": "Hi Res CD Master",
+            "parameter_format": "Waves PresetChunkXMLTree RealWorld",
+            "parameter_count": 14,
+            "parameters": [
+              1.0,
+              -4.1,
+              -1.1,
+              "*",
+              "*",
+              "*",
+              "*",
+              "*",
+              4.0,
+              0.0,
+              0.0,
+              1.0,
+              3.0,
+              1.0
+            ]
+          },
+          {
+            "setup": "SETUP_B",
+            "setup_name": "",
+            "parameter_format": "Waves PresetChunkXMLTree RealWorld",
+            "parameter_count": 14,
+            "parameters": [
+              1.0,
+              0.0,
+              0.0,
+              "*",
+              "*",
+              "*",
+              "*",
+              "*",
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              2.0,
+              1.0
+            ]
+          }
+        ]
+      }
+    ],
+    "valhalla_settings": null,
+    "fabfilter_state": null,
+    "formats": [
+      "waves_realworld"
+    ]
+  }
+}

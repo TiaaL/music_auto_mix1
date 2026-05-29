@@ -1,0 +1,127 @@
+{
+  "source_file": "D:\\cubase\\project\\混音模版0512\\混音参数0512\\template_c\\vocal\\OneKnob Brighter.vstpreset",
+  "relative_path": "template_c/vocal/OneKnob Brighter.vstpreset",
+  "file_size_bytes": 1536,
+  "file_sha256": "ee96d32176d7397fbd99b1bed6ddf22487044813b1a544eb1c4dade0b75c15b0",
+  "vst3_class_id": "5653544F4B424D6F6E656B6E6F622062",
+  "meta": {
+    "MediaType": "VstPreset",
+    "PlugInCategory": "Fx|Other",
+    "PlugInName": "OneKnob Brighter Mono",
+    "PlugInVendor": "Waves"
+  },
+  "plugin_name": "OneKnob Brighter Mono",
+  "plugin_vendor": "Waves",
+  "plugin_category": "Fx|Other",
+  "extraction": {
+    "waves_presets": [
+      {
+        "preset_name": "",
+        "generic_type": "OKB_",
+        "header": {
+          "PluginName": "OneKnobBrighter",
+          "PluginSubComp": "OKBM",
+          "PluginVersion": "12.7.0.209",
+          "ActiveSetup": "SETUP_A",
+          "LoadMenuCategory": "Factory",
+          "ReadOnly": "true"
+        },
+        "setups": [
+          {
+            "setup": "SETUP_A",
+            "setup_name": "",
+            "parameter_format": "Waves PresetChunkXMLTree RealWorld",
+            "parameter_count": 36,
+            "parameters": [
+              0.0,
+              0.0,
+              16.0,
+              1.0,
+              0.0,
+              49.0,
+              1.0,
+              0.0,
+              0.0,
+              0.5,
+              2.5,
+              1.0,
+              0.0,
+              0.0,
+              3.5,
+              1.5,
+              1.0,
+              3.962837837837839,
+              2.06,
+              0.0,
+              "*",
+              "*",
+              "*",
+              "*",
+              "*",
+              -18.0,
+              0.0,
+              1.0,
+              0.0,
+              "*",
+              "*",
+              "*",
+              "*",
+              "*",
+              3.45,
+              "*"
+            ]
+          },
+          {
+            "setup": "SETUP_B",
+            "setup_name": "",
+            "parameter_format": "Waves PresetChunkXMLTree RealWorld",
+            "parameter_count": 36,
+            "parameters": [
+              0.0,
+              0.0,
+              16.0,
+              1.0,
+              0.0,
+              49.0,
+              1.0,
+              0.0,
+              0.0,
+              0.5,
+              2.5,
+              1.0,
+              0.0,
+              0.0,
+              3.5,
+              1.5,
+              1.0,
+              0.0,
+              2.06,
+              0.0,
+              "*",
+              "*",
+              "*",
+              "*",
+              "*",
+              -18.0,
+              0.0,
+              1.0,
+              0.0,
+              "*",
+              "*",
+              "*",
+              "*",
+              "*",
+              0.0,
+              "*"
+            ]
+          }
+        ]
+      }
+    ],
+    "valhalla_settings": null,
+    "fabfilter_state": null,
+    "formats": [
+      "waves_realworld"
+    ]
+  }
+}

@@ -1,0 +1,111 @@
+{
+  "description": "DAW truth stages used for Faust calibration. Reference WAVs come from Cubase mix_results; candidate WAVs are produced by scripts/render_calibration_stages.sh.",
+  "reference_root": "D:/cubase/project/ai_cover/Mixdown/mix_results",
+  "balance_reference": {
+    "project": "D:/cubase/project/混音模版0512/通用混音模板_纯净版.cpr",
+    "note": "CPR is binary; fader positions cannot be read directly. Raw audio levels below are pre-fader.",
+    "raw_vocal_mean_db": -16.8,
+    "raw_vocal_peak_db": -0.9,
+    "raw_accomp_mean_db": -17.5,
+    "raw_accomp_peak_db": 0.0,
+    "raw_gap_db": 0.7,
+    "audio_files": {
+      "vocal": "D:/cubase/project/混音模版0512/Audio/ACAPELLA-勇气hbc.wav",
+      "accompaniment": "D:/cubase/project/混音模版0512/Audio/勇气伴奏1.wav"
+    }
+  },
+  "branches": {
+    "vocal": {
+      "channel_hint": "stereo reference; mono Faust stages are duplicated for comparison when needed",
+      "stages": [
+        {
+          "stage_id": "vocal_deesser",
+          "reference": "vocal/vocal_deesser.wav",
+          "faust_stage": "rdeesser",
+          "status": "mapped"
+        },
+        {
+          "stage_id": "vocal_deesser_eq",
+          "reference": "vocal/vocal_deesser_eq.wav",
+          "faust_stage": "req6",
+          "status": "mapped"
+        },
+        {
+          "stage_id": "vocal_deesser_eq_compressor",
+          "reference": "vocal/vocal_deesser_eq_compressor.wav",
+          "faust_stage": "c1_comp",
+          "status": "mapped"
+        },
+        {
+          "stage_id": "vocal_deesser_eq_compressor_platereverb",
+          "reference": "vocal/vocal_deesser_eq_compressor_platereverb.wav",
+          "faust_stage": "vocal_group_fx",
+          "status": "needs_mapping",
+          "notes": "Current Faust vocal_group_fx renders the combined group effect, not isolated plate reverb only."
+        },
+        {
+          "stage_id": "vocal_deesser_eq_compressor_platereverb_bigreverb",
+          "reference": "vocal/vocal_deesser_eq_compressor_platereverb_bigreverb.wav",
+          "faust_stage": "vocal_group_fx",
+          "status": "needs_mapping"
+        },
+        {
+          "stage_id": "vocal_deesser_eq_compressor_platereverb_bigreverb_delay",
+          "reference": "vocal/vocal_deesser_eq_compressor_platereverb_bigreverb_delay.wav",
+          "faust_stage": "vocal_group_fx",
+          "status": "mapped",
+          "notes": "Closest current Faust equivalent: full vocal_group_fx including reverb and delay sends."
+        }
+      ]
+    },
+    "music": {
+      "channel_hint": "stereo",
+      "stages": [
+        {
+          "stage_id": "music_eq",
+          "reference": "music/music_eq.wav",
+          "faust_stage": "accomp_proq3",
+          "status": "mapped"
+        },
+        {
+          "stage_id": "music_eq_compressor",
+          "reference": "music/music_eq_compressor.wav",
+          "faust_stage": "accomp_c6_sc",
+          "status": "disabled_in_runtime",
+          "notes": "C6 approximation is kept for research only. Runtime mix chains skip it because prior Faust C6 renders produced noise/instability."
+        },
+        {
+          "stage_id": "music_eq_compressor_limiter",
+          "reference": "music/music_eq_compressor_limiter.wav",
+          "faust_stage": "accomp_l2_stereo",
+          "status": "needs_mapping",
+          "notes": "Runtime path is music EQ -> L2; the DAW reference includes the disabled C6/compressor stage."
+        }
+      ]
+    },
+    "bus": {
+      "channel_hint": "stereo",
+      "stages": [
+        {
+          "stage_id": "bus_eq",
+          "reference": "bus/bus_eq.wav",
+          "faust_stage": "master_proq3",
+          "status": "mapped"
+        },
+        {
+          "stage_id": "bus_eq_limiter",
+          "reference": "bus/bus_eq_limiter.wav",
+          "faust_stage": "master_l2_stereo",
+          "status": "mapped"
+        },
+        {
+          "stage_id": "bus_eq_limiter_compressor",
+          "reference": "bus/bus_eq_limiter_compressor.wav",
+          "faust_stage": "gw_mixcentric_stereo",
+          "status": "needs_mapping",
+          "notes": "DAW file name says compressor; current A/B/C bus chain uses GW MixCentric before L2. Confirm with Cubase export before treating this as exact."
+        }
+      ]
+    }
+  }
+}
