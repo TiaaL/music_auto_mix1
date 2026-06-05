@@ -5,10 +5,13 @@
 //   - Takes a mono vocal track
 //   - Places it onto a stereo vocal group
 //   - Adapts gain/send behavior based on phrase-level dynamics
-//   - Sends the group to 3 stereo FX buses:
+//   - Historically sent the group to 3 stereo FX buses:
 //       1) Shimmer-style pitch/reverb
 //       2) Stereo reverb
 //       3) SuperTap-style stereo multi-tap delay
+//   Those internal wet buses are currently disconnected. The render
+//   scripts now send the dry stereo group to the standalone DelayVerb
+//   project as a pre-fader group send.
 //
 // Important note:
 //   This is an approximation-oriented rack built in Faust.
@@ -22,7 +25,7 @@
 
 declare name        "Vocal Stereo Group FX Rack";
 declare version     "1.0";
-declare description "Stereo vocal group with adaptive dynamics, shimmer, reverb, and multi-tap delay";
+declare description "Dry stereo vocal group; external DelayVerb handles reverb and delay";
 
 import("stdfaust.lib");
 
@@ -347,6 +350,10 @@ delayPath(x) = x <: delayWet, delayDirect
 // Main rack
 // ----------------------------------------------------------------
 
-process = _ <: dryPath, earlyRefPath, reverbPath, shimmerPath, delayPath
-        :> _,_
-        : stereoGain(db2lin(OUTPUT_GAIN_DB));
+// Internal wet buses are kept in source for reference, but disabled in
+// the active render path. External DelayVerb is applied by shell/Python.
+// process = _ <: dryPath, earlyRefPath, reverbPath, shimmerPath, delayPath
+//         :> _,_
+//         : stereoGain(db2lin(OUTPUT_GAIN_DB));
+
+process = _ : dryPath : stereoGain(db2lin(OUTPUT_GAIN_DB));

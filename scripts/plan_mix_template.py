@@ -19,9 +19,11 @@ LABEL_TO_TEMPLATE = {
     "template_A": "template_a",
     "template_B": "template_b",
     "template_C": "template_c",
+    "template_D": "template_d",
     "template_a": "template_a",
     "template_b": "template_b",
     "template_c": "template_c",
+    "template_d": "template_d",
 }
 
 
@@ -271,6 +273,94 @@ def ratio_excess_residual_actions(
     return actions
 
 
+def float_or_none(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def perceptual_contrast_actions(
+    analysis: dict[str, Any],
+    template_id: str,
+    config: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Small boosts that make body/mud feel smaller by adding useful contrast."""
+    policy = config.get("perceptual_contrast_policy") or {}
+    if not policy.get("enabled", False):
+        return []
+
+    template_policy = policy.get(template_id) or {}
+    if not template_policy:
+        return []
+
+    actions: list[dict[str, Any]] = []
+    ratios = analysis.get("ratios") or {}
+    diagnosis = analysis.get("body_presence_diagnosis") or {}
+    body_to_presence = float_or_none(analysis.get("body_to_presence"))
+    upper_ratio = float_or_none(ratios.get("upper"))
+    trigger_body_to_presence = float(template_policy.get("trigger_body_to_presence", 8.0))
+    trigger_upper_ratio_below = float(template_policy.get("trigger_upper_ratio_below", 0.12))
+
+    body_presence_triggered = (
+        diagnosis.get("action") == "cut_body_and_boost_presence"
+        or (body_to_presence is not None and body_to_presence >= trigger_body_to_presence)
+    )
+    upper_is_low = upper_ratio is not None and upper_ratio <= trigger_upper_ratio_below
+    if not (body_presence_triggered and upper_is_low):
+        return []
+
+    severity = 0.0 if body_to_presence is None else max(0.0, body_to_presence - trigger_body_to_presence)
+    body_display = "unknown" if body_to_presence is None else f"{body_to_presence:.1f}"
+    upper_display = "unknown" if upper_ratio is None else f"{upper_ratio:.3f}"
+    presence = template_policy.get("presence_boost") or {}
+    if presence:
+        min_gain = float(presence.get("min_gain_db", 0.8))
+        max_gain = float(presence.get("max_gain_db", 1.6))
+        gain = round(clamp(min_gain + severity * 0.08, min_gain, max_gain), 2)
+        actions.append({
+            "band": presence.get("band", "upper"),
+            "type": presence.get("type", "boost"),
+            "freq_hz": float(presence.get("freq_hz", 3400.0)),
+            "q": float(presence.get("q", 0.75)),
+            "gain_db": gain,
+            "source": "perceptual_contrast",
+            "feature_rule": "body_presence_contrast_boost",
+            "classification_label": template_to_label(template_id),
+            "strong": gain >= 1.3,
+            "reason": (
+                f"body/presence {body_display} with low upper ratio {upper_display}; "
+                "add presence so the heavy body feels less dominant"
+            ),
+        })
+
+    air = template_policy.get("air_boost") or {}
+    harsh_ratio = float_or_none(ratios.get("harsh"))
+    sib_ratio = float_or_none(ratios.get("sib"))
+    if air and harsh_ratio is not None and sib_ratio is not None:
+        if harsh_ratio <= float(air.get("max_harsh_ratio", 0.04)) and sib_ratio <= float(air.get("max_sib_ratio", 0.018)):
+            min_gain = float(air.get("min_gain_db", 0.4))
+            max_gain = float(air.get("max_gain_db", 0.9))
+            gain = round(clamp(min_gain + severity * 0.04, min_gain, max_gain), 2)
+            actions.append({
+                "band": air.get("band", "air"),
+                "type": air.get("type", "boost"),
+                "freq_hz": float(air.get("freq_hz", 11000.0)),
+                "q": float(air.get("q", 0.7)),
+                "gain_db": gain,
+                "source": "perceptual_contrast",
+                "feature_rule": "air_contrast_boost",
+                "classification_label": template_to_label(template_id),
+                "strong": False,
+                "reason": (
+                    f"harsh/sib ratios are safe ({harsh_ratio:.3f}/{sib_ratio:.3f}); "
+                    "add a small air lift for clarity without cutting more body"
+                ),
+            })
+
+    return actions[: int(policy.get("max_actions", 2))]
+
+
 def build_residual_vocal_eq(analysis: dict[str, Any], template_id: str) -> dict[str, Any]:
     if not RESIDUAL_EQ_CONFIG.exists() or template_id == "template_d":
         return {"enabled": False, "actions": [], "reason": "no residual EQ config or fallback template"}
@@ -347,6 +437,10 @@ def build_residual_vocal_eq(analysis: dict[str, Any], template_id: str) -> dict[
     for action in ratio_excess_residual_actions(analysis, coverage, config):
         append_residual_action(actions, action)
 
+    contrast_actions = perceptual_contrast_actions(analysis, template_id, config)
+    for action in contrast_actions:
+        append_residual_action(actions, action)
+
     max_actions = int(config.get("max_actions", 4))
     actions = (actions + covered_strong_actions)[:max_actions]
     return {
@@ -355,7 +449,7 @@ def build_residual_vocal_eq(analysis: dict[str, Any], template_id: str) -> dict[
         "policy": (
             "base template first, then second-pass all detected features; "
             "uncovered hits (classification + spectral deviation + ratio excess) get corrective EQ, "
-            "covered strong hits get small reinforcement"
+            "covered strong hits get reinforcement, and contrast boosts can add presence/air when they reduce body dominance perceptually"
         ),
         "selected_template": template_id,
         "covered_bands": sorted(coverage),
@@ -381,8 +475,9 @@ MASTER_TILT_DEAD_BAND_DB = 1.5
 MASTER_TILT_MAX_CUT_DB = 3.0
 MASTER_TILT_MAX_BOOST_DB = 0.8
 MASTER_TILT_MAX_ACTIONS = 4
-BUS_BALANCE_MAX_MOVE_DB = 6.0
+BUS_BALANCE_MAX_MOVE_DB = 2.0
 BUS_BALANCE_DEAD_BAND_DB = 0.6
+BUS_BALANCE_FOLLOW_STRENGTH = 0.5
 
 
 def build_reference_overrides(
@@ -456,12 +551,13 @@ def build_reference_overrides(
     if ref_balance is not None and input_balance is not None:
         delta = float(ref_balance) - float(input_balance)
         if abs(delta) >= BUS_BALANCE_DEAD_BAND_DB:
-            move = clamp(abs(delta), 0.0, BUS_BALANCE_MAX_MOVE_DB)
+            requested_move = abs(delta) * BUS_BALANCE_FOLLOW_STRENGTH
+            move = clamp(requested_move, 0.0, BUS_BALANCE_MAX_MOVE_DB)
             if delta > 0:
                 bus["accomp_bus_gain_db"] = -round(move, 2)
                 bus["reason"] = (
                     f"reference vocal is {ref_balance:+.1f} dB vs accomp; input is {input_balance:+.1f} dB. "
-                    f"Cut accomp bus by {move:.1f} dB to lift vocal relatively."
+                    f"Conservatively cut accomp bus by {move:.1f} dB to lift vocal relatively."
                 )
             else:
                 bus["vocal_bus_gain_db"] = -round(move, 2)
@@ -471,6 +567,8 @@ def build_reference_overrides(
                 )
             bus["reference_vocal_minus_accomp_db"] = round(float(ref_balance), 2)
             bus["input_vocal_minus_accomp_db"] = round(float(input_balance), 2)
+            bus["follow_strength"] = BUS_BALANCE_FOLLOW_STRENGTH
+            bus["max_move_db"] = BUS_BALANCE_MAX_MOVE_DB
     overrides["bus_balance"] = bus
 
     return overrides

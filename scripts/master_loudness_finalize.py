@@ -153,6 +153,9 @@ def ebur128_window_summary(
 
 
 def apply_gain(input_path: Path, output_path: Path, gain_db: float) -> None:
+    # Float output: the pre-gain (up to +9 dB) is applied before any limiter, so a
+    # 16-bit intermediate here would hard-clip the signal before it ever reaches the
+    # L2/true-peak stage. Keep full float headroom until the final true-peak limit.
     proc = run(
         [
             FFMPEG,
@@ -163,6 +166,8 @@ def apply_gain(input_path: Path, output_path: Path, gain_db: float) -> None:
             str(input_path),
             "-af",
             f"volume={gain_db:.4f}dB",
+            "-c:a",
+            "pcm_f32le",
             str(output_path),
         ]
     )
@@ -194,6 +199,42 @@ def apply_true_peak_limiter(input_path: Path, output_path: Path, ceiling_db: flo
         raise RuntimeError(proc.stderr)
 
 
+def apply_master_transient_safety(input_path: Path, output_path: Path, threshold: float) -> dict[str, float | int]:
+    filter_graph = f"adeclick=w=85:o=85:a=4:t={threshold:.3f}:b=4"
+    proc = run(
+        [
+            FFMPEG,
+            "-y",
+            "-hide_banner",
+            "-nostats",
+            "-i",
+            str(input_path),
+            "-af",
+            filter_graph,
+            "-c:a",
+            "pcm_f32le",
+            str(output_path),
+        ]
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr)
+
+    detected_clicks = 0
+    total_samples = 0
+    percent = 0.0
+    match = re.search(r"Detected clicks in ([0-9]+) of ([0-9]+) samples \(([0-9.]+)%\)", proc.stderr)
+    if match:
+        detected_clicks = int(match.group(1))
+        total_samples = int(match.group(2))
+        percent = float(match.group(3))
+    return {
+        "threshold": threshold,
+        "detected_clicks": detected_clicks,
+        "total_samples": total_samples,
+        "percent": percent,
+    }
+
+
 def clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
@@ -217,7 +258,12 @@ def main() -> None:
     parser.add_argument("--max-attenuation-db", type=float, default=12.0)
     parser.add_argument("--max-residual-gain-db", type=float, default=3.5)
     parser.add_argument("--max-true-peak-limiter-reduction-db", type=float, default=4.0,
-                        help="Maximum peak reduction allowed while chasing LUFS; prevents harsh limiter crackle.")
+                        help="Maximum peak reduction allowed while chasing LUFS; preserves peak safety instead of "
+                             "forcing the true-peak limiter into audible crackle.")
+    parser.add_argument("--master-declick-threshold", type=float, default=2.6,
+                        help="Final wide-window declick threshold before true-peak limiting.")
+    parser.add_argument("--disable-master-declick", action="store_true",
+                        help="Disable the final master transient safety pass.")
     parser.add_argument("--metadata", type=Path)
     args = parser.parse_args()
 
@@ -254,24 +300,49 @@ def main() -> None:
         tmp_root = Path(tmp_dir)
         gained = tmp_root / "01_pregain.wav"
         limited = tmp_root / "02_limited.wav"
-        tp_limited = tmp_root / "03_true_peak_limited.wav"
+        residual_gained = tmp_root / "03_residual_gain.wav"
+        transient_safe = tmp_root / "04_master_transient_safe.wav"
 
         limited_measure: dict[str, float | str] | None = None
-        for attempt in range(2):
+        limiter_attempts: list[dict[str, float]] = []
+        max_limiter_attempts = 16
+        for attempt in range(max_limiter_attempts):
             apply_gain(args.input_wav, gained, whole_song_gain_db)
             limiter_proc = run([str(args.limiter), str(gained), str(limited)])
             if limiter_proc.returncode != 0:
                 raise RuntimeError(limiter_proc.stderr)
             limited_measure = loudnorm_measure(limited, args.target_i, args.target_tp, args.target_lra)
             required_tp_reduction = float(limited_measure["input_tp"]) - args.target_tp
-            if required_tp_reduction <= args.max_true_peak_limiter_reduction_db or attempt == 1:
+            limiter_attempts.append(
+                {
+                    "attempt": attempt + 1,
+                    "pre_gain_db": whole_song_gain_db,
+                    "post_l2_true_peak_db": float(limited_measure["input_tp"]),
+                    "required_true_peak_reduction_db": required_tp_reduction,
+                }
+            )
+            if required_tp_reduction <= args.max_true_peak_limiter_reduction_db:
                 break
-            excess_reduction = required_tp_reduction - args.max_true_peak_limiter_reduction_db
+            excess_reduction = max(required_tp_reduction - args.max_true_peak_limiter_reduction_db, 0.10)
             whole_song_gain_db -= excess_reduction
             target_limited_by_true_peak = True
+            if attempt == max_limiter_attempts - 1:
+                apply_gain(args.input_wav, gained, whole_song_gain_db)
+                limiter_proc = run([str(args.limiter), str(gained), str(limited)])
+                if limiter_proc.returncode != 0:
+                    raise RuntimeError(limiter_proc.stderr)
+                limited_measure = loudnorm_measure(limited, args.target_i, args.target_tp, args.target_lra)
+                limiter_attempts.append(
+                    {
+                        "attempt": attempt + 2,
+                        "pre_gain_db": whole_song_gain_db,
+                        "post_l2_true_peak_db": float(limited_measure["input_tp"]),
+                        "required_true_peak_reduction_db": float(limited_measure["input_tp"]) - args.target_tp,
+                        "forced_final": True,
+                    }
+                )
 
         assert limited_measure is not None
-        limited_measure = loudnorm_measure(limited, args.target_i, args.target_tp, args.target_lra)
         residual_needed_db = args.target_i - float(limited_measure["input_i"])
         peak_headroom_db = args.target_tp - float(limited_measure["input_tp"])
         residual_gain_high = args.max_residual_gain_db if peak_headroom_db >= 0.0 else 0.0
@@ -280,13 +351,28 @@ def main() -> None:
             0.0 - args.max_attenuation_db,
             min(args.max_residual_gain_db, residual_gain_high),
         )
-        apply_gain(limited, tp_limited, residual_gain_db)
-        apply_true_peak_limiter(tp_limited, args.output_wav, args.target_tp)
+        apply_gain(limited, residual_gained, residual_gain_db)
+        master_transient_safety = {"enabled": False}
+        true_peak_input = residual_gained
+        if not args.disable_master_declick:
+            master_transient_safety = {
+                "enabled": True,
+                **apply_master_transient_safety(
+                    residual_gained,
+                    transient_safe,
+                    args.master_declick_threshold,
+                ),
+            }
+            true_peak_input = transient_safe
+        apply_true_peak_limiter(true_peak_input, args.output_wav, args.target_tp)
 
     final_measure = loudnorm_measure(args.output_wav, args.target_i, args.target_tp, args.target_lra)
     final_sections = ebur128_sections(args.output_wav)
     final_focus_windows = {
         "38_50s": ebur128_window_summary(final_sections, 38.0, 50.0),
+        "99_101s": ebur128_window_summary(final_sections, 99.0, 101.0),
+        "124_126s": ebur128_window_summary(final_sections, 124.0, 126.0),
+        "204_206s": ebur128_window_summary(final_sections, 204.0, 206.0),
     }
     metadata = {
         "enabled": True,
@@ -299,8 +385,10 @@ def main() -> None:
         "max_attenuation_db": args.max_attenuation_db,
         "max_residual_gain_db": args.max_residual_gain_db,
         "max_true_peak_limiter_reduction_db": args.max_true_peak_limiter_reduction_db,
+        "master_transient_safety": master_transient_safety,
         "desired_gain_db": desired_gain_db,
         "target_limited_by_true_peak": target_limited_by_true_peak,
+        "limiter_attempts": limiter_attempts,
         "whole_song_gain_db": whole_song_gain_db,
         "residual_gain_db": residual_gain_db,
         "pre_limiter_gain_db": whole_song_gain_db,

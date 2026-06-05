@@ -1,6 +1,6 @@
 {
-  "description": "Second-pass vocal EQ strategy: only the selected template's own problem domain can create rendered residual EQ actions. Full-spectrum deviations remain diagnostic-only.",
-  "max_actions": 4,
+  "description": "Second-pass vocal EQ strategy: selected-template residual EQ can reinforce severe covered problems, and can add psychoacoustic contrast boosts when extra presence/air makes body or mud feel smaller. Full-spectrum deviations remain diagnostic-first unless promoted by these policies.",
+  "max_actions": 5,
   "presence_safety_boost_db": 1.0,
   "template_coverage": {
     "template_a": ["sub", "low", "lowmid", "mid", "nasal"],
@@ -54,9 +54,35 @@
   },
   "covered_strong_policy": {
     "enabled": true,
-    "gain_scale": 0.5,
-    "max_abs_gain_db": 1.2,
-    "reason": "Strong hits inside template coverage are not ignored; add a small post-template corrective move so the base chain can be reinforced without changing its fixed DSP."
+    "gain_scale": 0.65,
+    "max_abs_gain_db": 1.6,
+    "reason": "Strong hits inside template coverage are not ignored; add a post-template corrective move so the base chain can be reinforced without changing its fixed DSP."
+  },
+  "perceptual_contrast_policy": {
+    "enabled": true,
+    "max_actions": 2,
+    "template_c": {
+      "trigger_body_to_presence": 8.0,
+      "trigger_upper_ratio_below": 0.12,
+      "presence_boost": {
+        "band": "upper",
+        "type": "boost",
+        "freq_hz": 3400.0,
+        "q": 0.75,
+        "min_gain_db": 0.8,
+        "max_gain_db": 1.6
+      },
+      "air_boost": {
+        "band": "air",
+        "type": "boost",
+        "freq_hz": 11000.0,
+        "q": 0.7,
+        "min_gain_db": 0.4,
+        "max_gain_db": 0.9,
+        "max_harsh_ratio": 0.04,
+        "max_sib_ratio": 0.018
+      }
+    }
   },
   "deviation_threshold_db": 1.5,
   "ratio_excess_threshold": 0.04,

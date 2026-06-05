@@ -21,6 +21,8 @@ WITH_VOLUME_AUTOMATION=0
 WITH_LOUDNESS_FINALIZER=1
 MIX_PLAN=""
 REFERENCE_AUDIO=""
+REFERENCE_VOCAL=""
+REFERENCE_ACCOMP=""
 
 shift 4 || true
 while [[ $# -gt 0 ]]; do
@@ -47,6 +49,22 @@ while [[ $# -gt 0 ]]; do
                 exit 1
             fi
             ;;
+        --reference-vocal)
+            shift
+            REFERENCE_VOCAL="${1:-}"
+            if [[ -z "$REFERENCE_VOCAL" ]]; then
+                echo "Error: --reference-vocal requires a path" >&2
+                exit 1
+            fi
+            ;;
+        --reference-accomp)
+            shift
+            REFERENCE_ACCOMP="${1:-}"
+            if [[ -z "$REFERENCE_ACCOMP" ]]; then
+                echo "Error: --reference-accomp requires a path" >&2
+                exit 1
+            fi
+            ;;
         *)
             echo "Error: unsupported option: $1" >&2
             exit 1
@@ -66,6 +84,12 @@ if [[ -f "$SCRIPT_DIR/msys_template_env.sh" && -d "$SCRIPT_DIR/../.tools/msys64"
 fi
 # shellcheck source=./common.sh
 source "$SCRIPT_DIR/common.sh"
+DELAYVERB_SEND="${DELAYVERB_SEND:-0.85}"
+DELAYVERB_SEND_PCT="$(python3 - "$DELAYVERB_SEND" <<'PY'
+import sys
+print(f"{float(sys.argv[1]) * 100:.1f}")
+PY
+)"
 
 if [[ -z "$TEMPLATE_ID" || -z "$VOCAL_IN" || -z "$ACCOMP_IN" || -z "$FINAL_OUT" ]]; then
     echo "Usage: $0 <template_a|template_b|template_c|template_d> <vocal.wav> <accomp.wav> <final.wav> [--with-volume-automation] [--no-loudness-finalizer] [--mix-plan plan.json]"
@@ -81,7 +105,17 @@ case "$TEMPLATE_ID" in
 esac
 
 if [[ "$TEMPLATE_ID" == "template_d" ]]; then
-    exec "$SCRIPT_DIR/full_fx_mix.sh" "$VOCAL_IN" "$ACCOMP_IN" "$FINAL_OUT"
+    D_CMD=("$SCRIPT_DIR/full_fx_mix.sh" "$VOCAL_IN" "$ACCOMP_IN" "$FINAL_OUT")
+    if [[ -n "$REFERENCE_AUDIO" ]]; then
+        D_CMD+=(--reference-audio "$REFERENCE_AUDIO")
+    fi
+    if [[ -n "$REFERENCE_VOCAL" ]]; then
+        D_CMD+=(--reference-vocal "$REFERENCE_VOCAL")
+    fi
+    if [[ -n "$REFERENCE_ACCOMP" ]]; then
+        D_CMD+=(--reference-accomp "$REFERENCE_ACCOMP")
+    fi
+    exec "${D_CMD[@]}"
 fi
 
 if [[ ! -f "$VOCAL_IN" ]]; then
@@ -112,15 +146,20 @@ VOCAL_3="$(make_temp_wav template_vocal_3)"
 VOCAL_4="$(make_temp_wav template_vocal_4)"
 VOCAL_5="$(make_temp_wav template_vocal_5)"
 VOCAL_CORRECTED="$(make_temp_wav template_vocal_residual_eq)"
+VOCAL_HF_SAFE="$(make_temp_wav template_vocal_hf_safe)"
+VOCAL_GROUP_DRY="$(make_temp_wav template_vocal_group_dry)"
 VOCAL_GROUP="$(make_temp_wav template_vocal_group)"
+ACCOMP_SAFE="$(make_temp_wav template_accomp_safe)"
 ACCOMP_1="$(make_temp_wav template_accomp_1)"
 ACCOMP_BUS="$(make_temp_wav template_accomp_bus)"
+ACCOMP_REF_BALANCED="$(make_temp_wav template_accomp_ref_balanced)"
 MIX_TMP="$(make_temp_wav template_mix)"
 MIX_TILTED="$(make_temp_wav template_mix_tilted)"
+MIX_HF_SAFE="$(make_temp_wav template_mix_hf_safe)"
 MASTER_1="$(make_temp_wav template_master_1)"
 MASTER_2="$(make_temp_wav template_master_2)"
 
-trap 'rm -f "$RESAMPLED_VOCAL" "$RESAMPLED_ACCOMP" "$AUTO_VOCAL" "$AUTO_ACCOMP" "$VOCAL_1" "$VOCAL_2" "$VOCAL_3" "$VOCAL_4" "$VOCAL_5" "$VOCAL_CORRECTED" "$VOCAL_GROUP" "$ACCOMP_1" "$ACCOMP_BUS" "$MIX_TMP" "$MIX_TILTED" "$MASTER_1" "$MASTER_2"' EXIT
+trap 'rm -f "$RESAMPLED_VOCAL" "$RESAMPLED_ACCOMP" "$AUTO_VOCAL" "$AUTO_ACCOMP" "$VOCAL_1" "$VOCAL_2" "$VOCAL_3" "$VOCAL_4" "$VOCAL_5" "$VOCAL_CORRECTED" "$VOCAL_HF_SAFE" "$VOCAL_GROUP_DRY" "$VOCAL_GROUP" "$ACCOMP_SAFE" "$ACCOMP_1" "$ACCOMP_BUS" "$ACCOMP_REF_BALANCED" "$MIX_TMP" "$MIX_TILTED" "$MIX_HF_SAFE" "$MASTER_1" "$MASTER_2"' EXIT
 
 VOCAL_RATE="$(audio_sample_rate "$VOCAL_IN")"
 ACCOMP_RATE="$(audio_sample_rate "$ACCOMP_IN")"
@@ -131,6 +170,7 @@ if [[ "$VOCAL_RATE" != "$ACCOMP_RATE" ]]; then
         -i "$VOCAL_IN" \
         -ar "$ACCOMP_RATE" \
         -ac 1 \
+        -c:a pcm_f32le \
         "$RESAMPLED_VOCAL" >/dev/null 2>&1
     VOCAL_SOURCE="$RESAMPLED_VOCAL"
 fi
@@ -200,9 +240,35 @@ if [[ -n "$MIX_PLAN" ]]; then
 else
     echo "[step 1b] Residual vocal EQ skipped: no mix plan"
 fi
-run_stage "vocal_group_fx" "$VOCAL_CHAIN_OUT" "$VOCAL_GROUP"
+echo "[step 1c] Vocal HF safety before group send"
+python3 "$SCRIPT_DIR/apply_vocal_hf_safety.py" \
+    "$VOCAL_CHAIN_OUT" \
+    "$VOCAL_HF_SAFE"
+VOCAL_CHAIN_OUT="$VOCAL_HF_SAFE"
+run_stage "vocal_group_fx" "$VOCAL_CHAIN_OUT" "$VOCAL_GROUP_DRY"
+echo "[step 1d] External DelayVerb group send: pre-fader send ${DELAYVERB_SEND_PCT}%"
+DELAYVERB_CMD=(python3 "$SCRIPT_DIR/apply_delayverb_group_fx.py"
+    "$VOCAL_GROUP_DRY"
+    "$VOCAL_GROUP"
+    --send "$DELAYVERB_SEND"
+    --cover-dry "$VOCAL_SOURCE")
+if [[ -n "$REFERENCE_AUDIO" ]]; then
+    DELAYVERB_CMD+=(--original-mix "$REFERENCE_AUDIO")
+fi
+if [[ -n "$REFERENCE_VOCAL" ]]; then
+    DELAYVERB_CMD+=(--original-vocal "$REFERENCE_VOCAL")
+fi
+if [[ -n "$REFERENCE_ACCOMP" ]]; then
+    DELAYVERB_CMD+=(--original-accomp "$REFERENCE_ACCOMP")
+fi
+"${DELAYVERB_CMD[@]}"
 
 echo "[step 2] Accompaniment insert chain: $TEMPLATE_ID"
+echo "[step 2a] Accompaniment transient safety"
+python3 "$SCRIPT_DIR/apply_accomp_safety.py" \
+    "$ACCOMP_SOURCE" \
+    "$ACCOMP_SAFE"
+ACCOMP_SOURCE="$ACCOMP_SAFE"
 case "$TEMPLATE_ID" in
     template_a|template_b)
         run_stage "template_music_proq3_ab" "$ACCOMP_SOURCE" "$ACCOMP_1"
@@ -222,12 +288,38 @@ if [[ -n "$MIX_PLAN" ]]; then
     echo "[step 3a] Bus balance from reference: vocal ${VOCAL_BUS_GAIN_DB} dB, accomp ${ACCOMP_BUS_GAIN_DB} dB"
 fi
 
-echo "[step 3] Stereo Out summing"
+ACCOMP_SUM_INPUT="$ACCOMP_BUS"
+ACCOMP_SUM_GAIN_DB="$ACCOMP_BUS_GAIN_DB"
+if [[ -n "$REFERENCE_VOCAL" && -n "$REFERENCE_ACCOMP" ]]; then
+    echo "[step 3a.1] Reference vocal/accompaniment dynamic balance"
+    BALANCE_DUCK_REPORT="${FINAL_OUT%.*}.reference_balance_ducking.json"
+    python3 "$SCRIPT_DIR/apply_reference_balance_ducking.py" \
+        --reference-vocal "$REFERENCE_VOCAL" \
+        --reference-accomp "$REFERENCE_ACCOMP" \
+        --current-vocal "$VOCAL_GROUP" \
+        --current-accomp "$ACCOMP_BUS" \
+        --output-accomp "$ACCOMP_REF_BALANCED" \
+        --report "$BALANCE_DUCK_REPORT" \
+        --vocal-bus-gain-db "$VOCAL_BUS_GAIN_DB" \
+        --accomp-bus-gain-db "$ACCOMP_BUS_GAIN_DB"
+    ACCOMP_SUM_INPUT="$ACCOMP_REF_BALANCED"
+    ACCOMP_SUM_GAIN_DB="0.0"
+fi
+
+echo "[step 3] Stereo Out summing (float intermediate)"
+# Sum vocal group + accompaniment with normalize=0 so relative balance is kept.
+# The float (pcm_f32le) intermediate is the actual fix for the broadband "滋啦"
+# crackle: the raw sum can briefly exceed 0 dBFS, and a 16-bit intermediate would
+# hard-clip that overshoot. In float it is preserved losslessly, and the mix
+# HF-safety alimiter (limit=0.985, step 3c) below acts as a clean peak ceiling
+# before the master Faust stages -- so no static bus headroom is needed, which
+# keeps loudness close to the reference target.
 ffmpeg -y -hide_banner \
     -i "$VOCAL_GROUP" \
-    -i "$ACCOMP_BUS" \
-    -filter_complex "[0:a]volume=${VOCAL_BUS_GAIN_DB}dB[v];[1:a]volume=${ACCOMP_BUS_GAIN_DB}dB[a];[v][a]amix=inputs=2:normalize=0[m]" \
+    -i "$ACCOMP_SUM_INPUT" \
+    -filter_complex "[0:a]volume=${VOCAL_BUS_GAIN_DB}dB[v];[1:a]volume=${ACCOMP_SUM_GAIN_DB}dB[a];[v][a]amix=inputs=2:normalize=0[m]" \
     -map "[m]" \
+    -c:a pcm_f32le \
     "$MIX_TMP" >/dev/null 2>&1
 
 if [[ -n "$MIX_PLAN" ]]; then
@@ -240,6 +332,16 @@ if [[ -n "$MIX_PLAN" ]]; then
 else
     MIX_INPUT_TO_MASTER="$MIX_TMP"
 fi
+
+echo "[step 3c] Mix HF safety for residual crackle"
+python3 "$SCRIPT_DIR/apply_vocal_hf_safety.py" \
+    "$MIX_INPUT_TO_MASTER" \
+    "$MIX_HF_SAFE" \
+    --intensity 0.24 \
+    --max-deess 0.44 \
+    --static-cut-db -0.35 \
+    --static-cut-q 1.2
+MIX_INPUT_TO_MASTER="$MIX_HF_SAFE"
 
 echo "[step 4] Master bus chain: Pro-Q3 -> GW MixCentric -> L2 -> loudness finalizer"
 case "$TEMPLATE_ID" in

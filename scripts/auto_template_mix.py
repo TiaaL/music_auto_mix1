@@ -110,11 +110,22 @@ def run_renderer(
     loudness_finalizer: bool,
     legacy_current_renderer: bool,
     reference_audio: Path | None = None,
+    reference_vocal: Path | None = None,
+    reference_accomp: Path | None = None,
     mix_plan: Path | None = None,
 ) -> dict:
     if legacy_current_renderer:
         script = ROOT / "scripts" / "full_fx_mix.sh"
         cmd = build_bash_command(renderer, script, [vocal, accomp, output])
+        if reference_audio is not None:
+            ref_arg = to_msys_path(reference_audio) if is_msys_bash(renderer) else str(reference_audio)
+            cmd += ["--reference-audio", ref_arg]
+        if reference_vocal is not None:
+            ref_vocal_arg = to_msys_path(reference_vocal) if is_msys_bash(renderer) else str(reference_vocal)
+            cmd += ["--reference-vocal", ref_vocal_arg]
+        if reference_accomp is not None:
+            ref_accomp_arg = to_msys_path(reference_accomp) if is_msys_bash(renderer) else str(reference_accomp)
+            cmd += ["--reference-accomp", ref_accomp_arg]
     elif render_backend == "wasm":
         script = ROOT / "scripts" / "render_template_mix_wasm.mjs"
         cmd = ["node", str(script), template_id, str(vocal), str(accomp), str(output)]
@@ -130,6 +141,12 @@ def run_renderer(
         if reference_audio is not None:
             ref_arg = to_msys_path(reference_audio) if is_msys_bash(renderer) else str(reference_audio)
             cmd += ["--reference-audio", ref_arg]
+        if reference_vocal is not None:
+            ref_vocal_arg = to_msys_path(reference_vocal) if is_msys_bash(renderer) else str(reference_vocal)
+            cmd += ["--reference-vocal", ref_vocal_arg]
+        if reference_accomp is not None:
+            ref_accomp_arg = to_msys_path(reference_accomp) if is_msys_bash(renderer) else str(reference_accomp)
+            cmd += ["--reference-accomp", ref_accomp_arg]
         if mix_plan is not None:
             plan_arg = to_msys_path(mix_plan) if is_msys_bash(renderer) else str(mix_plan)
             cmd += ["--mix-plan", plan_arg]
@@ -146,6 +163,9 @@ def run_renderer(
 
 
 def main() -> None:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description="Analyze, select template, render mix, and write reports.")
     parser.add_argument("vocal_wav", type=Path)
     parser.add_argument("accomp_wav", type=Path)
@@ -213,6 +233,8 @@ def main() -> None:
     analysis = run_analyzer(analyzer_python, analyzer, vocal_wav)
 
     ref_full_mix: Path | None = None
+    ref_vocal: Path | None = None
+    ref_accomp: Path | None = None
     ref_features: dict | None = None
     input_features: dict | None = None
     if not args.no_reference:
@@ -260,6 +282,8 @@ def main() -> None:
         not args.no_loudness_finalizer,
         args.legacy_current_renderer,
         reference_audio=ref_full_mix,
+        reference_vocal=ref_vocal,
+        reference_accomp=ref_accomp,
         mix_plan=plan_path,
     )
     loudness_path = output_wav.with_suffix(".loudness.json")

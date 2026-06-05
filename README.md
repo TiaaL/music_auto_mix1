@@ -271,6 +271,19 @@ Three parallel send buses summed onto the stereo dry path:
 
 The reverb send is intentionally clean (not dry, not washy): short tail, pre-delay
 separates dry vocal from reverb onset.
+The external DelayVerb group send defaults to 85% pre-fader and can be overridden
+with `DELAYVERB_SEND=0.xx` for audition renders.
+Its auto-reference preset now estimates BPM from the reference backing track,
+uses Manual BPM tempo sync for offline renders, and selects the delay division
+closest to the reference-derived space length. Reverb mode is selected through a
+measured `space_profile`: dry/narrow references can still use Room or Chamber,
+short-but-wide vocal spaces move to Plate, and longer/wider spaces move toward
+Hall or Space.
+
+After a template is selected, the renderer can apply plan-driven residual vocal
+EQ before the group send. Severe covered problems can be reinforced more
+strongly than the fixed template EQ, and template C can add small presence/air
+contrast boosts when extra clarity makes heavy body or mud feel less dominant.
 
 ### Accompaniment + master bus (stereo)
 
