@@ -250,8 +250,8 @@ Configuration lives in `config/residual_vocal_eq_rules.json`.
 When a reference full-mix, vocal stem, and accompaniment stem are provided (auto-resolved by song name from `downloads/feishu_long_audio_screened/{原曲,原曲人声,伴奏}/` or a sibling workspace folder such as `/Users/sly/Desktop/code/music/feishu_long_audio_screened`, or explicit via `--reference-audio` / `--reference-vocal` / `--reference-accomp` / `--reference-root`), `analyze_reference.py` extracts features and `plan_mix_template.build_reference_overrides` translates them into:
 
 - **`bus_balance`** — the original song's active vocal/accompaniment ratio. The plan stores the reference gap; **gains are computed at render time** by `compute_render_bus_balance.py` (step 3a), after `vocal_group_fx` and the accompaniment chain have run. The correction is conservative: when the vocal is behind the reference, it splits the move between a limited vocal lift and a limited accompaniment cut; it does not independently chase each stem's LUFS.
-- **`source_eq.vocal_eq`** — small source EQ moves after the selected vocal template chain, based on the current dry vocal's active-region tonal shape vs. the original-song vocal stem.
-- **`source_eq.accomp_eq`** — cut-only accompaniment carve EQ after the music template EQ, focused on bands where the current accompaniment masks the current vocal and the vocal sits behind the reference balance.
+- **`source_eq.vocal_eq`** — source EQ moves after the selected vocal template chain, based on the current dry vocal's active-region tonal shape vs. the original-song vocal stem. Upper/air boosts are evidence-gated by template and sibilance/harshness safety; 14 kHz air is conservative and is never a default lift.
+- **`source_eq.accomp_eq`** — cut-only accompaniment carve EQ after the music template EQ, focused on bands where the current accompaniment masks the current vocal and the vocal sits behind the reference balance. One problem region should only be carved once, and carve decisions are coordinated with dynamic ducking so the same upper/mid issue is not cut twice.
 - **`dry_vocal_strategy`** — current dry-vocal tags and a ducking profile. Low-mid-heavy, dark, or presence-masked vocals ask the accompaniment to yield more in body/presence/air bands while voiced sections are active.
 - **`master_tilt_eq`** — up to 4 EQ moves between amix and master Pro-Q3, applied by `apply_master_tilt_eq.py`. Pushes the mix's 8-band tonal shape toward the reference's.
 
@@ -266,6 +266,32 @@ Master tilt safety rules (in `plan_mix_template.MASTER_TILT_*`):
 | `harsh` (6.2 kHz), `sib` (9.5 kHz) | **cut-only** | Boosting these on a complete mix amplifies sibilance and cymbal hash. Brightness deficit must be accepted, not boosted. |
 
 Reverb characteristics from the reference (`reverb_proxy`) and dynamics are recorded for diagnostics but **not yet applied** — spatial effects still come from the built-in `vocal_group_fx.dsp` sends (Shimmer / RVerb / SuperTap). External `delayverb` is not wired into this pipeline yet.
+
+---
+
+## Current plan constraints
+
+Recent tuning focuses on plan quality rather than fader or master-loudness changes.
+Do not use volume balance or loudness as a substitute for better source decisions:
+
+- **Do not touch volume balance for tone fixes.** `auto_volume_mix.py` and `compute_render_bus_balance.py` own level relationship. Source EQ, carve, and ducking should make space without rewriting the vocal/accompaniment ratio.
+- **Do not touch master loudness for masking fixes.** `master_loudness_finalize.py` stays master-bus only. If a render is too quiet because earlier EQ/ducking removed too much energy, fix the earlier tonal decision rather than adding more master gain.
+- **Do not duplicate the same accompaniment treatment.** `source_eq.accomp_eq` may statically carve a spectral problem region, and `apply_accomp_vocal_duck.py` may dynamically duck while the vocal is active. If carve already handles `presence`/`body`, the duck profile is reduced for that same region.
+- **Do not default to air boosts.** 14 kHz air boosts are only allowed when upper/air is genuinely deficient and harsh/sibilance evidence is safe. Template B may use stronger upper recovery when evidence supports it; air remains conservative.
+- **Prefer dry-vocal profile evidence.** Thick, muffled, nasal, thin, harsh, sibilant, and dynamically weak vocals should become explicit strategy tags and plan evidence, not ad hoc EQ moves.
+
+High-frequency boost evidence currently checks:
+
+| Evidence | Purpose |
+|---|---|
+| `harsh` and `sib` ratios | Avoid adding brightness when harshness or sibilance is already high |
+| `peakiness_harsh` / `peakiness_upper` | Avoid boosting sharp upper-band spikes |
+| active-region vocal tonal deltas | Confirm `upper` or `air` is actually below the reference vocal |
+| selected template | Template B can recover more upper presence than A/C when the evidence is safe |
+
+The resolved plan records skipped high-frequency boosts under `source_eq.vocal_eq.skipped`
+or `residual_vocal_eq.suppressed_high_boosts`, so a rejected boost is auditable instead
+of silently disappearing.
 
 ---
 
@@ -299,8 +325,8 @@ It writes `reference.overrides.dry_vocal_strategy` into the resolved mix plan. T
 `render_template_mix.sh` applies accompaniment processing in this order:
 
 1. Template music EQ from `template_music_proq3_{ab|c}`.
-2. Reference/source carve EQ from `source_eq.accomp_eq`; this is cut-only and only carves masking bands when the active vocal is behind the reference balance.
-3. Vocal-aware multiband ducking from `apply_accomp_vocal_duck.py`; this is keyed by the post-FX vocal group, so the accompaniment yields mainly while the singer is active.
+2. Reference/source carve EQ from `source_eq.accomp_eq`; this is cut-only and only carves masking bands when the active vocal is behind the reference balance. The plan keeps one action per problem region, such as `presence` or `body`.
+3. Vocal-aware multiband ducking from `apply_accomp_vocal_duck.py`; this is keyed by the post-FX vocal group, so the accompaniment yields mainly while the singer is active. If carve already handled the same region, ducking is reduced there.
 4. Conservative bus balance from `compute_render_bus_balance.py`; this matches the reference active vocal/accompaniment gap, rather than boosting both stems toward their own LUFS targets.
 
 The ducking bands are low (`<180 Hz`), body (`180-1200 Hz`), presence (`1200-5000 Hz`),
@@ -318,6 +344,13 @@ Output metadata:
 Important constraint: this layer is for **space making**, not loudness rewriting. Overall
 vocal/accompaniment balance still follows the original song's active ratio conservatively,
 and final loudness stays on the master bus only.
+
+The plan metadata for accompaniment coordination lives under:
+
+- `source_eq.accomp_eq.actions[*].region`
+- `source_eq.accomp_eq.duck_coordination`
+- `<output>.accomp_duck.json.profile`
+- `<output>.accomp_duck.json.duck_coordination`
 
 ---
 

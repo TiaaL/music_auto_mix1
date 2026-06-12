@@ -149,6 +149,21 @@ def profile_from_plan(template: str, plan: dict[str, Any]) -> dict[str, float]:
     profile["body_base_db"] += float(dry_duck.get("body_extra_db") or 0.0)
     profile["presence_base_db"] += float(dry_duck.get("presence_extra_db") or 0.0)
     profile["air_base_db"] += float(dry_duck.get("air_extra_db") or 0.0)
+    coordination = accomp_eq.get("duck_coordination") or {}
+    regions = coordination.get("regions") or {}
+    presence_carve = float(regions.get("presence") or 0.0)
+    body_carve = float(regions.get("body") or 0.0)
+    if presence_carve > 0.0:
+        reduction = min(presence_carve / 2.6, 1.0)
+        profile["presence_base_db"] *= 1.0 - 0.55 * reduction
+        profile["presence_extra_db"] *= 1.0 - 0.70 * reduction
+        profile["air_base_db"] *= 1.0 - 0.45 * reduction
+    if body_carve > 0.0:
+        reduction = min(body_carve / 2.6, 1.0)
+        profile["low_extra_db"] *= 1.0 - 0.35 * reduction
+        profile["body_base_db"] *= 1.0 - 0.55 * reduction
+    for key, value in list(profile.items()):
+        profile[key] = round(max(0.0, float(value)), 4)
     return profile
 
 
@@ -197,6 +212,10 @@ def process(accomp: np.ndarray, vocal: np.ndarray, sr: int, template: str, plan:
         "enabled": True,
         "template": template,
         "profile": profile,
+        "duck_coordination": (
+            ((plan.get("reference") or {}).get("overrides", {}).get("source_eq", {}).get("accomp_eq", {}))
+            .get("duck_coordination")
+        ),
         "active_fraction": round(float(np.mean(active)), 4),
         "low_duck_db_active_p50": round(float(np.median(low_gain_db[active])) if np.any(active) else 0.0, 3),
         "low_duck_db_active_p90": round(float(np.percentile(low_gain_db[active], 10)) if np.any(active) else 0.0, 3),
