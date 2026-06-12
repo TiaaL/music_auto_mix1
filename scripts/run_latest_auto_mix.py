@@ -103,6 +103,11 @@ def main() -> None:
         default=None,
         help="Reference track; its integrated LUFS becomes the loudness target.",
     )
+    parser.add_argument(
+        "--stage-report",
+        action="store_true",
+        help="Measure elapsed time plus LUFS/true-peak at each large render stage.",
+    )
     args = parser.parse_args()
 
     out_dir = args.out_dir
@@ -134,6 +139,8 @@ def main() -> None:
         auto_mix_cmd.append("--no-loudness-finalizer")
     if args.reference_audio:
         auto_mix_cmd += ["--reference-audio", str(args.reference_audio)]
+    if args.stage_report:
+        auto_mix_cmd.append("--stage-report")
     run(auto_mix_cmd)
 
     summary = load_json(report_dir / f"{batch_label}_summary.json")
@@ -184,6 +191,7 @@ def main() -> None:
         "loudness_finalizer": not args.no_loudness_finalizer,
         "loudness": summary.get("loudness"),
         "balance": summary.get("balance"),
+        "stage_report": summary.get("stage_report"),
         "feature_audit": feature_audit,
     }
     shutil.copy2(mix_path, latest_mix_path)

@@ -147,6 +147,7 @@ def run_renderer(
     legacy_current_renderer: bool,
     reference_audio: Path | None = None,
     mix_plan: Path | None = None,
+    stage_report: bool = False,
 ) -> dict:
     if legacy_current_renderer:
         script = ROOT / "scripts" / "full_fx_mix.sh"
@@ -162,6 +163,8 @@ def run_renderer(
             cmd += ["--reference-audio", str(reference_audio)]
         if mix_plan is not None:
             cmd += ["--mix-plan", str(mix_plan)]
+        if stage_report:
+            cmd.append("--stage-report")
     else:
         script = ROOT / "scripts" / "render_template_mix.sh"
         cmd = build_bash_command(renderer, script, [template_id, vocal, accomp, output])
@@ -175,6 +178,8 @@ def run_renderer(
         if mix_plan is not None:
             plan_arg = to_msys_path(mix_plan) if is_msys_bash(renderer) else str(mix_plan)
             cmd += ["--mix-plan", plan_arg]
+        if stage_report:
+            cmd.append("--stage-report")
     if dry_run:
         return {"ran": False, "command": cmd}
     proc = subprocess.run(cmd, text=True, encoding="utf-8", errors="replace", capture_output=True, check=False, cwd=ROOT)
@@ -242,6 +247,11 @@ def main() -> None:
         "--no-reference",
         action="store_true",
         help="Skip reference-driven feature extraction and overrides.",
+    )
+    parser.add_argument(
+        "--stage-report",
+        action="store_true",
+        help="Measure elapsed time plus LUFS/true-peak at each large render stage.",
     )
     args = parser.parse_args()
 
@@ -322,6 +332,7 @@ def main() -> None:
         args.legacy_current_renderer,
         reference_audio=ref_full_mix,
         mix_plan=plan_path,
+        stage_report=args.stage_report,
     )
     loudness_path = output_wav.with_suffix(".loudness.json")
     loudness = json.loads(loudness_path.read_text(encoding="utf-8-sig")) if loudness_path.exists() else None
@@ -337,6 +348,7 @@ def main() -> None:
         "render": render,
         "loudness_finalizer": not args.no_loudness_finalizer,
         "loudness": loudness,
+        "stage_report": str(output_wav.with_suffix(".stage_report.json")) if args.stage_report else None,
         "important_note": (
             "A/B/C now render through template-specific Faust approximation chains. "
             "Default backend is native Faust shell rendering. Use --render-backend wasm only for "
