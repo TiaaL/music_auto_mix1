@@ -22,6 +22,9 @@ import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+import numpy as np
+import soundfile as sf
+
 from audio_gain_rules import AudioFeatures, GainDecision
 
 
@@ -63,6 +66,7 @@ def command_path(name: str) -> str:
 
 FFMPEG = command_path("ffmpeg")
 FFPROBE = command_path("ffprobe")
+_AUDIO_CACHE: dict[str, tuple[np.ndarray, int]] = {}
 
 
 @dataclass
@@ -246,6 +250,40 @@ def run(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
     )
 
 
+def cache_key(path: str) -> str:
+    return str(Path(path).resolve(strict=False))
+
+
+def invalidate_audio_cache(path: str) -> None:
+    _AUDIO_CACHE.pop(cache_key(path), None)
+
+
+def load_audio_cached(path: str) -> tuple[np.ndarray, int]:
+    key = cache_key(path)
+    cached = _AUDIO_CACHE.get(key)
+    if cached is not None:
+        return cached
+    data, sr = sf.read(path, always_2d=True, dtype="float64")
+    data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
+    _AUDIO_CACHE[key] = (data, int(sr))
+    return data, int(sr)
+
+
+def audio_window(path: str, start: float | None = None, end: float | None = None) -> np.ndarray:
+    data, sr = load_audio_cached(path)
+    start_frame = 0 if start is None else max(0, int(start * sr))
+    end_frame = data.shape[0] if end is None else min(data.shape[0], int(end * sr))
+    if end_frame <= start_frame:
+        return data[:0]
+    return data[start_frame:end_frame]
+
+
+def dbfs(value: float, floor: float = -99.0) -> float:
+    if value <= 0.0 or not math.isfinite(value):
+        return floor
+    return 20.0 * math.log10(value)
+
+
 def ffprobe_duration(path: str) -> float:
     cp = run(
         [
@@ -360,43 +398,61 @@ def build_timeline(duration: float, voice: list[tuple[float, float]]) -> list[Se
 
 
 def measure_mean_volume(path: str, start: float | None = None, end: float | None = None) -> float:
-    cmd = [FFMPEG, "-hide_banner"]
-    if start is not None:
-        cmd += ["-ss", f"{start:.6f}"]
-    if end is not None:
-        cmd += ["-to", f"{end:.6f}"]
-    cmd += ["-i", path, "-af", "volumedetect", "-f", "null", "-"]
-    cp = run(cmd, check=False)
-    text = (cp.stdout or "") + "\n" + (cp.stderr or "")
-    m = MEAN_VOL_RE.search(text)
-    if not m:
-        return -60.0
-    return float(m.group(1))
+    try:
+        window = audio_window(path, start, end)
+        if window.size == 0:
+            return -60.0
+        return max(-60.0, dbfs(float(np.sqrt(np.mean(np.square(window)))), floor=-60.0))
+    except Exception:
+        cmd = [FFMPEG, "-hide_banner"]
+        if start is not None:
+            cmd += ["-ss", f"{start:.6f}"]
+        if end is not None:
+            cmd += ["-to", f"{end:.6f}"]
+        cmd += ["-i", path, "-af", "volumedetect", "-f", "null", "-"]
+        cp = run(cmd, check=False)
+        text = (cp.stdout or "") + "\n" + (cp.stderr or "")
+        m = MEAN_VOL_RE.search(text)
+        if not m:
+            return -60.0
+        return float(m.group(1))
 
 
 def measure_max_volume(path: str) -> float:
-    cmd = [FFMPEG, "-hide_banner", "-i", path, "-af", "volumedetect", "-f", "null", "-"]
-    cp = run(cmd, check=False)
-    text = (cp.stdout or "") + "\n" + (cp.stderr or "")
-    m = MAX_VOL_RE.search(text)
-    if not m:
-        return -99.0
-    return float(m.group(1))
+    try:
+        data = audio_window(path)
+        if data.size == 0:
+            return -99.0
+        return dbfs(float(np.max(np.abs(data))), floor=-99.0)
+    except Exception:
+        cmd = [FFMPEG, "-hide_banner", "-i", path, "-af", "volumedetect", "-f", "null", "-"]
+        cp = run(cmd, check=False)
+        text = (cp.stdout or "") + "\n" + (cp.stderr or "")
+        m = MAX_VOL_RE.search(text)
+        if not m:
+            return -99.0
+        return float(m.group(1))
 
 
 def measure_peak_volume(path: str, start: float | None = None, end: float | None = None) -> float:
-    cmd = [FFMPEG, "-hide_banner"]
-    if start is not None:
-        cmd += ["-ss", f"{start:.6f}"]
-    if end is not None:
-        cmd += ["-to", f"{end:.6f}"]
-    cmd += ["-i", path, "-af", "volumedetect", "-f", "null", "-"]
-    cp = run(cmd, check=False)
-    text = (cp.stdout or "") + "\n" + (cp.stderr or "")
-    m = MAX_VOL_RE.search(text)
-    if not m:
-        return -99.0
-    return float(m.group(1))
+    try:
+        window = audio_window(path, start, end)
+        if window.size == 0:
+            return -99.0
+        return dbfs(float(np.max(np.abs(window))), floor=-99.0)
+    except Exception:
+        cmd = [FFMPEG, "-hide_banner"]
+        if start is not None:
+            cmd += ["-ss", f"{start:.6f}"]
+        if end is not None:
+            cmd += ["-to", f"{end:.6f}"]
+        cmd += ["-i", path, "-af", "volumedetect", "-f", "null", "-"]
+        cp = run(cmd, check=False)
+        text = (cp.stdout or "") + "\n" + (cp.stderr or "")
+        m = MAX_VOL_RE.search(text)
+        if not m:
+            return -99.0
+        return float(m.group(1))
 
 
 def clamp(x: float, lo: float, hi: float) -> float:
@@ -610,6 +666,7 @@ def apply_in_place_gain(path: str, gain_db: float) -> None:
     try:
         render_volume_only(path, tmp_path, gain_db)
         os.replace(tmp_path, path)
+        invalidate_audio_cache(path)
     finally:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
@@ -891,7 +948,7 @@ def mix_tracks(vocal_path: str, accomp_path: str, output_path: str) -> None:
                 "-i",
                 accomp_path,
                 "-filter_complex",
-                "[0:a]pan=stereo|c0=c0|c1=c0[v];[v][1:a]amix=inputs=2:normalize=0[m]",
+                "[0:a]pan=stereo|c0=c0|c1=c0[v];[v][1:a]amix=inputs=2:dropout_transition=0[m]",
                 "-map",
                 "[m]",
                 mix_tmp,

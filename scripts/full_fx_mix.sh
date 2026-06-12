@@ -21,6 +21,7 @@ FINAL_OUT="${3:-}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=./common.sh
 source "$SCRIPT_DIR/common.sh"
+PYTHON_BIN="$(project_python_bin)"
 # Volume trim logic is currently disabled.
 # VOCAL_MIX_TRIM_DB="-2.5"
 # ACCOMP_MIX_TRIM_DB="0.0"
@@ -63,7 +64,7 @@ MIX_TMP="$(make_temp_wav full_chain_mix_tmp)"
 trap 'rm -f "$AUTO_VOCAL" "$AUTO_ACCOMP" "$VOCAL_FX" "$ACCOMP_FX" "$MIX_TMP"' EXIT
 
 echo "[step 1/4] Volume + dynamics shaping (vo/bc rules)"
-python3 "$SCRIPT_DIR/auto_volume_mix.py" \
+"$PYTHON_BIN" "$SCRIPT_DIR/auto_volume_mix.py" \
     "$VOCAL_IN" \
     "$ACCOMP_IN" \
     --vocal-out "$AUTO_VOCAL" \
@@ -79,7 +80,7 @@ echo "[step 4/4] Stereo mixdown"
 ffmpeg -y -hide_banner \
     -i "$VOCAL_FX" \
     -i "$ACCOMP_FX" \
-    -filter_complex "[0:a]volume=${VOCAL_MIX_TRIM_DB}dB[v];[1:a]volume=${ACCOMP_MIX_TRIM_DB}dB[a];[v][a]amix=inputs=2:normalize=0[m]" \
+    -filter_complex "[0:a]volume=${VOCAL_MIX_TRIM_DB}dB[v];[1:a]volume=${ACCOMP_MIX_TRIM_DB}dB[a];[v][a]amix=inputs=2:dropout_transition=0[m]" \
     -map "[m]" \
     "$MIX_TMP" >/dev/null 2>&1
 

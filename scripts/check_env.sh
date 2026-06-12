@@ -5,6 +5,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=./common.sh
 source "$SCRIPT_DIR/common.sh"
+PYTHON_BIN="$(project_python_bin)"
+FAUST_BIN="$(project_faust_bin)"
 
 missing=0
 
@@ -23,7 +25,7 @@ echo "Faust repo environment check"
 echo "Root: $ROOT_DIR"
 echo ""
 echo "Build requirements:"
-check_cmd "faust" "required to compile DSP sources"
+check_cmd "$FAUST_BIN" "required to compile DSP sources"
 check_cmd "clang++" "required to compile generated C++"
 check_cmd "make" "required for build orchestration"
 
@@ -32,7 +34,28 @@ echo "Workflow requirements:"
 check_cmd "sox" "required for stats, tests, and sample generation"
 check_cmd "ffmpeg" "required for mix/render workflows"
 check_cmd "ffprobe" "required for duration analysis in auto_volume_mix.py"
-check_cmd "python3" "required for auto_volume_mix.py"
+check_cmd "$PYTHON_BIN" "project Python for automation scripts"
+
+echo ""
+echo "Python packages in project environment:"
+if "$PYTHON_BIN" - <<'PY'
+import importlib
+mods = ["numpy", "scipy", "soundfile", "librosa"]
+missing = []
+for name in mods:
+    try:
+        mod = importlib.import_module(name)
+        print(f"[ok]      {name:<10} {getattr(mod, '__version__', '')}")
+    except Exception as exc:
+        print(f"[missing] {name:<10} {exc}")
+        missing.append(name)
+raise SystemExit(1 if missing else 0)
+PY
+then
+    :
+else
+    missing=1
+fi
 
 echo ""
 echo "Library / path note:"

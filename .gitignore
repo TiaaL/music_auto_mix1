@@ -52,6 +52,7 @@ downloads/
 # Local env / logs
 .env
 .venv/
+.pip-cache/
 .python/
 python/
 .tools/

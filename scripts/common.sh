@@ -51,9 +51,36 @@ ensure_binary() {
 
 make_temp_wav() {
     local prefix="${1:-faust_tmp}"
+    local base
     local tmp
-    tmp="$(mktemp "${TMPDIR:-/tmp}/${prefix}.XXXXXX.wav")"
+    base="$(mktemp "${TMPDIR:-/tmp}/${prefix}.XXXXXX")"
+    tmp="${base}.wav"
+    mv "$base" "$tmp"
     printf '%s\n' "$tmp"
+}
+
+project_python_bin() {
+    if [[ -n "${PYTHON_BIN:-}" ]]; then
+        printf '%s\n' "$PYTHON_BIN"
+    elif [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
+        printf '%s\n' "$ROOT_DIR/.venv/bin/python"
+    elif [[ -x "$ROOT_DIR/.venv/Scripts/python.exe" ]]; then
+        printf '%s\n' "$ROOT_DIR/.venv/Scripts/python.exe"
+    else
+        printf '%s\n' "python3"
+    fi
+}
+
+project_faust_bin() {
+    if [[ -n "${FAUST:-}" ]]; then
+        printf '%s\n' "$FAUST"
+    elif [[ -x "$ROOT_DIR/.tools/faust-local/bin/faust" ]]; then
+        printf '%s\n' "$ROOT_DIR/.tools/faust-local/bin/faust"
+    elif [[ -x "$ROOT_DIR/.tools/msys64/usr/bin/faust.exe" ]]; then
+        printf '%s\n' "$ROOT_DIR/.tools/msys64/usr/bin/faust.exe"
+    else
+        printf '%s\n' "faust"
+    fi
 }
 
 audio_channels() {

@@ -1,18 +1,28 @@
 #!/usr/bin/env python3
-"""Finalize master loudness with whole-song static gain and limiting."""
+"""Finalize master loudness: gain on master bus BEFORE L2, never boost after limiter."""
 
 from __future__ import annotations
 
 import argparse
+import array
 import json
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
+
+FINAL_LOUDNESS_MIN_LUFS = -13.5
+FINAL_LOUDNESS_MAX_LUFS = -12.5
+DEFAULT_FINAL_TARGET_LUFS = -13.0
+PREGAIN_INPUT_TP_HEADROOM_DB = -0.3
+DEFAULT_DECLICK_THRESHOLD = 0.60
+DEFAULT_MAX_DECLICK_SAMPLES = 4
+DEFAULT_MAX_DECLICK_EVENTS = 2000
 
 
 def command_path(name: str) -> str:
@@ -153,6 +163,9 @@ def ebur128_window_summary(
 
 
 def apply_gain(input_path: Path, output_path: Path, gain_db: float) -> None:
+    if abs(gain_db) < 0.01:
+        shutil.copyfile(input_path, output_path)
+        return
     proc = run(
         [
             FFMPEG,
@@ -170,11 +183,35 @@ def apply_gain(input_path: Path, output_path: Path, gain_db: float) -> None:
         raise RuntimeError(proc.stderr)
 
 
-def apply_true_peak_limiter(input_path: Path, output_path: Path, ceiling_db: float) -> None:
+def clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
+def peak_safety_trim_db(
+    measured_tp: float,
+    target_tp: float,
+    limiter_headroom_db: float = 2.0,
+) -> float:
+    """Static attenuation only (never boost). Leaves headroom for a gentle limiter."""
+    overshoot = measured_tp - (target_tp + limiter_headroom_db)
+    if overshoot <= 0.0:
+        return 0.0
+    return -overshoot
+
+
+def apply_soft_peak_limit(
+    input_path: Path,
+    output_path: Path,
+    ceiling_db: float,
+    attack_ms: float = 50.0,
+    release_ms: float = 300.0,
+) -> None:
+    """Gentle true-peak ceiling. Slow attack avoids the crackle of the old 5 ms limiter."""
     ceiling = 10.0 ** (ceiling_db / 20.0)
     filter_graph = (
-        "aresample=192000,"
-        f"alimiter=limit={ceiling:.8f}:attack=5:release=80:level=false:latency=true,"
+        "aresample=176400,"
+        f"alimiter=limit={ceiling:.8f}:attack={attack_ms:.1f}:"
+        f"release={release_ms:.1f}:level=false,"
         "aresample=44100"
     )
     proc = run(
@@ -194,8 +231,253 @@ def apply_true_peak_limiter(input_path: Path, output_path: Path, ceiling_db: flo
         raise RuntimeError(proc.stderr)
 
 
-def clamp(value: float, low: float, high: float) -> float:
-    return max(low, min(high, value))
+def audio_stream_info(path: Path) -> tuple[int, int]:
+    proc = run(
+        [
+            command_path("ffprobe"),
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=sample_rate,channels",
+            "-of",
+            "json",
+            str(path),
+        ]
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr)
+    streams = json.loads(proc.stdout).get("streams") or []
+    if not streams:
+        raise RuntimeError(f"No audio stream found: {path}")
+    stream = streams[0]
+    return int(stream["sample_rate"]), int(stream["channels"])
+
+
+def decode_f32le(path: Path, sample_rate: int, channels: int) -> array.array:
+    proc = subprocess.run(
+        [
+            FFMPEG,
+            "-v",
+            "error",
+            "-i",
+            str(path),
+            "-f",
+            "f32le",
+            "-acodec",
+            "pcm_f32le",
+            "-ar",
+            str(sample_rate),
+            "-ac",
+            str(channels),
+            "-",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.decode("utf-8", errors="replace"))
+    samples = array.array("f")
+    samples.frombytes(proc.stdout)
+    if sys.byteorder != "little":
+        samples.byteswap()
+    return samples
+
+
+def encode_f32le_wav(samples: array.array, sample_rate: int, channels: int, output_path: Path) -> None:
+    payload = array.array("f", samples)
+    if sys.byteorder != "little":
+        payload.byteswap()
+    proc = subprocess.run(
+        [
+            FFMPEG,
+            "-y",
+            "-v",
+            "error",
+            "-f",
+            "f32le",
+            "-ar",
+            str(sample_rate),
+            "-ac",
+            str(channels),
+            "-i",
+            "-",
+            "-c:a",
+            "pcm_s16le",
+            str(output_path),
+        ],
+        input=payload.tobytes(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.decode("utf-8", errors="replace"))
+
+
+def repair_isolated_clicks(
+    samples: array.array,
+    sample_rate: int,
+    channels: int,
+    threshold: float,
+    max_click_samples: int,
+    max_events: int,
+) -> dict[str, object]:
+    """Replace isolated full-band sample spikes with linear interpolation.
+
+    This intentionally avoids any gain, compression, or loudness compensation. It only
+    touches very short discontinuities whose neighboring samples already agree with
+    each other, which is the waveform shape of digital clicks after limiting.
+    """
+    frames = len(samples) // channels
+    if frames < 8:
+        return {"enabled": True, "events": 0, "samples_repaired": 0, "threshold": threshold, "examples": []}
+
+    events: list[dict[str, float | int]] = []
+    samples_repaired = 0
+    total_events = 0
+    per_channel_counts = [0 for _ in range(channels)]
+
+    for channel in range(channels):
+        def record_event(
+            start: int,
+            width: int,
+            max_residual: float,
+            repair_type: str,
+        ) -> None:
+            nonlocal samples_repaired, total_events
+            samples_repaired += width
+            total_events += 1
+            per_channel_counts[channel] += 1
+            if len(events) < 40:
+                events.append(
+                    {
+                        "time_sec": round(start / sample_rate, 6),
+                        "channel": channel,
+                        "samples": width,
+                        "max_residual": round(max_residual, 6),
+                        "type": repair_type,
+                    }
+                )
+
+        candidates: list[int] = []
+        for index in range(2, frames - 2):
+            prev_value = samples[(index - 1) * channels + channel]
+            value = samples[index * channels + channel]
+            next_value = samples[(index + 1) * channels + channel]
+            predicted = (prev_value + next_value) * 0.5
+            residual = abs(value - predicted)
+            neighbor_delta = abs(next_value - prev_value)
+            if residual >= threshold and neighbor_delta <= max(0.15, residual):
+                candidates.append(index)
+
+        groups: list[tuple[int, int]] = []
+        pos = 0
+        while pos < len(candidates):
+            start = candidates[pos]
+            end = start
+            pos += 1
+            while pos < len(candidates) and candidates[pos] <= end + 1:
+                end = candidates[pos]
+                pos += 1
+            if end - start + 1 <= max_click_samples:
+                groups.append((start, end))
+
+        for start, end in groups:
+            if total_events >= max_events:
+                break
+            left_index = start - 1
+            right_index = end + 1
+            left = samples[left_index * channels + channel]
+            right = samples[right_index * channels + channel]
+            width = end - start + 1
+            max_residual = 0.0
+            for offset, index in enumerate(range(start, end + 1), start=1):
+                sample_index = index * channels + channel
+                replacement = left + (right - left) * (offset / (width + 1))
+                max_residual = max(max_residual, abs(samples[sample_index] - replacement))
+                samples[sample_index] = replacement
+            record_event(start, width, max_residual, "isolated_sample")
+        if total_events >= max_events:
+            break
+
+        jump_threshold = threshold * 1.55
+        jump_candidates: list[int] = []
+        for index in range(2, frames - 3):
+            current = samples[index * channels + channel]
+            next_value = samples[(index + 1) * channels + channel]
+            if abs(next_value - current) >= jump_threshold:
+                jump_candidates.append(index)
+
+        jump_groups: list[tuple[int, int]] = []
+        pos = 0
+        while pos < len(jump_candidates):
+            start = jump_candidates[pos]
+            end = start
+            pos += 1
+            while pos < len(jump_candidates) and jump_candidates[pos] <= end + 2:
+                end = jump_candidates[pos]
+                pos += 1
+            repair_start = start
+            repair_end = end + 1
+            if repair_end - repair_start + 1 <= max_click_samples * 2:
+                jump_groups.append((repair_start, repair_end))
+
+        for start, end in jump_groups:
+            if total_events >= max_events:
+                break
+            left_index = start - 1
+            right_index = end + 1
+            left = samples[left_index * channels + channel]
+            right = samples[right_index * channels + channel]
+            width = end - start + 1
+            max_residual = 0.0
+            for offset, index in enumerate(range(start, end + 1), start=1):
+                sample_index = index * channels + channel
+                replacement = left + (right - left) * (offset / (width + 1))
+                max_residual = max(max_residual, abs(samples[sample_index] - replacement))
+                samples[sample_index] = replacement
+            record_event(start, width, max_residual, "short_jump_burst")
+        if total_events >= max_events:
+            break
+
+    return {
+        "enabled": True,
+        "threshold": threshold,
+        "max_click_samples": max_click_samples,
+        "max_events": max_events,
+        "events": total_events,
+        "samples_repaired": samples_repaired,
+        "per_channel_events": per_channel_counts,
+        "examples": events,
+        "truncated": total_events >= max_events,
+    }
+
+
+def apply_global_declick(
+    input_path: Path,
+    output_path: Path,
+    threshold: float,
+    max_click_samples: int,
+    max_events: int,
+) -> dict[str, object]:
+    sample_rate, channels = audio_stream_info(input_path)
+    samples = decode_f32le(input_path, sample_rate, channels)
+    report = repair_isolated_clicks(
+        samples,
+        sample_rate=sample_rate,
+        channels=channels,
+        threshold=threshold,
+        max_click_samples=max_click_samples,
+        max_events=max_events,
+    )
+    if int(report["samples_repaired"]) > 0:
+        encode_f32le_wav(samples, sample_rate, channels, output_path)
+    else:
+        shutil.copyfile(input_path, output_path)
+    return report
 
 
 def measure_reference_lufs(ref_path: Path) -> tuple[float, float]:
@@ -203,110 +485,207 @@ def measure_reference_lufs(ref_path: Path) -> tuple[float, float]:
     return float(m["input_i"]), float(m["input_lra"])
 
 
+def load_mix_plan_loudness(path: Path | None) -> dict[str, float] | None:
+    if path is None or not path.exists():
+        return None
+    try:
+        plan = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    loudness = (plan.get("reference") or {}).get("overrides", {}).get("loudness_target", {})
+    target = loudness.get("lufs_i")
+    if target is None:
+        return None
+    out = {"target_i": clamp(float(target), FINAL_LOUDNESS_MIN_LUFS, FINAL_LOUDNESS_MAX_LUFS)}
+    if loudness.get("lra") is not None:
+        out["target_lra"] = max(6.0, min(14.0, float(loudness["lra"])))
+    if loudness.get("true_peak_db") is not None:
+        out["reference_true_peak_db"] = float(loudness["true_peak_db"])
+    return out
+
+
+def master_pregain_db(
+    measure: dict[str, float | str],
+    target_i: float,
+    max_gain_db: float,
+    max_attenuation_db: float,
+) -> float:
+    """Integrated gain applied on the master bus before the limiter."""
+    return clamp(
+        target_i - float(measure["input_i"]),
+        -max_attenuation_db,
+        max_gain_db,
+    )
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Finalize master loudness.")
+    parser = argparse.ArgumentParser(description="Finalize master loudness on the master bus.")
     parser.add_argument("input_wav", type=Path)
     parser.add_argument("output_wav", type=Path)
-    parser.add_argument("--limiter", type=Path, required=True)
+    parser.add_argument(
+        "--limiter",
+        type=Path,
+        default=None,
+        help="Faust master_l2_stereo binary (sample-peak stage before soft true-peak ceiling).",
+    )
     parser.add_argument("--reference-audio", type=Path, default=None,
                         help="Reference track; its integrated LUFS becomes the target.")
-    parser.add_argument("--target-i", type=float, default=-10.0)
+    parser.add_argument("--mix-plan", type=Path, default=None,
+                        help="Resolved mix plan; may supply a clamped final loudness target.")
+    parser.add_argument("--target-i", type=float, default=DEFAULT_FINAL_TARGET_LUFS)
     parser.add_argument("--target-tp", type=float, default=-0.8)
     parser.add_argument("--target-lra", type=float, default=11.0)
-    parser.add_argument("--max-pre-gain-db", type=float, default=9.0)
+    parser.add_argument("--max-gain-db", type=float, default=12.0,
+                        help="Maximum master-bus gain before L2.")
     parser.add_argument("--max-attenuation-db", type=float, default=12.0)
-    parser.add_argument("--max-residual-gain-db", type=float, default=3.5)
-    parser.add_argument("--max-true-peak-limiter-reduction-db", type=float, default=4.0,
-                        help="Maximum peak reduction allowed while chasing LUFS; prevents harsh limiter crackle.")
+    parser.add_argument("--no-global-declick", action="store_true",
+                        help="Disable final isolated-sample click scan/repair.")
+    parser.add_argument("--declick-threshold", type=float, default=DEFAULT_DECLICK_THRESHOLD,
+                        help="Minimum isolated sample residual to repair; no gain is applied.")
+    parser.add_argument("--max-declick-samples", type=int, default=DEFAULT_MAX_DECLICK_SAMPLES,
+                        help="Maximum contiguous samples per repaired click event.")
+    parser.add_argument("--max-declick-events", type=int, default=DEFAULT_MAX_DECLICK_EVENTS,
+                        help="Safety cap for repaired click events.")
     parser.add_argument("--metadata", type=Path)
     args = parser.parse_args()
 
     args.output_wav.parent.mkdir(parents=True, exist_ok=True)
     metadata_path = args.metadata or args.output_wav.with_suffix(".loudness.json")
 
+    plan_loudness = load_mix_plan_loudness(args.mix_plan)
+    if plan_loudness is not None:
+        args.target_i = plan_loudness["target_i"]
+        args.target_lra = plan_loudness.get("target_lra", args.target_lra)
+
     reference_meta: dict | None = None
     if args.reference_audio:
-        print(f"[ref] Measuring reference: {args.reference_audio}")
-        ref_i, ref_lra = measure_reference_lufs(args.reference_audio)
-        args.target_i = ref_i
-        args.target_lra = max(6.0, min(14.0, ref_lra))
+        if plan_loudness is not None:
+            ref_i = plan_loudness["target_i"]
+            ref_lra = plan_loudness.get("target_lra", args.target_lra)
+            print(f"[ref] Using cached reference loudness from mix plan: {ref_i:.1f} LUFS")
+        else:
+            print(f"[ref] Measuring reference: {args.reference_audio}")
+            ref_i, ref_lra = measure_reference_lufs(args.reference_audio)
+            args.target_i = ref_i
+            args.target_lra = max(6.0, min(14.0, ref_lra))
         reference_meta = {
             "path": str(args.reference_audio),
             "input_i_lufs": ref_i,
             "input_lra": ref_lra,
-            "derived_target_i": args.target_i,
+            "derived_target_i": clamp(args.target_i, FINAL_LOUDNESS_MIN_LUFS, FINAL_LOUDNESS_MAX_LUFS),
             "derived_target_lra": args.target_lra,
         }
-        print(f"[ref] Derived target: {args.target_i:.1f} LUFS, LRA {args.target_lra:.1f} LU")
+        print(f"[ref] Reference measured: {ref_i:.1f} LUFS; render target {args.target_i:.1f} LUFS")
+
+    args.target_i = clamp(args.target_i, FINAL_LOUDNESS_MIN_LUFS, FINAL_LOUDNESS_MAX_LUFS)
+    print(
+        f"[target] Master pregain -> soft TP trim; window "
+        f"[{FINAL_LOUDNESS_MIN_LUFS:.1f}, {FINAL_LOUDNESS_MAX_LUFS:.1f}] LUFS -> {args.target_i:.1f} LUFS"
+    )
 
     pre_measure = loudnorm_measure(args.input_wav, args.target_i, args.target_tp, args.target_lra)
     pre_sections = ebur128_sections(args.input_wav)
-    input_i = float(pre_measure["input_i"])
-    desired_gain_db = clamp(
-        args.target_i - input_i,
-        -args.max_attenuation_db,
-        args.max_pre_gain_db,
+    desired_pregain_db = master_pregain_db(
+        pre_measure, args.target_i, args.max_gain_db, args.max_attenuation_db
     )
-    whole_song_gain_db = desired_gain_db
-    target_limited_by_true_peak = False
+    pregain_db = desired_pregain_db
+    input_tp = float(pre_measure.get("input_tp", -10.0))
+    print(
+        f"[master] Initial pregain: {pregain_db:.2f} dB "
+        f"(desired {desired_pregain_db:.2f}, input TP {input_tp:.2f}); "
+        f"L2 sample-peak limiter handles overshoot before soft TP."
+    )
 
     with tempfile.TemporaryDirectory(prefix="master_loudness_") as tmp_dir:
         tmp_root = Path(tmp_dir)
         gained = tmp_root / "01_pregain.wav"
-        limited = tmp_root / "02_limited.wav"
-        tp_limited = tmp_root / "03_true_peak_limited.wav"
+        l2_out = tmp_root / "02_l2.wav"
+        trimmed = tmp_root / "03_post_trim.wav"
+        limited = tmp_root / "04_limited.wav"
+        declicked = tmp_root / "05_declicked.wav"
 
-        limited_measure: dict[str, float | str] | None = None
-        for attempt in range(2):
-            apply_gain(args.input_wav, gained, whole_song_gain_db)
-            limiter_proc = run([str(args.limiter), str(gained), str(limited)])
+        apply_gain(args.input_wav, gained, pregain_db)
+        post_gain_measure = loudnorm_measure(gained, args.target_i, args.target_tp, args.target_lra)
+        if args.limiter is not None and args.limiter.exists():
+            limiter_proc = run([str(args.limiter), str(gained), str(l2_out)])
             if limiter_proc.returncode != 0:
                 raise RuntimeError(limiter_proc.stderr)
-            limited_measure = loudnorm_measure(limited, args.target_i, args.target_tp, args.target_lra)
-            required_tp_reduction = float(limited_measure["input_tp"]) - args.target_tp
-            if required_tp_reduction <= args.max_true_peak_limiter_reduction_db or attempt == 1:
-                break
-            excess_reduction = required_tp_reduction - args.max_true_peak_limiter_reduction_db
-            whole_song_gain_db -= excess_reduction
-            target_limited_by_true_peak = True
+            post_l2_measure = loudnorm_measure(l2_out, args.target_i, args.target_tp, args.target_lra)
+        else:
+            shutil.copyfile(gained, l2_out)
+            post_l2_measure = post_gain_measure
 
-        assert limited_measure is not None
-        limited_measure = loudnorm_measure(limited, args.target_i, args.target_tp, args.target_lra)
-        residual_needed_db = args.target_i - float(limited_measure["input_i"])
-        peak_headroom_db = args.target_tp - float(limited_measure["input_tp"])
-        residual_gain_high = args.max_residual_gain_db if peak_headroom_db >= 0.0 else 0.0
-        residual_gain_db = clamp(
-            residual_needed_db,
-            0.0 - args.max_attenuation_db,
-            min(args.max_residual_gain_db, residual_gain_high),
+        pre_trim_db = 0.0
+        residual_needed_db = args.target_i - float(post_l2_measure["input_i"])
+        # Soft TP limiter sits after this stage with a 50 ms attack — leave a small
+        # margin so makeup gain doesn't force aggressive gain reduction that audibly
+        # squashes the chorus.
+        post_l2_tp = float(post_l2_measure["input_tp"])
+        post_trim_headroom_db = max(0.0, args.target_tp - post_l2_tp - 0.5)
+        post_trim_db = clamp(residual_needed_db, 0.0, post_trim_headroom_db)
+        apply_gain(l2_out, trimmed, post_trim_db)
+        post_trim_measure = (
+            loudnorm_measure(trimmed, args.target_i, args.target_tp, args.target_lra)
+            if post_trim_db > 0.005
+            else post_l2_measure
         )
-        apply_gain(limited, tp_limited, residual_gain_db)
-        apply_true_peak_limiter(tp_limited, args.output_wav, args.target_tp)
+
+        apply_soft_peak_limit(trimmed, limited, args.target_tp)
+        post_limiter_measure = loudnorm_measure(limited, args.target_i, args.target_tp, args.target_lra)
+        if args.no_global_declick:
+            declick_report = {"enabled": False, "events": 0, "samples_repaired": 0}
+            shutil.copyfile(limited, args.output_wav)
+        else:
+            declick_report = apply_global_declick(
+                limited,
+                declicked,
+                threshold=max(0.05, args.declick_threshold),
+                max_click_samples=max(1, args.max_declick_samples),
+                max_events=max(1, args.max_declick_events),
+            )
+            shutil.copyfile(declicked, args.output_wav)
+        print(
+            f"[master] Pregain {pregain_db:.2f} dB; post-pregain TP "
+            f"{float(post_gain_measure['input_tp']):.2f} dBTP; post-L2 TP "
+            f"{post_l2_tp:.2f} dBTP; post-trim {post_trim_db:.2f} dB "
+            f"(residual need {residual_needed_db:.2f}, headroom {post_trim_headroom_db:.2f}); "
+            f"final TP {float(post_limiter_measure['input_tp']):.2f} dBTP "
+            f"(ceiling {args.target_tp:.1f})"
+        )
+        if declick_report.get("enabled"):
+            print(
+                f"[master] Global de-click repaired {declick_report['samples_repaired']} sample(s) "
+                f"in {declick_report['events']} isolated event(s)"
+            )
 
     final_measure = loudnorm_measure(args.output_wav, args.target_i, args.target_tp, args.target_lra)
     final_sections = ebur128_sections(args.output_wav)
     final_focus_windows = {
         "38_50s": ebur128_window_summary(final_sections, 38.0, 50.0),
+        "168_182s": ebur128_window_summary(final_sections, 168.0, 182.0),
     }
     metadata = {
         "enabled": True,
-        "mode": "integrated_static_gain",
+        "mode": "master_pregain_l2_soft_tp",
         "reference_audio": reference_meta,
+        "final_loudness_window_lufs": [FINAL_LOUDNESS_MIN_LUFS, FINAL_LOUDNESS_MAX_LUFS],
         "target_i_lufs": args.target_i,
         "target_tp_db": args.target_tp,
         "target_lra": args.target_lra,
-        "max_pre_gain_db": args.max_pre_gain_db,
+        "max_gain_db": args.max_gain_db,
         "max_attenuation_db": args.max_attenuation_db,
-        "max_residual_gain_db": args.max_residual_gain_db,
-        "max_true_peak_limiter_reduction_db": args.max_true_peak_limiter_reduction_db,
-        "desired_gain_db": desired_gain_db,
-        "target_limited_by_true_peak": target_limited_by_true_peak,
-        "whole_song_gain_db": whole_song_gain_db,
-        "residual_gain_db": residual_gain_db,
-        "pre_limiter_gain_db": whole_song_gain_db,
+        "pregain_db": pregain_db,
+        "desired_pregain_db": desired_pregain_db,
+        "pre_trim_db": pre_trim_db,
+        "post_trim_db": post_trim_db if abs(post_trim_db) >= 0.05 else 0.0,
+        "post_trim_headroom_db": round(post_trim_headroom_db, 3),
+        "post_pregain": post_gain_measure,
+        "post_l2": post_l2_measure,
+        "post_trim": post_trim_measure,
         "pre_master": pre_measure,
         "pre_master_sections": {key: value for key, value in pre_sections.items() if key != "sections"},
-        "post_limiter": limited_measure,
+        "post_limiter": post_limiter_measure,
+        "global_declick": declick_report,
         "final": final_measure,
         "actual_i_lufs": final_measure.get("input_i"),
         "actual_tp_db": final_measure.get("input_tp"),

@@ -29,11 +29,15 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import soundfile as sf
 
 
 ROOT = Path(__file__).resolve().parent.parent
 DOWNLOADS_ROOT = ROOT / "downloads" / "feishu_long_audio_screened"
+REFERENCE_ROOT_CANDIDATES = (
+    DOWNLOADS_ROOT,
+    ROOT.parent / "feishu_long_audio_screened",
+    ROOT.parent.parent / "feishu_long_audio_screened",
+)
 
 BANDS = [
     ("sub", 20.0, 80.0),
@@ -151,6 +155,12 @@ def measure_loudness(path: Path) -> dict[str, float]:
 
 def tonal_balance(data: np.ndarray, sr: int) -> dict[str, float]:
     """8-band energy profile in dB, normalised so the 'mid' band = 0 dB."""
+    profile = band_profile(data, sr, normalize_mid=True)
+    return {name: round(value, 3) for name, value in profile.items()}
+
+
+def band_profile(data: np.ndarray, sr: int, normalize_mid: bool) -> dict[str, float]:
+    """8-band FFT magnitude profile. Optionally normalise so 'mid' = 0 dB."""
     x = to_mono(data)
     max_samples = min(x.size, sr * 90)
     x = x[:max_samples]
@@ -164,8 +174,133 @@ def tonal_balance(data: np.ndarray, sr: int) -> dict[str, float]:
     for name, low, high in BANDS:
         mask = (freqs >= low) & (freqs < min(high, sr / 2.0))
         profile[name] = db(float(np.mean(spectrum[mask]))) if np.any(mask) else -120.0
-    mid_ref = profile.get("mid", 0.0)
-    return {name: round(value - mid_ref, 3) for name, value in profile.items()}
+    if normalize_mid:
+        mid_ref = profile.get("mid", 0.0)
+        return {name: value - mid_ref for name, value in profile.items()}
+    return profile
+
+
+def intervals_to_rows(intervals: list[tuple[float, float]], limit: int = 60) -> list[dict[str, float]]:
+    return [
+        {"start": round(start, 3), "end": round(end, 3), "duration": round(end - start, 3)}
+        for start, end in intervals[:limit]
+    ]
+
+
+def active_intervals_from_vocal(
+    vocal_data: np.ndarray,
+    sr: int,
+    frame_sec: float = 0.050,
+    hop_sec: float = 0.025,
+    threshold_below_peak_db: float = 34.0,
+    noise_floor_db: float = -58.0,
+    merge_gap_sec: float = 0.18,
+    min_active_sec: float = 0.08,
+    pad_sec: float = 0.04,
+) -> list[tuple[float, float]]:
+    """Find sung/voiced regions from a vocal stem for reference-aware measurements."""
+    x = to_mono(vocal_data)
+    if x.size == 0:
+        return []
+    frame = max(128, int(frame_sec * sr))
+    hop = max(64, int(hop_sec * sr))
+    if x.size < frame:
+        return [(0.0, x.size / sr)]
+
+    starts = np.arange(0, x.size - frame + 1, hop)
+    rms = np.array([np.sqrt(np.mean(np.square(x[start : start + frame]))) for start in starts])
+    rms_db = np.array([db(float(value)) for value in rms])
+    peak_ref = float(np.percentile(rms_db, 95)) if rms_db.size else noise_floor_db
+    threshold = max(noise_floor_db, peak_ref - threshold_below_peak_db)
+    flags = rms_db >= threshold
+    if not np.any(flags):
+        return [(0.0, x.size / sr)]
+
+    raw: list[tuple[float, float]] = []
+    active_start: int | None = None
+    for index, flag in enumerate(flags):
+        if flag and active_start is None:
+            active_start = index
+        elif not flag and active_start is not None:
+            start_sec = starts[active_start] / sr
+            end_sec = (starts[index - 1] + frame) / sr
+            raw.append((start_sec, end_sec))
+            active_start = None
+    if active_start is not None:
+        raw.append((starts[active_start] / sr, (starts[-1] + frame) / sr))
+
+    duration = x.size / sr
+    padded = [
+        (max(0.0, start - pad_sec), min(duration, end + pad_sec))
+        for start, end in raw
+        if end - start >= min_active_sec
+    ]
+    if not padded:
+        return [(0.0, duration)]
+
+    merged: list[list[float]] = [[padded[0][0], padded[0][1]]]
+    for start, end in padded[1:]:
+        previous = merged[-1]
+        if start - previous[1] <= merge_gap_sec:
+            previous[1] = max(previous[1], end)
+        else:
+            merged.append([start, end])
+    return [(start, end) for start, end in merged if end - start >= min_active_sec]
+
+
+def collect_interval_audio(
+    data: np.ndarray,
+    sr: int,
+    intervals: list[tuple[float, float]],
+    max_seconds: float = 90.0,
+) -> np.ndarray:
+    if not intervals:
+        return data[: int(max_seconds * sr)]
+    chunks: list[np.ndarray] = []
+    total = 0
+    max_samples = int(max_seconds * sr)
+    for start, end in intervals:
+        s0 = max(0, int(start * sr))
+        s1 = min(data.shape[0], int(end * sr))
+        if s1 <= s0:
+            continue
+        chunk = data[s0:s1]
+        remaining = max_samples - total
+        if remaining <= 0:
+            break
+        if chunk.shape[0] > remaining:
+            chunk = chunk[:remaining]
+        chunks.append(chunk)
+        total += chunk.shape[0]
+    if not chunks:
+        return data[: int(max_seconds * sr)]
+    return np.concatenate(chunks, axis=0)
+
+
+def rms_db_for_intervals(data: np.ndarray, sr: int, intervals: list[tuple[float, float]]) -> float:
+    active = collect_interval_audio(data, sr, intervals, max_seconds=180.0)
+    x = to_mono(active)
+    if x.size == 0:
+        return -120.0
+    return round(db(float(np.sqrt(np.mean(np.square(x))))), 3)
+
+
+def tonal_balance_for_intervals(
+    data: np.ndarray,
+    sr: int,
+    intervals: list[tuple[float, float]],
+) -> dict[str, float]:
+    active = collect_interval_audio(data, sr, intervals)
+    return tonal_balance(active, sr)
+
+
+def band_levels_for_intervals(
+    data: np.ndarray,
+    sr: int,
+    intervals: list[tuple[float, float]],
+) -> dict[str, float]:
+    active = collect_interval_audio(data, sr, intervals)
+    return {name: round(value, 3) for name, value in band_profile(active, sr, normalize_mid=False).items()}
 
 
 def dynamics(data: np.ndarray) -> dict[str, float]:
@@ -278,26 +413,63 @@ def fuzzy_find(folder: Path, song: str, extensions: tuple[str, ...]) -> Path | N
     return None
 
 
+def resolve_downloads_root(downloads_root: Path | None = None) -> Path:
+    if downloads_root is not None:
+        return downloads_root
+    for candidate in REFERENCE_ROOT_CANDIDATES:
+        if candidate.exists():
+            return candidate
+    return DOWNLOADS_ROOT
+
+
+def resolve_accomp_file(
+    folder: Path,
+    song: str,
+    extensions: tuple[str, ...],
+    accomp_input: Path | None = None,
+) -> Path | None:
+    if accomp_input is not None and accomp_input.exists():
+        try:
+            accomp_input.resolve().relative_to(folder.resolve())
+            return accomp_input
+        except ValueError:
+            same_name = folder / accomp_input.name
+            if same_name.exists():
+                return same_name
+    return fuzzy_find(folder, song, extensions)
+
+
 def resolve_reference_files(
     vocal_input: Path,
-    downloads_root: Path = DOWNLOADS_ROOT,
+    downloads_root: Path | None = None,
+    accomp_input: Path | None = None,
 ) -> dict[str, Path | None]:
+    downloads_root = resolve_downloads_root(downloads_root)
     song = extract_song_name(vocal_input)
     return {
         "song": song,
         "full_mix": fuzzy_find(downloads_root / "原曲", song, (".mp3", ".wav", ".flac", ".m4a")),
         "vocal": fuzzy_find(downloads_root / "原曲人声", song, (".wav", ".mp3", ".flac")),
-        "accomp": fuzzy_find(downloads_root / "伴奏", song, (".wav", ".mp3", ".flac")),
+        "accomp": resolve_accomp_file(
+            downloads_root / "伴奏",
+            song,
+            (".wav", ".mp3", ".flac"),
+            accomp_input=accomp_input,
+        ),
     }
 
 
 def analyse(full_mix: Path, vocal: Path, accomp: Path) -> dict[str, Any]:
     full_audio, full_sr = load_audio_as_float(full_mix)
     vocal_audio, _ = load_audio_as_float(vocal)
+    accomp_audio, _ = load_audio_as_float(accomp)
+    active_regions = active_intervals_from_vocal(vocal_audio, full_sr)
 
     loudness = measure_loudness(full_mix)
     vocal_lufs = lufs_only(vocal)
     accomp_lufs = lufs_only(accomp)
+    vocal_active_rms = rms_db_for_intervals(vocal_audio, full_sr, active_regions)
+    accomp_active_rms = rms_db_for_intervals(accomp_audio, full_sr, active_regions)
 
     return {
         "sources": {
@@ -307,11 +479,26 @@ def analyse(full_mix: Path, vocal: Path, accomp: Path) -> dict[str, Any]:
         },
         "loudness": loudness,
         "tonal_balance": tonal_balance(full_audio, full_sr),
+        "vocal_tonal_balance": tonal_balance_for_intervals(vocal_audio, full_sr, active_regions),
+        "accomp_tonal_balance": tonal_balance_for_intervals(accomp_audio, full_sr, active_regions),
+        "active_band_levels": {
+            "vocal": band_levels_for_intervals(vocal_audio, full_sr, active_regions),
+            "accomp": band_levels_for_intervals(accomp_audio, full_sr, active_regions),
+        },
         "dynamics": dynamics(full_audio),
         "vocal_accomp_balance": {
             "vocal_lufs": round(vocal_lufs, 2),
             "accomp_lufs": round(accomp_lufs, 2),
             "vocal_minus_accomp_db": round(vocal_lufs - accomp_lufs, 2),
+            "active_vocal_rms_db": vocal_active_rms,
+            "active_accomp_rms_db": accomp_active_rms,
+            "active_vocal_minus_accomp_db": round(vocal_active_rms - accomp_active_rms, 2),
+            "basis": "reference_vocal_active_regions",
+        },
+        "active_vocal_regions": {
+            "count": len(active_regions),
+            "coverage_sec": round(sum(end - start for start, end in active_regions), 3),
+            "regions": intervals_to_rows(active_regions),
         },
         "reverb_proxy": reverb_proxy(vocal_audio, full_sr),
     }
@@ -321,18 +508,36 @@ def analyse_input_pair(vocal: Path, accomp: Path) -> dict[str, Any]:
     """Predict the input-mix tonal/dynamics by summing pre-render vocal + accomp."""
     vocal_audio, sr = load_audio_as_float(vocal)
     accomp_audio, _ = load_audio_as_float(accomp)
+    active_regions = active_intervals_from_vocal(vocal_audio, sr)
     n = min(vocal_audio.shape[0], accomp_audio.shape[0])
     summed = vocal_audio[:n] + accomp_audio[:n]
     vocal_lufs = lufs_only(vocal)
     accomp_lufs = lufs_only(accomp)
+    vocal_active_rms = rms_db_for_intervals(vocal_audio, sr, active_regions)
+    accomp_active_rms = rms_db_for_intervals(accomp_audio, sr, active_regions)
     return {
         "sources": {"vocal": str(vocal), "accomp": str(accomp)},
         "tonal_balance": tonal_balance(summed, sr),
+        "vocal_tonal_balance": tonal_balance_for_intervals(vocal_audio, sr, active_regions),
+        "accomp_tonal_balance": tonal_balance_for_intervals(accomp_audio, sr, active_regions),
+        "active_band_levels": {
+            "vocal": band_levels_for_intervals(vocal_audio, sr, active_regions),
+            "accomp": band_levels_for_intervals(accomp_audio, sr, active_regions),
+        },
         "dynamics": dynamics(summed),
         "vocal_accomp_balance": {
             "vocal_lufs": round(vocal_lufs, 2),
             "accomp_lufs": round(accomp_lufs, 2),
             "vocal_minus_accomp_db": round(vocal_lufs - accomp_lufs, 2),
+            "active_vocal_rms_db": vocal_active_rms,
+            "active_accomp_rms_db": accomp_active_rms,
+            "active_vocal_minus_accomp_db": round(vocal_active_rms - accomp_active_rms, 2),
+            "basis": "input_vocal_active_regions",
+        },
+        "active_vocal_regions": {
+            "count": len(active_regions),
+            "coverage_sec": round(sum(end - start for start, end in active_regions), 3),
+            "regions": intervals_to_rows(active_regions),
         },
     }
 
@@ -344,7 +549,7 @@ def main() -> None:
     parser.add_argument("--full-mix", type=Path, default=None)
     parser.add_argument("--ref-vocal", type=Path, default=None)
     parser.add_argument("--ref-accomp", type=Path, default=None)
-    parser.add_argument("--downloads-root", type=Path, default=DOWNLOADS_ROOT)
+    parser.add_argument("--downloads-root", type=Path, default=None)
     parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args()
 

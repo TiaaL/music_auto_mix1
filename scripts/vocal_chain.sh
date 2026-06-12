@@ -77,7 +77,20 @@ show_stats "Input" "$INPUT"
 # ------------------------------------------------
 # If you want to change the order in the future,
 # just reorder these three lines.
-run_stage "rdeesser" "$INPUT" "$TMP1"
+# Per-song de-esser: set VOCAL_SIBILANCE_PROFILE=<profile.json> to
+# build/use a song-specific rdeesser_dyn binary (A-line PoC). When the
+# env var is unset, fall back to the static rdeesser binary.
+DEESSER_STAGE="rdeesser"
+if [[ -n "${VOCAL_SIBILANCE_PROFILE:-}" ]]; then
+    if [[ ! -f "$VOCAL_SIBILANCE_PROFILE" ]]; then
+        echo "Error: VOCAL_SIBILANCE_PROFILE not found: $VOCAL_SIBILANCE_PROFILE" >&2
+        exit 1
+    fi
+    echo "[deesser] using per-song profile: $VOCAL_SIBILANCE_PROFILE"
+    "$SCRIPT_DIR/build_rdeesser_dyn.sh" "$VOCAL_SIBILANCE_PROFILE" "$BUILD_DIR/rdeesser_dyn"
+    DEESSER_STAGE="rdeesser_dyn"
+fi
+run_stage "$DEESSER_STAGE" "$INPUT" "$TMP1"
 run_stage "req6" "$TMP1" "$TMP2"
 run_stage "c1_comp" "$TMP2" "$OUTPUT"
 

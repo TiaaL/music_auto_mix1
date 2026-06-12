@@ -47,6 +47,10 @@ while [[ $# -gt 0 ]]; do
                 exit 1
             fi
             ;;
+        --reference-vocal|--reference-accomp)
+            shift
+            # accepted for caller compatibility; pipeline does not use delayverb
+            ;;
         *)
             echo "Error: unsupported option: $1" >&2
             exit 1
@@ -66,6 +70,7 @@ if [[ -f "$SCRIPT_DIR/msys_template_env.sh" && -d "$SCRIPT_DIR/../.tools/msys64"
 fi
 # shellcheck source=./common.sh
 source "$SCRIPT_DIR/common.sh"
+PYTHON_BIN="$(project_python_bin)"
 
 if [[ -z "$TEMPLATE_ID" || -z "$VOCAL_IN" || -z "$ACCOMP_IN" || -z "$FINAL_OUT" ]]; then
     echo "Usage: $0 <template_a|template_b|template_c|template_d> <vocal.wav> <accomp.wav> <final.wav> [--with-volume-automation] [--no-loudness-finalizer] [--mix-plan plan.json]"
@@ -102,6 +107,7 @@ ensure_audio_channels "$ACCOMP_IN" "2" "accompaniment input"
 
 RESAMPLED_VOCAL=""
 RESAMPLED_ACCOMP=""
+TARGET_SAMPLE_RATE=44100
 AUTO_VOCAL="$(make_temp_wav template_auto_vocal)"
 AUTO_ACCOMP="$(make_temp_wav template_auto_accomp)"
 VOCAL_SOURCE="$VOCAL_IN"
@@ -112,28 +118,39 @@ VOCAL_3="$(make_temp_wav template_vocal_3)"
 VOCAL_4="$(make_temp_wav template_vocal_4)"
 VOCAL_5="$(make_temp_wav template_vocal_5)"
 VOCAL_CORRECTED="$(make_temp_wav template_vocal_residual_eq)"
+VOCAL_SOURCE_EQ="$(make_temp_wav template_vocal_source_eq)"
 VOCAL_GROUP="$(make_temp_wav template_vocal_group)"
 ACCOMP_1="$(make_temp_wav template_accomp_1)"
+ACCOMP_SOURCE_EQ="$(make_temp_wav template_accomp_source_eq)"
+ACCOMP_DUCKED="$(make_temp_wav template_accomp_ducked)"
 ACCOMP_BUS="$(make_temp_wav template_accomp_bus)"
 MIX_TMP="$(make_temp_wav template_mix)"
 MIX_TILTED="$(make_temp_wav template_mix_tilted)"
 MASTER_1="$(make_temp_wav template_master_1)"
 MASTER_2="$(make_temp_wav template_master_2)"
 
-trap 'rm -f "$RESAMPLED_VOCAL" "$RESAMPLED_ACCOMP" "$AUTO_VOCAL" "$AUTO_ACCOMP" "$VOCAL_1" "$VOCAL_2" "$VOCAL_3" "$VOCAL_4" "$VOCAL_5" "$VOCAL_CORRECTED" "$VOCAL_GROUP" "$ACCOMP_1" "$ACCOMP_BUS" "$MIX_TMP" "$MIX_TILTED" "$MASTER_1" "$MASTER_2"' EXIT
+trap 'rm -f "$RESAMPLED_VOCAL" "$RESAMPLED_ACCOMP" "$AUTO_VOCAL" "$AUTO_ACCOMP" "$VOCAL_1" "$VOCAL_2" "$VOCAL_3" "$VOCAL_4" "$VOCAL_5" "$VOCAL_CORRECTED" "$VOCAL_SOURCE_EQ" "$VOCAL_GROUP" "$ACCOMP_1" "$ACCOMP_SOURCE_EQ" "$ACCOMP_DUCKED" "$ACCOMP_BUS" "$MIX_TMP" "$MIX_TILTED" "$MASTER_1" "$MASTER_2"' EXIT
 
 VOCAL_RATE="$(audio_sample_rate "$VOCAL_IN")"
 ACCOMP_RATE="$(audio_sample_rate "$ACCOMP_IN")"
-if [[ "$VOCAL_RATE" != "$ACCOMP_RATE" ]]; then
-    RESAMPLED_VOCAL="$(make_temp_wav template_resampled_vocal)"
-    echo "[prep] Resampling vocal $VOCAL_RATE Hz -> $ACCOMP_RATE Hz"
-    ffmpeg -y -hide_banner \
-        -i "$VOCAL_IN" \
-        -ar "$ACCOMP_RATE" \
-        -ac 1 \
-        "$RESAMPLED_VOCAL" >/dev/null 2>&1
-    VOCAL_SOURCE="$RESAMPLED_VOCAL"
-fi
+RESAMPLED_VOCAL="$(make_temp_wav template_prepped_vocal)"
+RESAMPLED_ACCOMP="$(make_temp_wav template_prepped_accomp)"
+echo "[prep] Normalizing input format: vocal ${VOCAL_RATE} Hz -> ${TARGET_SAMPLE_RATE} Hz, mono, pcm_f32le"
+ffmpeg -y -hide_banner \
+    -i "$VOCAL_IN" \
+    -ar "$TARGET_SAMPLE_RATE" \
+    -ac 1 \
+    -c:a pcm_f32le \
+    "$RESAMPLED_VOCAL" >/dev/null 2>&1
+VOCAL_SOURCE="$RESAMPLED_VOCAL"
+echo "[prep] Normalizing input format: accomp ${ACCOMP_RATE} Hz -> ${TARGET_SAMPLE_RATE} Hz, stereo, pcm_f32le"
+ffmpeg -y -hide_banner \
+    -i "$ACCOMP_IN" \
+    -ar "$TARGET_SAMPLE_RATE" \
+    -ac 2 \
+    -c:a pcm_f32le \
+    "$RESAMPLED_ACCOMP" >/dev/null 2>&1
+ACCOMP_SOURCE="$RESAMPLED_ACCOMP"
 ensure_matching_sample_rate "$VOCAL_SOURCE" "$ACCOMP_SOURCE" "vocal render input" "accompaniment render input"
 
 run_stage() {
@@ -152,7 +169,7 @@ run_stage() {
 if [[ "$WITH_VOLUME_AUTOMATION" == "1" ]]; then
     echo "[step 0] Optional volume automation"
     BALANCE_REPORT="${FINAL_OUT%.*}.balance.json"
-    python3 "$SCRIPT_DIR/auto_volume_mix.py" \
+    "$PYTHON_BIN" "$SCRIPT_DIR/auto_volume_mix.py" \
         "$VOCAL_SOURCE" \
         "$ACCOMP_SOURCE" \
         --vocal-out "$AUTO_VOCAL" \
@@ -191,14 +208,14 @@ case "$TEMPLATE_ID" in
 esac
 
 if [[ -n "$MIX_PLAN" ]]; then
-    echo "[step 1b] Residual vocal EQ from mix plan"
-    python3 "$SCRIPT_DIR/apply_residual_vocal_eq.py" \
+    echo "[step 1b] Combined residual/source vocal EQ"
+    "$PYTHON_BIN" "$SCRIPT_DIR/apply_vocal_plan_eq.py" \
         "$VOCAL_CHAIN_OUT" \
-        "$VOCAL_CORRECTED" \
+        "$VOCAL_SOURCE_EQ" \
         --plan "$MIX_PLAN"
-    VOCAL_CHAIN_OUT="$VOCAL_CORRECTED"
+    VOCAL_CHAIN_OUT="$VOCAL_SOURCE_EQ"
 else
-    echo "[step 1b] Residual vocal EQ skipped: no mix plan"
+    echo "[step 1b] Vocal plan EQ skipped: no mix plan"
 fi
 run_stage "vocal_group_fx" "$VOCAL_CHAIN_OUT" "$VOCAL_GROUP"
 
@@ -211,28 +228,58 @@ case "$TEMPLATE_ID" in
         run_stage "template_music_proq3_c" "$ACCOMP_SOURCE" "$ACCOMP_1"
         ;;
 esac
-cp "$ACCOMP_1" "$ACCOMP_BUS"
+ACCOMP_CHAIN_OUT="$ACCOMP_1"
+if [[ -n "$MIX_PLAN" ]]; then
+    echo "[step 2b] Reference accompaniment carve EQ"
+    "$PYTHON_BIN" "$SCRIPT_DIR/apply_plan_source_eq.py" \
+        "$ACCOMP_CHAIN_OUT" \
+        "$ACCOMP_SOURCE_EQ" \
+        --plan "$MIX_PLAN" \
+        --section accomp_eq
+    ACCOMP_CHAIN_OUT="$ACCOMP_SOURCE_EQ"
+else
+    echo "[step 2b] Reference accompaniment carve EQ skipped: no mix plan"
+fi
+echo "[step 2c] Vocal-aware accompaniment ducking"
+ACCOMP_DUCK_META="${FINAL_OUT%.*}.accomp_duck.json"
+DUCK_CMD=("$PYTHON_BIN" "$SCRIPT_DIR/apply_accomp_vocal_duck.py"
+    "$ACCOMP_CHAIN_OUT"
+    "$VOCAL_GROUP"
+    "$ACCOMP_DUCKED"
+    --template "$TEMPLATE_ID"
+    --metadata "$ACCOMP_DUCK_META")
+if [[ -n "$MIX_PLAN" ]]; then
+    DUCK_CMD+=(--plan "$MIX_PLAN")
+fi
+"${DUCK_CMD[@]}"
+cp "$ACCOMP_DUCKED" "$ACCOMP_BUS"
 
 VOCAL_BUS_GAIN_DB="0.0"
 ACCOMP_BUS_GAIN_DB="0.0"
 if [[ -n "$MIX_PLAN" ]]; then
-    read -r _V_GAIN _A_GAIN < <(python3 "$SCRIPT_DIR/plan_bus_gains.py" "$MIX_PLAN") || true
+    BUS_BALANCE_META="${FINAL_OUT%.*}.bus_balance.json"
+    read -r _V_GAIN _A_GAIN < <(
+        "$PYTHON_BIN" "$SCRIPT_DIR/compute_render_bus_balance.py" \
+            "$VOCAL_GROUP" "$ACCOMP_BUS" \
+            --plan "$MIX_PLAN" \
+            --metadata "$BUS_BALANCE_META" | tail -1
+    )
     [[ -n "${_V_GAIN:-}" ]] && VOCAL_BUS_GAIN_DB="$_V_GAIN"
     [[ -n "${_A_GAIN:-}" ]] && ACCOMP_BUS_GAIN_DB="$_A_GAIN"
-    echo "[step 3a] Bus balance from reference: vocal ${VOCAL_BUS_GAIN_DB} dB, accomp ${ACCOMP_BUS_GAIN_DB} dB"
+    echo "[step 3a] Bus balance from post-FX buses: vocal ${VOCAL_BUS_GAIN_DB} dB, accomp ${ACCOMP_BUS_GAIN_DB} dB"
 fi
 
 echo "[step 3] Stereo Out summing"
 ffmpeg -y -hide_banner \
     -i "$VOCAL_GROUP" \
     -i "$ACCOMP_BUS" \
-    -filter_complex "[0:a]volume=${VOCAL_BUS_GAIN_DB}dB[v];[1:a]volume=${ACCOMP_BUS_GAIN_DB}dB[a];[v][a]amix=inputs=2:normalize=0[m]" \
+    -filter_complex "[0:a]volume=${VOCAL_BUS_GAIN_DB}dB[v];[1:a]volume=${ACCOMP_BUS_GAIN_DB}dB[a];[v][a]amix=inputs=2:dropout_transition=0[m]" \
     -map "[m]" \
     "$MIX_TMP" >/dev/null 2>&1
 
 if [[ -n "$MIX_PLAN" ]]; then
     echo "[step 3b] Master tilt EQ from reference features"
-    python3 "$SCRIPT_DIR/apply_master_tilt_eq.py" \
+    "$PYTHON_BIN" "$SCRIPT_DIR/apply_master_tilt_eq.py" \
         "$MIX_TMP" \
         "$MIX_TILTED" \
         --plan "$MIX_PLAN"
@@ -253,12 +300,15 @@ esac
 run_stage "gw_mixcentric_stereo" "$MASTER_1" "$MASTER_2"
 ensure_binary "master_l2_stereo"
 if [[ "$WITH_LOUDNESS_FINALIZER" == "1" ]]; then
-    LOUDNESS_CMD=(python3 "$SCRIPT_DIR/master_loudness_finalize.py"
+    LOUDNESS_CMD=("$PYTHON_BIN" "$SCRIPT_DIR/master_loudness_finalize.py"
         "$MASTER_2"
         "$FINAL_OUT"
         --limiter "$BUILD_DIR/master_l2_stereo")
     if [[ -n "$REFERENCE_AUDIO" ]]; then
         LOUDNESS_CMD+=(--reference-audio "$REFERENCE_AUDIO")
+    fi
+    if [[ -n "$MIX_PLAN" ]]; then
+        LOUDNESS_CMD+=(--mix-plan "$MIX_PLAN")
     fi
     "${LOUDNESS_CMD[@]}"
 else

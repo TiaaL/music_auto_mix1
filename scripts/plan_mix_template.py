@@ -378,16 +378,256 @@ MASTER_TILT_BANDS = {
 }
 
 MASTER_TILT_DEAD_BAND_DB = 1.5
-MASTER_TILT_MAX_CUT_DB = 3.0
+MASTER_TILT_MAX_CUT_DB = 5.0
 MASTER_TILT_MAX_BOOST_DB = 0.8
 MASTER_TILT_MAX_ACTIONS = 4
 BUS_BALANCE_MAX_MOVE_DB = 6.0
 BUS_BALANCE_DEAD_BAND_DB = 0.6
+FINAL_LOUDNESS_MIN_LUFS = -13.0
+FINAL_LOUDNESS_MAX_LUFS = -11.0
+
+SOURCE_VOCAL_EQ_BANDS = {
+    "low":    {"freq_hz": 130.0,   "q": 0.8, "actions": ("cut",)},
+    "lowmid": {"freq_hz": 320.0,   "q": 0.9, "actions": ("cut", "boost")},
+    "mid":    {"freq_hz": 800.0,   "q": 0.8, "actions": ("cut", "boost")},
+    "upper":  {"freq_hz": 2800.0,  "q": 0.9, "actions": ("cut", "boost")},
+    "harsh":  {"freq_hz": 6200.0,  "q": 1.2, "actions": ("cut",)},
+    "sib":    {"freq_hz": 9500.0,  "q": 1.4, "actions": ("cut",)},
+    "air":    {"freq_hz": 14000.0, "q": 0.7, "actions": ("cut", "boost")},
+}
+
+ACCOMP_CARVE_BANDS = {
+    "lowmid": {"freq_hz": 320.0,  "q": 0.9, "weight": 0.7},
+    "mid":    {"freq_hz": 800.0,  "q": 0.8, "weight": 0.9},
+    "upper":  {"freq_hz": 2800.0, "q": 0.9, "weight": 1.0},
+    "harsh":  {"freq_hz": 6200.0, "q": 1.2, "weight": 0.6},
+}
+
+VOCAL_SOURCE_EQ_DEAD_BAND_DB = 1.2
+VOCAL_SOURCE_EQ_MAX_CUT_DB = 2.5
+VOCAL_SOURCE_EQ_MAX_BOOST_DB = 1.5
+VOCAL_SOURCE_EQ_MAX_ACTIONS = 4
+ACCOMP_CARVE_MAX_CUT_DB = 2.6
+ACCOMP_CARVE_MAX_ACTIONS = 3
+
+
+def build_dry_vocal_strategy(
+    analysis: dict[str, Any],
+    input_features: dict[str, Any] | None,
+    template_id: str,
+) -> dict[str, Any]:
+    ratios = analysis.get("ratios") or {}
+    group_ratios = analysis.get("group_ratios") or {}
+    body_to_presence = float(analysis.get("body_to_presence") or 0.0)
+    classification = analysis.get("classification") or {}
+    tags: list[str] = []
+    duck_profile = {
+        "low_extra_db": 0.0,
+        "body_extra_db": 0.0,
+        "presence_extra_db": 0.0,
+        "air_extra_db": 0.0,
+    }
+
+    lowmid_ratio = float(ratios.get("lowmid") or 0.0)
+    body_ratio = float(group_ratios.get("body") or 0.0)
+    presence_ratio = float(group_ratios.get("presence") or 0.0)
+    upper_peak = float(analysis.get("peakiness_upper") or 0.0)
+    harsh_peak = float(analysis.get("peakiness_harsh") or 0.0)
+
+    if lowmid_ratio >= 0.55 or body_to_presence >= 8.0:
+        tags.append("lowmid_body_heavy")
+        duck_profile["body_extra_db"] += 0.25
+        duck_profile["presence_extra_db"] += 0.45
+    if lowmid_ratio >= 0.70 or body_to_presence >= 12.0:
+        tags.append("presence_masked_by_body")
+        duck_profile["presence_extra_db"] += 0.35
+    if body_ratio >= 0.85 and presence_ratio <= 0.08:
+        tags.append("dark_or_muffled_dry_vocal")
+        duck_profile["air_extra_db"] += 0.20
+    if float(ratios.get("low") or 0.0) >= 0.06 or float(ratios.get("sub") or 0.0) >= 0.004:
+        tags.append("dry_vocal_low_pressure")
+        duck_profile["low_extra_db"] += 0.25
+    if upper_peak >= 12.0 or harsh_peak >= 8.0:
+        tags.append("peaky_presence")
+        duck_profile["presence_extra_db"] = max(0.0, duck_profile["presence_extra_db"] - 0.20)
+
+    strong_rules: list[str] = []
+    selected = classification.get(template_to_label(template_id)) or {}
+    if isinstance(selected, dict):
+        strong_rules = list(selected.get("strong_rules") or [])
+
+    return {
+        "enabled": bool(tags),
+        "selected_template": template_id,
+        "classification_label": classification.get("label"),
+        "tags": tags,
+        "strong_rules": strong_rules,
+        "ratios": {
+            "lowmid": round(lowmid_ratio, 4),
+            "body": round(body_ratio, 4),
+            "presence": round(presence_ratio, 4),
+            "body_to_presence": round(body_to_presence, 3),
+        },
+        "duck_profile": {key: round(value, 3) for key, value in duck_profile.items()},
+        "policy": (
+            "Use dry vocal spectral shape to decide where accompaniment yields; "
+            "overall vocal/accomp gain still follows the reference active ratio conservatively."
+        ),
+    }
+
+
+def active_balance_value(features: dict[str, Any] | None) -> float | None:
+    balance = (features or {}).get("vocal_accomp_balance") or {}
+    active = balance.get("active_vocal_minus_accomp_db")
+    if active is not None:
+        return float(active)
+    value = balance.get("vocal_minus_accomp_db")
+    return float(value) if value is not None else None
+
+
+def build_reference_vocal_eq(
+    ref_features: dict[str, Any],
+    input_features: dict[str, Any] | None,
+) -> dict[str, Any]:
+    ref_vocal = ref_features.get("vocal_tonal_balance") or {}
+    input_vocal = (input_features or {}).get("vocal_tonal_balance") or {}
+    if not ref_vocal or not input_vocal:
+        return {
+            "enabled": False,
+            "actions": [],
+            "reason": "missing reference/input vocal tonal features",
+        }
+
+    ranked: list[tuple[float, dict[str, Any]]] = []
+    for band, rule in SOURCE_VOCAL_EQ_BANDS.items():
+        if band not in ref_vocal or band not in input_vocal:
+            continue
+        delta = float(ref_vocal[band]) - float(input_vocal[band])
+        if abs(delta) < VOCAL_SOURCE_EQ_DEAD_BAND_DB:
+            continue
+        if delta > 0:
+            if "boost" not in rule["actions"]:
+                continue
+            amount = clamp(delta * 0.55, 0.5, VOCAL_SOURCE_EQ_MAX_BOOST_DB)
+            action_type = "boost"
+            gain = round(amount, 2)
+        else:
+            if "cut" not in rule["actions"]:
+                continue
+            amount = clamp(abs(delta) * 0.55, 0.5, VOCAL_SOURCE_EQ_MAX_CUT_DB)
+            action_type = "cut"
+            gain = -round(amount, 2)
+        ranked.append(
+            (
+                abs(delta),
+                {
+                    "band": band,
+                    "type": action_type,
+                    "freq_hz": rule["freq_hz"],
+                    "q": rule["q"],
+                    "gain_db": gain,
+                    "source": "reference_vocal_tonal_delta",
+                    "reason": (
+                        f"reference vocal {band} {ref_vocal[band]:+.1f} dB vs input vocal "
+                        f"{input_vocal[band]:+.1f} dB (delta {delta:+.1f} dB)"
+                    ),
+                },
+            )
+        )
+    ranked.sort(key=lambda pair: pair[0], reverse=True)
+    actions = [action for _, action in ranked[:VOCAL_SOURCE_EQ_MAX_ACTIONS]]
+    return {
+        "enabled": bool(actions),
+        "mode": "post_template_pre_group_fx",
+        "actions": actions,
+        "policy": "match the current dry vocal's active-region tonal shape toward the reference vocal with small source EQ moves",
+    }
+
+
+def build_accomp_carve_eq(
+    ref_features: dict[str, Any],
+    input_features: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if input_features is None:
+        return {
+            "enabled": False,
+            "actions": [],
+            "reason": "missing input vocal/accompaniment features",
+        }
+    ref_gap = active_balance_value(ref_features)
+    input_gap = active_balance_value(input_features)
+    if ref_gap is None or input_gap is None:
+        return {
+            "enabled": False,
+            "actions": [],
+            "reason": "missing active vocal/accompaniment balance",
+        }
+
+    active_levels = input_features.get("active_band_levels") or {}
+    vocal_levels = active_levels.get("vocal") or {}
+    accomp_levels = active_levels.get("accomp") or {}
+    ref_vocal = ref_features.get("vocal_tonal_balance") or {}
+    input_vocal = input_features.get("vocal_tonal_balance") or {}
+    needed_lift = max(0.0, float(ref_gap) - float(input_gap))
+    if needed_lift < 0.4:
+        return {
+            "enabled": False,
+            "actions": [],
+            "reference_active_gap_db": round(float(ref_gap), 2),
+            "input_active_gap_db": round(float(input_gap), 2),
+            "reason": "input vocal/accompaniment active gap is already close to the reference",
+        }
+
+    ranked: list[tuple[float, dict[str, Any]]] = []
+    for band, rule in ACCOMP_CARVE_BANDS.items():
+        if band not in vocal_levels or band not in accomp_levels:
+            continue
+        masking_db = float(accomp_levels[band]) - float(vocal_levels[band])
+        if masking_db < -8.0 and needed_lift < 2.0:
+            continue
+        vocal_deficit = 0.0
+        if band in ref_vocal and band in input_vocal:
+            vocal_deficit = max(0.0, float(ref_vocal[band]) - float(input_vocal[band]))
+        pressure = (masking_db + 8.0) * 0.18 + needed_lift * 0.30 + vocal_deficit * 0.15
+        amount = clamp(pressure * float(rule["weight"]), 0.5, ACCOMP_CARVE_MAX_CUT_DB)
+        if amount < 0.5:
+            continue
+        priority = masking_db + needed_lift + vocal_deficit
+        ranked.append(
+            (
+                priority,
+                {
+                    "band": band,
+                    "type": "cut",
+                    "freq_hz": rule["freq_hz"],
+                    "q": rule["q"],
+                    "gain_db": -round(amount, 2),
+                    "source": "active_vocal_masking_carve",
+                    "reason": (
+                        f"input active vocal gap {input_gap:+.1f} dB trails reference {ref_gap:+.1f} dB; "
+                        f"accomp-vocal masking in {band} is {masking_db:+.1f} dB"
+                    ),
+                },
+            )
+        )
+    ranked.sort(key=lambda pair: pair[0], reverse=True)
+    actions = [action for _, action in ranked[:ACCOMP_CARVE_MAX_ACTIONS]]
+    return {
+        "enabled": bool(actions),
+        "mode": "post_template_music_eq_pre_sum",
+        "actions": actions,
+        "reference_active_gap_db": round(float(ref_gap), 2),
+        "input_active_gap_db": round(float(input_gap), 2),
+        "needed_relative_vocal_lift_db": round(float(needed_lift), 2),
+        "policy": "cut only; carve accompaniment in the current vocal's masking bands when the vocal is behind the reference balance",
+    }
 
 
 def build_reference_overrides(
     ref_features: dict[str, Any],
     input_features: dict[str, Any] | None,
+    analysis: dict[str, Any],
+    template_id: str,
 ) -> dict[str, Any]:
     """Translate reference + input features into renderer parameter overrides.
 
@@ -446,34 +686,78 @@ def build_reference_overrides(
         "actions": actions,
     }
 
-    ref_balance = (ref_features.get("vocal_accomp_balance") or {}).get("vocal_minus_accomp_db")
-    input_balance = ((input_features or {}).get("vocal_accomp_balance") or {}).get("vocal_minus_accomp_db")
+    ref_balance = active_balance_value(ref_features)
+    dry_input_balance = active_balance_value(input_features)
+    ref_balance_block = (ref_features.get("vocal_accomp_balance") or {})
     bus = {
-        "vocal_bus_gain_db": 0.0,
-        "accomp_bus_gain_db": 0.0,
-        "policy": "no positive gain on vocal or accompaniment buses",
+        "policy": "match_reference_stem_lufs_per_bus at render time",
+        "balance_basis": "active_vocal_regions_preferred",
+        "measurement_basis": "post_fx_vocal_group_active_regions",
     }
-    if ref_balance is not None and input_balance is not None:
-        delta = float(ref_balance) - float(input_balance)
-        if abs(delta) >= BUS_BALANCE_DEAD_BAND_DB:
-            move = clamp(abs(delta), 0.0, BUS_BALANCE_MAX_MOVE_DB)
-            if delta > 0:
-                bus["accomp_bus_gain_db"] = -round(move, 2)
-                bus["reason"] = (
-                    f"reference vocal is {ref_balance:+.1f} dB vs accomp; input is {input_balance:+.1f} dB. "
-                    f"Cut accomp bus by {move:.1f} dB to lift vocal relatively."
-                )
-            else:
-                bus["vocal_bus_gain_db"] = -round(move, 2)
-                bus["reason"] = (
-                    f"reference vocal is {ref_balance:+.1f} dB vs accomp; input is {input_balance:+.1f} dB. "
-                    f"Cut vocal bus by {move:.1f} dB."
-                )
-            bus["reference_vocal_minus_accomp_db"] = round(float(ref_balance), 2)
-            bus["input_vocal_minus_accomp_db"] = round(float(input_balance), 2)
+    if ref_balance_block.get("active_vocal_rms_db") is not None:
+        bus["reference_active_vocal_rms_db"] = ref_balance_block["active_vocal_rms_db"]
+    if ref_balance_block.get("active_accomp_rms_db") is not None:
+        bus["reference_active_accomp_rms_db"] = ref_balance_block["active_accomp_rms_db"]
+    if ref_balance is not None:
+        bus["reference_vocal_minus_accomp_db"] = round(float(ref_balance), 2)
+    if dry_input_balance is not None:
+        bus["dry_input_vocal_minus_accomp_db"] = round(float(dry_input_balance), 2)
+        bus["note"] = (
+            "Dry input balance is diagnostic only. "
+            "Render-time bus gains align post-FX vocal/accomp active-region RMS to the reference stems."
+        )
     overrides["bus_balance"] = bus
+    overrides["source_eq"] = {
+        "vocal_eq": build_reference_vocal_eq(ref_features, input_features),
+        "accomp_eq": build_accomp_carve_eq(ref_features, input_features),
+    }
+    overrides["dry_vocal_strategy"] = build_dry_vocal_strategy(analysis, input_features, template_id)
 
     return overrides
+
+
+def build_vocal_sibilance_profile(
+    analysis: dict[str, Any],
+    input_features: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Derive per-song de-esser params from vocal harsh/sib band energy + crest.
+
+    Output is consumed by scripts/build_rdeesser_dyn.sh to compile a song-specific
+    rdeesser_dyn binary. Heuristic only — kept conservative to avoid changing
+    perceived volume balance.
+    """
+    bands = ((input_features or {}).get("active_band_levels") or {}).get("vocal") or {}
+    sib_db = bands.get("sib")
+    harsh_db = bands.get("harsh")
+    crest_db = ((analysis or {}).get("dynamics") or {}).get("crest_db")
+
+    ess_freq = 7500.0
+    if isinstance(sib_db, (int, float)) and isinstance(harsh_db, (int, float)):
+        delta = float(sib_db) - float(harsh_db)
+        if delta >= 2.0:
+            ess_freq = 8000.0
+        elif delta <= -2.0:
+            ess_freq = 6800.0
+
+    thresh_db = -20.0
+    candidates = [v for v in (sib_db, harsh_db) if isinstance(v, (int, float))]
+    if candidates:
+        thresh_db = clamp(max(candidates) - 5.0, -30.0, -12.0)
+
+    range_db = 12.0
+    if isinstance(crest_db, (int, float)) and float(crest_db) < 10.0:
+        range_db = 8.0
+
+    return {
+        "ess_freq_hz": round(float(ess_freq), 1),
+        "thresh_db": round(float(thresh_db), 2),
+        "range_db": round(float(range_db), 2),
+        "source": {
+            "vocal_sib_db": sib_db,
+            "vocal_harsh_db": harsh_db,
+            "crest_db": crest_db,
+        },
+    }
 
 
 def build_plan(
@@ -488,13 +772,14 @@ def build_plan(
     common = load_json(TEMPLATE_DIR / "common_group_fx.raw.json")
     links = load_json(TEMPLATE_DIR / "preset_links.json")
     template_links = links.get(template_id, {})
+    vocal_sibilance_profile = build_vocal_sibilance_profile(analysis, input_features)
 
     reference_block: dict[str, Any] | None = None
     if ref_features is not None:
         reference_block = {
             "features": ref_features,
             "input_features": input_features,
-            "overrides": build_reference_overrides(ref_features, input_features),
+            "overrides": build_reference_overrides(ref_features, input_features, analysis, template_id),
         }
 
     if template_id == "template_d":
@@ -505,6 +790,7 @@ def build_plan(
             "selected_template_name": template.get("display_name"),
             "render_mode": "current_faust_default",
             "template": template,
+            "vocal_sibilance_profile": vocal_sibilance_profile,
             "notes": [
                 "Template D uses the older current project chain.",
                 "A/B/C use scripts/render_template_mix.sh for plugin-order DSP approximations."
@@ -520,6 +806,7 @@ def build_plan(
         "selected_template": template_id,
         "selected_template_name": template.get("display_name"),
         "render_mode": "template_dsp_approximation_chain",
+        "vocal_sibilance_profile": vocal_sibilance_profile,
         "residual_vocal_eq": build_residual_vocal_eq(analysis, template_id),
         "vocal_track": {
             **{k: v for k, v in template["vocal_track"].items() if k != "insert_chain"},

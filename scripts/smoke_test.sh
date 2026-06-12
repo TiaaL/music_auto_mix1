@@ -5,9 +5,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=./common.sh
 source "$SCRIPT_DIR/common.sh"
+PYTHON_BIN="$(project_python_bin)"
 
 ensure_command "sox" "Install SoX to generate smoke-test input files"
-ensure_command "python3" "Install Python 3 to run scripts/auto_volume_mix.py"
+ensure_command "$PYTHON_BIN" "Create the project .venv or set PYTHON_BIN"
 ensure_command "ffmpeg" "Install FFmpeg to run workflow smoke tests"
 ensure_command "ffprobe" "Install FFmpeg so ffprobe is available"
 

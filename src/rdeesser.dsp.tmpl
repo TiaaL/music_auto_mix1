@@ -1,0 +1,109 @@
+// ================================================================
+// RDeEsser-style De-esser — Mono
+// ================================================================
+// Simulates the Waves Renaissance De-Esser split-band architecture:
+//
+//   Input ─┬─→ LP (below crossover) ──────────────────────────────→ ┐ output
+//          └─→ HP (ess band) → detect RMS → gain computer         → │
+//                                ↓                  ↓ apply gain  ──→ ┘
+//
+// The input is split into sub-band and ess-band via complementary
+// filters: LP + HP = original (exact reconstruction).
+// Gain reduction is applied only to the ess-band, so low frequencies
+// are never touched — pure surgical de-essing.
+//
+// Gain computer: hard-knee, infinite ratio, limited by RANGE_DB.
+//   level > THRESH_DB  →  gain = -(level - THRESH_DB), capped at -RANGE_DB
+//
+// Input:  1 channel (mono)
+// Output: 1 channel (mono)
+// ================================================================
+
+declare name        "RDeEsser Renaissance De-Esser Simulation";
+declare version     "1.0";
+declare description "Split-band de-esser: HP ess-band detection, gain range limited";
+
+import("stdfaust.lib");
+
+// ----------------------------------------------------------------
+// Parameters — edit here
+// ----------------------------------------------------------------
+
+ESS_FREQ   = __ESS_FREQ__;  // Hz: crossover / sibilance detection frequency
+THRESH_DB  = __THRESH_DB__;   // dBFS: threshold above which gain reduction kicks in
+RANGE_DB   = __RANGE_DB__;    // dB: maximum gain reduction on ess-band (always positive)
+ATTACK_MS  = 1.0;     // ms: de-esser attack  (fast for transient control)
+RELEASE_MS = 40.0;    // ms: de-esser release (short for transparent recovery)
+RMS_WIN_MS = 3.0;     // ms: RMS detection window (short = fast, tracks plosives)
+DEESS_MODE = 0;       // 0 = split-band, 1 = wideband
+MONITOR_ESS = 0;      // 0 = normal output, 1 = ess band only (tuning aid)
+
+// ----------------------------------------------------------------
+// Complementary LP / HP crossover
+// ----------------------------------------------------------------
+// lpCross(fc): 2nd-order Butterworth LP
+// hpCross(fc): complement = input − LP(input)
+// Their sum is exactly the input (perfect reconstruction). ✓
+
+lpCross(fc) = fi.lowpass(2, fc);
+hpCross(fc) = _ <: (_, lpCross(fc)) : -;
+
+// ----------------------------------------------------------------
+// RMS level detector (same as c1_comp)
+// ----------------------------------------------------------------
+
+rmsCoeff = exp(-1.0 / (RMS_WIN_MS * 0.001 * ma.SR));
+rmsLevel = _ <: * : si.smooth(rmsCoeff) : sqrt;
+
+// ----------------------------------------------------------------
+// De-esser gain computer (dB output, hard knee, range-limited)
+// ----------------------------------------------------------------
+// Returns gain in dB ≤ 0.  No reduction below threshold.
+
+essGainDB(thresh, range, levelLin) = gainDB
+with {
+    levelDB = ba.linear2db(max(levelLin, ma.MIN));
+    excess  = max(0.0, levelDB - thresh);
+    gainDB  = -(min(range, excess));       // 0 when below threshold
+};
+
+// ----------------------------------------------------------------
+// Attack / release smoother (dB domain) — same logic as c1_comp
+// ----------------------------------------------------------------
+
+coeffA = exp(-1.0 / (ATTACK_MS  * 0.001 * ma.SR));
+coeffR = exp(-1.0 / (RELEASE_MS * 0.001 * ma.SR));
+
+smoothGainDB = loop ~ _
+with {
+    loop(prev, target) = select2(target < prev,
+        prev + (target - prev) * (1.0 - coeffR),
+        prev + (target - prev) * (1.0 - coeffA)
+    );
+};
+
+// ----------------------------------------------------------------
+// De-esser: split-band processing
+// ----------------------------------------------------------------
+
+deess(x) = out
+with {
+    subBand      = x : lpCross(ESS_FREQ);         // low sub-band: untouched
+    essBand      = x : hpCross(ESS_FREQ);          // high ess-band: processed
+
+    essLevel     = essBand : rmsLevel;             // detect RMS of ess-band
+    gainDB_i     = essGainDB(THRESH_DB, RANGE_DB, essLevel);
+    gainDB_s     = gainDB_i : smoothGainDB;
+    essGain      = gainDB_s : ba.db2linear;        // ≤ 1.0
+
+    processedEss = essBand * essGain;
+    splitOut     = subBand + processedEss;
+    widebandOut  = x * essGain;
+    out          = select2(DEESS_MODE, splitOut, widebandOut);
+};
+
+// ----------------------------------------------------------------
+// Main process
+// ----------------------------------------------------------------
+
+process(x) = select2(MONITOR_ESS, deess(x), x : hpCross(ESS_FREQ));

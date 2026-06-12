@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
@@ -14,10 +15,12 @@ from analyze_reference import analyse as analyse_reference, analyse_input_pair, 
 
 
 ROOT = Path(__file__).resolve().parent.parent
+CACHE_VERSION = "auto_template_mix_features_v2"
 
 
 def default_analyzer() -> Path:
     candidates = [
+        ROOT.parent / "spectral-mix-template-selector" / "spectrum_template_analyzer.py",
         ROOT.parent.parent / "spectral-mix-template-selector" / "spectrum_template_analyzer.py",
         Path(r"D:\code\spectral-mix-template-selector\spectrum_template_analyzer.py"),
     ]
@@ -59,7 +62,8 @@ def to_msys_path(path: Path) -> str:
     resolved = path if path.is_absolute() else (ROOT / path)
     text = str(resolved.resolve(strict=False))
     if len(text) >= 2 and text[1] == ":":
-        return f"/{text[0].lower()}{text[2:].replace('\\', '/')}"
+        tail = text[2:].replace("\\", "/")
+        return f"/{text[0].lower()}{tail}"
     return text.replace("\\", "/")
 
 
@@ -80,6 +84,38 @@ def build_bash_command(renderer: str, script: Path, script_args: list[str | Path
 def write_json(path: Path, data: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def file_signature(path: Path) -> dict[str, object]:
+    stat = path.stat()
+    return {
+        "path": str(path.resolve(strict=False)),
+        "size": stat.st_size,
+        "mtime_ns": stat.st_mtime_ns,
+    }
+
+
+def cache_key(kind: str, paths: list[Path]) -> str:
+    payload = {
+        "version": CACHE_VERSION,
+        "kind": kind,
+        "files": [file_signature(path) for path in paths],
+    }
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()[:24]
+
+
+def cached_feature(kind: str, paths: list[Path], compute) -> dict:
+    cache_dir = ROOT / "calibration_outputs" / "cache" / "features"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path = cache_dir / f"{kind}_{cache_key(kind, paths)}.json"
+    if cache_path.exists():
+        print(f"[cache] {kind}: {cache_path}")
+        return json.loads(cache_path.read_text(encoding="utf-8-sig"))
+    value = compute()
+    cache_path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"[cache] {kind}: wrote {cache_path}")
+    return value
 
 
 def run_analyzer(analyzer_python: str, analyzer_script: Path, audio_path: Path) -> dict:
@@ -120,6 +156,12 @@ def run_renderer(
         cmd = ["node", str(script), template_id, str(vocal), str(accomp), str(output)]
         if with_volume_automation:
             cmd.append("--with-volume-automation")
+        if not loudness_finalizer:
+            cmd.append("--no-loudness-finalizer")
+        if reference_audio is not None:
+            cmd += ["--reference-audio", str(reference_audio)]
+        if mix_plan is not None:
+            cmd += ["--mix-plan", str(mix_plan)]
     else:
         script = ROOT / "scripts" / "render_template_mix.sh"
         cmd = build_bash_command(renderer, script, [template_id, vocal, accomp, output])
@@ -176,7 +218,7 @@ def main() -> None:
         "--reference-audio",
         type=Path,
         default=None,
-        help="Reference full-mix override; otherwise auto-resolved by song name from downloads/feishu_long_audio_screened/原曲.",
+        help="Reference full-mix override; otherwise auto-resolved by song name from a feishu_long_audio_screened/原曲 folder.",
     )
     parser.add_argument(
         "--reference-vocal",
@@ -189,6 +231,12 @@ def main() -> None:
         type=Path,
         default=None,
         help="Reference accompaniment override; otherwise auto-resolved from 伴奏/.",
+    )
+    parser.add_argument(
+        "--reference-root",
+        type=Path,
+        default=None,
+        help="Root containing 原曲/, 原曲人声/, and 伴奏/. Defaults to local downloads or a sibling feishu_long_audio_screened folder.",
     )
     parser.add_argument(
         "--no-reference",
@@ -213,6 +261,8 @@ def main() -> None:
     analysis = run_analyzer(analyzer_python, analyzer, vocal_wav)
 
     ref_full_mix: Path | None = None
+    ref_vocal: Path | None = None
+    ref_accomp: Path | None = None
     ref_features: dict | None = None
     input_features: dict | None = None
     if not args.no_reference:
@@ -220,7 +270,8 @@ def main() -> None:
         ref_vocal = resolve_path(args.reference_vocal) if args.reference_vocal else None
         ref_accomp = resolve_path(args.reference_accomp) if args.reference_accomp else None
         if ref_full_mix is None or ref_vocal is None or ref_accomp is None:
-            resolved_refs = resolve_reference_files(vocal_wav)
+            reference_root = resolve_path(args.reference_root) if args.reference_root else None
+            resolved_refs = resolve_reference_files(vocal_wav, downloads_root=reference_root, accomp_input=accomp_wav)
             ref_full_mix = ref_full_mix or resolved_refs["full_mix"]
             ref_vocal = ref_vocal or resolved_refs["vocal"]
             ref_accomp = ref_accomp or resolved_refs["accomp"]
@@ -228,14 +279,24 @@ def main() -> None:
             print(f"[ref] full_mix:   {ref_full_mix}")
             print(f"[ref] ref_vocal:  {ref_vocal}")
             print(f"[ref] ref_accomp: {ref_accomp}")
-            ref_features = analyse_reference(ref_full_mix, ref_vocal, ref_accomp)
-            input_features = analyse_input_pair(vocal_wav, accomp_wav)
+            ref_features = cached_feature(
+                "reference",
+                [ref_full_mix, ref_vocal, ref_accomp],
+                lambda: analyse_reference(ref_full_mix, ref_vocal, ref_accomp),
+            )
+            input_features = cached_feature(
+                "input_pair",
+                [vocal_wav, accomp_wav],
+                lambda: analyse_input_pair(vocal_wav, accomp_wav),
+            )
         else:
             print(
                 "[ref] Reference files not all resolved; rendering without reference overrides. "
                 f"(full_mix={ref_full_mix}, vocal={ref_vocal}, accomp={ref_accomp})"
             )
             ref_full_mix = None
+            ref_vocal = None
+            ref_accomp = None
 
     plan = build_plan(analysis, ref_features=ref_features, input_features=input_features)
 

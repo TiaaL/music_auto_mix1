@@ -28,18 +28,18 @@ mix(a, b, t) = a * (1.0 - t) + b * t;
 // Parameters — edit here
 // ----------------------------------------------------------------
 
-THRESHOLD_DB = -19.6;   // dBFS: compression threshold
-RATIO        = 7.03;    // compression ratio (e.g. 4 = 4:1; use 20+ for limiting)
-ATTACK_MS    = 3.66;    // ms: gain reduction attack time
-RELEASE_MS   = 132.0;   // ms: gain reduction release time
-KNEE_DB      = 6.0;     // dB: soft knee width (0 = hard knee)
-MAKEUP_DB    = 6.2;     // dB: output makeup gain
+THRESHOLD_DB = -16.0;   // dBFS: compression threshold
+RATIO        = 4.0;     // compression ratio (e.g. 4 = 4:1; use 20+ for limiting)
+ATTACK_MS    = 6.0;     // ms: gain reduction attack time
+RELEASE_MS   = 180.0;   // ms: gain reduction release time
+KNEE_DB      = 8.0;     // dB: soft knee width (0 = hard knee)
+MAKEUP_DB    = 3.0;     // dB: output makeup gain
 RMS_WIN_MS   = 10.0;    // ms: RMS detection window (larger = slower, more musical)
 PEAK_WIN_MS  = 1.0;     // ms: faster detector path for peak-sensitive behavior
 DETECTOR_MIX = 1.0;     // 0 = peak only, 1 = RMS only, between = blend
 SIDECHAIN_HP_ON = 0;    // 0 = full-band detector, 1 = high-passed sidechain
 SIDECHAIN_HP_HZ = 120.0;// Hz: sidechain high-pass cutoff
-PDR_AMOUNT   = 10.0;    // program-dependent release depth (C1-style "PDR" feel)
+PDR_AMOUNT   = 4.0;     // program-dependent release depth (C1-style "PDR" feel)
 
 // ----------------------------------------------------------------
 // RMS level detector
