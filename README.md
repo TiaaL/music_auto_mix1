@@ -129,6 +129,7 @@ Override with `--analyzer <path>`.
 ./scripts/render_template_mix.sh template_a vocal.wav accomp.wav final_mix.wav
 ./scripts/render_template_mix.sh template_b vocal.wav accomp.wav final_mix.wav
 ./scripts/render_template_mix.sh template_c vocal.wav accomp.wav final_mix.wav
+./scripts/render_template_mix.sh template_d vocal.wav accomp.wav final_mix.wav
 ```
 
 Template vocal plugin chains:
@@ -138,8 +139,9 @@ Template vocal plugin chains:
 | `template_a` | `c1_gate → template_a_vocal_proq3 → c1_comp → sibilance_mono` |
 | `template_b` | `rbass_mono → f6_rta_mono → c1_comp → sibilance_mono → l1_limiter_mono` |
 | `template_c` | `template_c_vocal_proq3 → vocal_rider_mono → c1_comp → oneknob_brighter_mono` |
+| `template_d` | legacy current chain: `rdeesser → req6 → c1_comp → vocal_group_fx` |
 
-All templates share:
+Templates A/B/C share:
 
 ```
 vocal insert chain
@@ -249,6 +251,7 @@ Configuration lives in `config/residual_vocal_eq_rules.json`.
 
 When a reference full-mix, vocal stem, and accompaniment stem are provided (auto-resolved by song name from `downloads/feishu_long_audio_screened/{原曲,原曲人声,伴奏}/` or a sibling workspace folder such as `/Users/sly/Desktop/code/music/feishu_long_audio_screened`, or explicit via `--reference-audio` / `--reference-vocal` / `--reference-accomp` / `--reference-root`), `analyze_reference.py` extracts features and `plan_mix_template.build_reference_overrides` translates them into:
 
+- **Reference/input feature cache is currently disabled.** `auto_template_mix.py` recomputes reference and input-pair features on each run so stale feature JSON cannot affect new renders.
 - **`bus_balance`** — the original song's active vocal/accompaniment ratio. The plan stores the reference gap; **gains are computed at render time** by `compute_render_bus_balance.py` (step 3a), after `vocal_group_fx` and the accompaniment chain have run. The correction is conservative: when the vocal is behind the reference, it splits the move between a limited vocal lift and a limited accompaniment cut; it does not independently chase each stem's LUFS.
 - **`source_eq.vocal_eq`** — source EQ moves after the selected vocal template chain, based on the current dry vocal's active-region tonal shape vs. the original-song vocal stem. Upper/air boosts are evidence-gated by template and sibilance/harshness safety; 14 kHz air is conservative and is never a default lift.
 - **`source_eq.accomp_eq`** — cut-only accompaniment carve EQ after the music template EQ, focused on bands where the current accompaniment masks the current vocal and the vocal sits behind the reference balance. One problem region should only be carved once, and carve decisions are coordinated with dynamic ducking so the same upper/mid issue is not cut twice.
@@ -400,26 +403,31 @@ balance and without creating digital crackle from harsh peak limiting.
 
 | Quantity | Value | Notes |
 |---|---|---|
-| Integrated LUFS (`I`) | **−13.0 … −11.0** | Hard window; reference LUFS is clamped into this range |
+| Integrated LUFS (`I`) | **−13.5 … −12.5** | Hard window; reference LUFS is clamped into this range |
 | True peak (`TP`) | **−0.8 dBTP** | Ceiling for the soft limiter |
 | Reference | `--reference-audio` | Uses the reference track's measured `I` as the render target (clamped to the window above) |
 
-### Processing chain (mode: `master_pregain_l2_soft_tp`)
+### Processing chain (mode: `master_safe_pregain_l2_controlled_makeup_soft_tp`)
 
 ```
 MASTER_2 (post MixCentric, typically ~−24 … −26 LUFS)
-  → [1] master-bus pregain (integrated, linear volume only)
+  → [1] safe master-bus pregain (capped by true-peak headroom and max gain)
   → [2] Faust master_l2_stereo (sample-peak lookahead limiter, ceiling −1.0 dBFS)
-  → [3] ffmpeg soft true-peak ceiling (176.4 kHz oversample → alimiter → 44.1 kHz)
-  → [4] global isolated-click scan (sample interpolation only; no gain/loudness change)
+  → [3] post-L2 trim when true-peak headroom allows it
+  → [4] controlled limiter makeup when the mix is still under target
+  → [5] ffmpeg soft true-peak ceiling (176.4 kHz oversample → alimiter → 44.1 kHz)
+  → [6] global isolated-click scan (sample interpolation only; no gain/loudness change)
+  → [7] true-peak safety trim if the final file measures above the TP ceiling
   → final_mix.wav
 ```
 
 **Rules that must not be broken:**
 
-- **Gain before limiting only** — pregain is applied once on the master bus; nothing boosts after the limiter.
+- **Master-bus only** — all loudness compensation stays on the master bus; vocal/accompaniment balance remains owned by step 3a.
+- **Safe pregain first** — pregain is capped by both `--max-gain-db` and the input true-peak headroom before L2.
+- **Controlled makeup only when needed** — post-L2 makeup is split into small passes through the soft true-peak limiter instead of blindly adding master gain.
 - **No loudnorm on the output** — the finalizer does not run FFmpeg `loudnorm` dynamic normalization on the rendered file.
-- **No post-limiter global trim** — a whole-file static cut based on measured TP was tried and rejected: it pulled integrated loudness down while only a few peaks were hot.
+- **True-peak safety can cut, not boost** — the final safety trim only attenuates files that still measure above the TP ceiling.
 - **No bus staging** — do not push level on individual buses to “make room” for mastering; stem balance stays in step 3a.
 - **De-click is not loudness control** — the final global scan only interpolates very short isolated sample spikes and records the touched times in `.loudness.json`.
 
@@ -444,11 +452,12 @@ sample peaks before the FFmpeg ceiling.
 
 | Flag | Default | Effect |
 |---|---|---|
-| `--target-i` | `−12.0` LUFS | Overridden by reference / mix-plan target, then clamped to [−13, −11] |
+| `--target-i` | `−13.0` LUFS | Overridden by reference / mix-plan target, then clamped to [−13.5, −12.5] |
 | `--target-tp` | `−0.8` dBTP | True-peak ceiling |
 | `--target-lra` | `11.0` LU | LRA hint for measurement; clamped against reference LRA when provided |
-| `--max-gain-db` | `14.0` | Maximum master pregain |
+| `--max-gain-db` | `18.0` | Maximum master pregain before the safe true-peak cap |
 | `--max-attenuation-db` | `12.0` | Maximum master attenuation when input is hotter than target |
+| `--controlled-limiter-makeup-max-db` | `8.0` | Maximum post-L2 makeup routed through the soft true-peak limiter |
 | `--limiter` | `build/master_l2_stereo` | Faust L2 binary (passed by `render_template_mix.sh`) |
 | `--reference-audio` | — | Reference full mix; its integrated LUFS becomes the target |
 | `--mix-plan` | — | Resolved plan; may supply a clamped `loudness_target.lufs_i` |
@@ -457,7 +466,11 @@ sample peaks before the FFmpeg ceiling.
 | `--max-declick-samples` | `4` | Longest burst treated as an isolated click |
 
 Metadata is written to `<output>.loudness.json` (`pre_master`, `post_pregain`, `post_l2`,
-`post_limiter`, `global_declick`, `final`, plus optional focus windows such as `168_182s`).
+`post_trim`, `controlled_limiter_makeup`, `post_limiter`, `global_declick`, `final`,
+plus optional focus windows such as `168_182s`). The report includes
+`needed_gain_db`, `available_gain_db`, `true_peak_safety_trim_db`,
+`target_error_db`, and `loudness_under_compensated` so failed loudness recovery is
+visible instead of silently producing a quiet render.
 
 ### Skip final loudness
 
@@ -659,7 +672,7 @@ make build/vocal_group_fx
 | Residual EQ | `scripts/apply_residual_vocal_eq.py` | Apply plan-driven EQ between template chain and group FX |
 | Accompaniment yielding | `scripts/apply_accomp_vocal_duck.py` | Template + dry-vocal-driven multiband ducking keyed by the post-FX vocal |
 | Bus balance | `scripts/compute_render_bus_balance.py` | Conservative active vocal/accomp ratio matching at render time (step 3a) |
-| Master loudness | `scripts/master_loudness_finalize.py` | Master-bus pregain → L2 → soft true-peak ceiling → global de-click |
+| Master loudness | `scripts/master_loudness_finalize.py` | Safe master-bus pregain → L2 → post-trim / controlled makeup → soft true-peak ceiling → global de-click |
 | Render orchestration | `scripts/render_template_mix.sh` | Runs the full DSP pipeline in order |
 | Full auto pipeline | `scripts/auto_template_mix.py` | End-to-end: analyze → plan → render → report |
 | Calibration | `scripts/daw_reference_compare.py` | Faust stage vs. Cubase reference comparison |

@@ -20,6 +20,10 @@ FINAL_LOUDNESS_MIN_LUFS = -13.5
 FINAL_LOUDNESS_MAX_LUFS = -12.5
 DEFAULT_FINAL_TARGET_LUFS = -13.0
 PREGAIN_INPUT_TP_HEADROOM_DB = -0.3
+DEFAULT_MAX_GAIN_DB = 18.0
+CONTROLLED_LIMITER_MAKEUP_MAX_DB = 8.0
+CONTROLLED_LIMITER_MAKEUP_STEP_DB = 4.0
+LOUDNESS_MISS_TOLERANCE_DB = 0.5
 DEFAULT_DECLICK_THRESHOLD = 0.60
 DEFAULT_MAX_DECLICK_SAMPLES = 4
 DEFAULT_MAX_DECLICK_EVENTS = 2000
@@ -535,9 +539,12 @@ def main() -> None:
     parser.add_argument("--target-i", type=float, default=DEFAULT_FINAL_TARGET_LUFS)
     parser.add_argument("--target-tp", type=float, default=-0.8)
     parser.add_argument("--target-lra", type=float, default=11.0)
-    parser.add_argument("--max-gain-db", type=float, default=12.0,
+    parser.add_argument("--max-gain-db", type=float, default=DEFAULT_MAX_GAIN_DB,
                         help="Maximum master-bus gain before L2.")
     parser.add_argument("--max-attenuation-db", type=float, default=12.0)
+    parser.add_argument("--controlled-limiter-makeup-max-db", type=float,
+                        default=CONTROLLED_LIMITER_MAKEUP_MAX_DB,
+                        help="Maximum post-L2 makeup sent through the soft true-peak limiter.")
     parser.add_argument("--no-global-declick", action="store_true",
                         help="Disable final isolated-sample click scan/repair.")
     parser.add_argument("--declick-threshold", type=float, default=DEFAULT_DECLICK_THRESHOLD,
@@ -585,15 +592,23 @@ def main() -> None:
 
     pre_measure = loudnorm_measure(args.input_wav, args.target_i, args.target_tp, args.target_lra)
     pre_sections = ebur128_sections(args.input_wav)
+    needed_gain_db = args.target_i - float(pre_measure["input_i"])
     desired_pregain_db = master_pregain_db(
         pre_measure, args.target_i, args.max_gain_db, args.max_attenuation_db
     )
-    pregain_db = desired_pregain_db
     input_tp = float(pre_measure.get("input_tp", -10.0))
+    safe_pregain_ceiling_db = max(0.0, PREGAIN_INPUT_TP_HEADROOM_DB - input_tp)
+    pre_l2_gain_ceiling_db = min(args.max_gain_db, safe_pregain_ceiling_db)
+    pregain_db = clamp(
+        needed_gain_db,
+        -args.max_attenuation_db,
+        pre_l2_gain_ceiling_db,
+    )
     print(
         f"[master] Initial pregain: {pregain_db:.2f} dB "
-        f"(desired {desired_pregain_db:.2f}, input TP {input_tp:.2f}); "
-        f"L2 sample-peak limiter handles overshoot before soft TP."
+        f"(needed {needed_gain_db:.2f}, input TP {input_tp:.2f}, "
+        f"safe ceiling {pre_l2_gain_ceiling_db:.2f}); "
+        f"L2 handles only the safe pregain stage before soft TP makeup."
     )
 
     with tempfile.TemporaryDirectory(prefix="master_loudness_") as tmp_dir:
@@ -603,6 +618,7 @@ def main() -> None:
         trimmed = tmp_root / "03_post_trim.wav"
         limited = tmp_root / "04_limited.wav"
         declicked = tmp_root / "05_declicked.wav"
+        tp_safe = tmp_root / "06_true_peak_safe.wav"
 
         apply_gain(args.input_wav, gained, pregain_db)
         post_gain_measure = loudnorm_measure(gained, args.target_i, args.target_tp, args.target_lra)
@@ -630,8 +646,55 @@ def main() -> None:
             else post_l2_measure
         )
 
-        apply_soft_peak_limit(trimmed, limited, args.target_tp)
-        post_limiter_measure = loudnorm_measure(limited, args.target_i, args.target_tp, args.target_lra)
+        controlled_makeup_steps: list[dict[str, float]] = []
+        controlled_makeup_db = 0.0
+        controlled_makeup_residual_before_db = max(
+            0.0,
+            args.target_i - float(post_trim_measure["input_i"]),
+        )
+        controlled_current = trimmed
+        controlled_current_measure = post_trim_measure
+        remaining_makeup_db = max(0.0, args.controlled_limiter_makeup_max_db)
+        step_index = 0
+        while remaining_makeup_db > 0.005:
+            residual_db = args.target_i - float(controlled_current_measure["input_i"])
+            if residual_db <= 0.05:
+                break
+            step_index += 1
+            step_gain_db = clamp(
+                residual_db,
+                0.0,
+                min(remaining_makeup_db, CONTROLLED_LIMITER_MAKEUP_STEP_DB),
+            )
+            makeup_in = tmp_root / f"04_makeup_{step_index}.wav"
+            makeup_limited = tmp_root / f"04_makeup_limited_{step_index}.wav"
+            before_i = float(controlled_current_measure["input_i"])
+            apply_gain(controlled_current, makeup_in, step_gain_db)
+            apply_soft_peak_limit(makeup_in, makeup_limited, args.target_tp)
+            after_measure = loudnorm_measure(makeup_limited, args.target_i, args.target_tp, args.target_lra)
+            controlled_makeup_steps.append(
+                {
+                    "gain_db": round(step_gain_db, 3),
+                    "input_i_before": round(before_i, 3),
+                    "input_i_after": round(float(after_measure["input_i"]), 3),
+                    "input_tp_after": round(float(after_measure["input_tp"]), 3),
+                }
+            )
+            controlled_makeup_db += step_gain_db
+            remaining_makeup_db -= step_gain_db
+            controlled_current = makeup_limited
+            controlled_current_measure = after_measure
+
+        if controlled_makeup_db > 0.005:
+            shutil.copyfile(controlled_current, limited)
+            post_limiter_measure = controlled_current_measure
+        else:
+            apply_soft_peak_limit(trimmed, limited, args.target_tp)
+            post_limiter_measure = loudnorm_measure(limited, args.target_i, args.target_tp, args.target_lra)
+        controlled_makeup_residual_after_db = max(
+            0.0,
+            args.target_i - float(post_limiter_measure["input_i"]),
+        )
         if args.no_global_declick:
             declick_report = {"enabled": False, "events": 0, "samples_repaired": 0}
             shutil.copyfile(limited, args.output_wav)
@@ -644,11 +707,21 @@ def main() -> None:
                 max_events=max(1, args.max_declick_events),
             )
             shutil.copyfile(declicked, args.output_wav)
+        output_peak_measure = loudnorm_measure(args.output_wav, args.target_i, args.target_tp, args.target_lra)
+        output_tp = float(output_peak_measure["input_tp"])
+        true_peak_safety_trim_db = 0.0
+        if output_tp > args.target_tp:
+            true_peak_safety_trim_db = args.target_tp - output_tp
+            apply_gain(args.output_wav, tp_safe, true_peak_safety_trim_db)
+            shutil.copyfile(tp_safe, args.output_wav)
         print(
             f"[master] Pregain {pregain_db:.2f} dB; post-pregain TP "
             f"{float(post_gain_measure['input_tp']):.2f} dBTP; post-L2 TP "
             f"{post_l2_tp:.2f} dBTP; post-trim {post_trim_db:.2f} dB "
             f"(residual need {residual_needed_db:.2f}, headroom {post_trim_headroom_db:.2f}); "
+            f"controlled makeup {controlled_makeup_db:.2f} dB "
+            f"(residual after {controlled_makeup_residual_after_db:.2f}); "
+            f"TP safety trim {true_peak_safety_trim_db:.2f} dB; "
             f"final TP {float(post_limiter_measure['input_tp']):.2f} dBTP "
             f"(ceiling {args.target_tp:.1f})"
         )
@@ -664,9 +737,25 @@ def main() -> None:
         "38_50s": ebur128_window_summary(final_sections, 38.0, 50.0),
         "168_182s": ebur128_window_summary(final_sections, 168.0, 182.0),
     }
+    actual_i_lufs = float(final_measure["input_i"])
+    actual_tp_db = float(final_measure["input_tp"])
+    target_error_db = round(actual_i_lufs - args.target_i, 3)
+    available_gain_db = round(
+        max(0.0, pregain_db)
+        + post_trim_headroom_db
+        + max(0.0, args.controlled_limiter_makeup_max_db),
+        3,
+    )
+    loudness_under_compensated = (args.target_i - actual_i_lufs) > LOUDNESS_MISS_TOLERANCE_DB
+    if loudness_under_compensated:
+        print(
+            "[master][warning] loudness under-compensated: "
+            f"needed {needed_gain_db:.2f} dB, available {available_gain_db:.2f} dB, "
+            f"target error {target_error_db:.2f} dB"
+        )
     metadata = {
         "enabled": True,
-        "mode": "master_pregain_l2_soft_tp",
+        "mode": "master_safe_pregain_l2_controlled_makeup_soft_tp",
         "reference_audio": reference_meta,
         "final_loudness_window_lufs": [FINAL_LOUDNESS_MIN_LUFS, FINAL_LOUDNESS_MAX_LUFS],
         "target_i_lufs": args.target_i,
@@ -674,11 +763,24 @@ def main() -> None:
         "target_lra": args.target_lra,
         "max_gain_db": args.max_gain_db,
         "max_attenuation_db": args.max_attenuation_db,
+        "controlled_limiter_makeup_max_db": args.controlled_limiter_makeup_max_db,
         "pregain_db": pregain_db,
         "desired_pregain_db": desired_pregain_db,
+        "needed_gain_db": round(needed_gain_db, 3),
+        "available_gain_db": available_gain_db,
+        "safe_pregain_ceiling_db": round(safe_pregain_ceiling_db, 3),
+        "pre_l2_gain_ceiling_db": round(pre_l2_gain_ceiling_db, 3),
         "pre_trim_db": pre_trim_db,
         "post_trim_db": post_trim_db if abs(post_trim_db) >= 0.05 else 0.0,
         "post_trim_headroom_db": round(post_trim_headroom_db, 3),
+        "true_peak_safety_trim_db": round(true_peak_safety_trim_db, 3),
+        "controlled_limiter_makeup": {
+            "enabled": controlled_makeup_db > 0.005,
+            "applied_db": round(controlled_makeup_db, 3),
+            "residual_before_db": round(controlled_makeup_residual_before_db, 3),
+            "residual_after_db": round(controlled_makeup_residual_after_db, 3),
+            "steps": controlled_makeup_steps,
+        },
         "post_pregain": post_gain_measure,
         "post_l2": post_l2_measure,
         "post_trim": post_trim_measure,
@@ -687,9 +789,12 @@ def main() -> None:
         "post_limiter": post_limiter_measure,
         "global_declick": declick_report,
         "final": final_measure,
-        "actual_i_lufs": final_measure.get("input_i"),
-        "actual_tp_db": final_measure.get("input_tp"),
+        "actual_i_lufs": actual_i_lufs,
+        "actual_tp_db": actual_tp_db,
         "actual_lra": final_measure.get("input_lra"),
+        "in_target_window": FINAL_LOUDNESS_MIN_LUFS <= actual_i_lufs <= FINAL_LOUDNESS_MAX_LUFS,
+        "target_error_db": target_error_db,
+        "loudness_under_compensated": loudness_under_compensated,
         "final_sections": {key: value for key, value in final_sections.items() if key != "sections"},
         "final_focus_windows": final_focus_windows,
     }

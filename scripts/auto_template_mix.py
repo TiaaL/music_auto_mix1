@@ -106,16 +106,8 @@ def cache_key(kind: str, paths: list[Path]) -> str:
 
 
 def cached_feature(kind: str, paths: list[Path], compute) -> dict:
-    cache_dir = ROOT / "calibration_outputs" / "cache" / "features"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_path = cache_dir / f"{kind}_{cache_key(kind, paths)}.json"
-    if cache_path.exists():
-        print(f"[cache] {kind}: {cache_path}")
-        return json.loads(cache_path.read_text(encoding="utf-8-sig"))
-    value = compute()
-    cache_path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"[cache] {kind}: wrote {cache_path}")
-    return value
+    print(f"[cache disabled] {kind}: recomputing features")
+    return compute()
 
 
 def run_analyzer(analyzer_python: str, analyzer_script: Path, audio_path: Path) -> dict:
