@@ -251,7 +251,7 @@ Configuration lives in `config/residual_vocal_eq_rules.json`.
 
 When a reference full-mix, vocal stem, and accompaniment stem are provided (auto-resolved by song name from `downloads/feishu_long_audio_screened/{原曲,原曲人声,伴奏}/` or a sibling workspace folder such as `/Users/sly/Desktop/code/music/feishu_long_audio_screened`, or explicit via `--reference-audio` / `--reference-vocal` / `--reference-accomp` / `--reference-root`), `analyze_reference.py` extracts features and `plan_mix_template.build_reference_overrides` translates them into:
 
-- **Reference/input feature cache is currently disabled.** `auto_template_mix.py` recomputes reference and input-pair features on each run so stale feature JSON cannot affect new renders.
+- **Reference/input feature cache is safety-keyed.** `auto_template_mix.py` stores feature JSON under `calibration_outputs/cache/features/`; the cache key includes the input file path/size/mtime plus the analysis code signatures, so changed audio or analyzer logic invalidates old feature data.
 - **`bus_balance`** — the original song's active vocal/accompaniment ratio. The plan stores the reference gap; **gains are computed at render time** by `compute_render_bus_balance.py` (step 3a), after `vocal_group_fx` and the accompaniment chain have run. The correction is conservative: when the vocal is behind the reference, it splits the move between a limited vocal lift and a limited accompaniment cut; it does not independently chase each stem's LUFS.
 - **`source_eq.vocal_eq`** — source EQ moves after the selected vocal template chain, based on the current dry vocal's active-region tonal shape vs. the original-song vocal stem. Upper/air boosts are evidence-gated by template and sibilance/harshness safety; 14 kHz air is conservative and is never a default lift.
 - **`source_eq.accomp_eq`** — cut-only accompaniment carve EQ after the music template EQ, focused on bands where the current accompaniment masks the current vocal and the vocal sits behind the reference balance. One problem region should only be carved once, and carve decisions are coordinated with dynamic ducking so the same upper/mid issue is not cut twice.
@@ -425,7 +425,7 @@ MASTER_2 (post MixCentric, typically ~−24 … −26 LUFS)
 
 - **Master-bus only** — all loudness compensation stays on the master bus; vocal/accompaniment balance remains owned by step 3a.
 - **Safe pregain first** — pregain is capped by both `--max-gain-db` and the input true-peak headroom before L2.
-- **Controlled makeup only when needed** — post-L2 makeup is split into small passes through the soft true-peak limiter instead of blindly adding master gain.
+- **Controlled makeup only when needed** — post-L2 makeup is split into at most two small passes through the soft true-peak limiter instead of blindly adding master gain.
 - **No loudnorm on the output** — the finalizer does not run FFmpeg `loudnorm` dynamic normalization on the rendered file.
 - **True-peak safety can cut, not boost** — the final safety trim only attenuates files that still measure above the TP ceiling.
 - **No bus staging** — do not push level on individual buses to “make room” for mastering; stem balance stays in step 3a.
@@ -464,10 +464,11 @@ sample peaks before the FFmpeg ceiling.
 | `--no-global-declick` | off | Skip the final isolated-click scan |
 | `--declick-threshold` | `0.6` | Residual threshold for global click detection |
 | `--max-declick-samples` | `4` | Longest burst treated as an isolated click |
+| `--detailed-loudness-report` | off | Also measure EBU R128 section/focus diagnostics; slower |
 
 Metadata is written to `<output>.loudness.json` (`pre_master`, `post_pregain`, `post_l2`,
 `post_trim`, `controlled_limiter_makeup`, `post_limiter`, `global_declick`, `final`,
-plus optional focus windows such as `168_182s`). The report includes
+plus focus windows such as `168_182s` when `--detailed-loudness-report` is enabled). The report includes
 `needed_gain_db`, `available_gain_db`, `true_peak_safety_trim_db`,
 `target_error_db`, and `loudness_under_compensated` so failed loudness recovery is
 visible instead of silently producing a quiet render.

@@ -23,6 +23,8 @@ PREGAIN_INPUT_TP_HEADROOM_DB = -0.3
 DEFAULT_MAX_GAIN_DB = 18.0
 CONTROLLED_LIMITER_MAKEUP_MAX_DB = 8.0
 CONTROLLED_LIMITER_MAKEUP_STEP_DB = 4.0
+CONTROLLED_LIMITER_MAKEUP_MAX_STEPS = 2
+CONTROLLED_LIMITER_MAKEUP_TOLERANCE_DB = 0.35
 LOUDNESS_MISS_TOLERANCE_DB = 0.5
 DEFAULT_DECLICK_THRESHOLD = 0.60
 DEFAULT_MAX_DECLICK_SAMPLES = 4
@@ -88,6 +90,19 @@ def loudnorm_measure(path: Path, target_i: float, target_tp: float, target_lra: 
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr)
     return parse_loudnorm_json(proc.stderr)
+
+
+def shifted_loudness_measure(measure: dict[str, float | str], gain_db: float) -> dict[str, float | str]:
+    shifted = dict(measure)
+    for key in ("input_i", "input_tp", "input_thresh", "output_i", "output_tp", "output_thresh"):
+        value = shifted.get(key)
+        if isinstance(value, (int, float)):
+            shifted[key] = round(float(value) + gain_db, 3)
+    target_offset = shifted.get("target_offset")
+    if isinstance(target_offset, (int, float)):
+        shifted["target_offset"] = round(float(target_offset) - gain_db, 3)
+    shifted["estimated_after_linear_gain_db"] = round(gain_db, 3)
+    return shifted
 
 
 def percentile(values: list[float], q: float) -> float:
@@ -553,6 +568,8 @@ def main() -> None:
                         help="Maximum contiguous samples per repaired click event.")
     parser.add_argument("--max-declick-events", type=int, default=DEFAULT_MAX_DECLICK_EVENTS,
                         help="Safety cap for repaired click events.")
+    parser.add_argument("--detailed-loudness-report", action="store_true",
+                        help="Measure EBU R128 section/focus diagnostics; slower.")
     parser.add_argument("--metadata", type=Path)
     args = parser.parse_args()
 
@@ -591,7 +608,7 @@ def main() -> None:
     )
 
     pre_measure = loudnorm_measure(args.input_wav, args.target_i, args.target_tp, args.target_lra)
-    pre_sections = ebur128_sections(args.input_wav)
+    pre_sections = ebur128_sections(args.input_wav) if args.detailed_loudness_report else {}
     needed_gain_db = args.target_i - float(pre_measure["input_i"])
     desired_pregain_db = master_pregain_db(
         pre_measure, args.target_i, args.max_gain_db, args.max_attenuation_db
@@ -621,7 +638,7 @@ def main() -> None:
         tp_safe = tmp_root / "06_true_peak_safe.wav"
 
         apply_gain(args.input_wav, gained, pregain_db)
-        post_gain_measure = loudnorm_measure(gained, args.target_i, args.target_tp, args.target_lra)
+        post_gain_measure = shifted_loudness_measure(pre_measure, pregain_db)
         if args.limiter is not None and args.limiter.exists():
             limiter_proc = run([str(args.limiter), str(gained), str(l2_out)])
             if limiter_proc.returncode != 0:
@@ -641,7 +658,7 @@ def main() -> None:
         post_trim_db = clamp(residual_needed_db, 0.0, post_trim_headroom_db)
         apply_gain(l2_out, trimmed, post_trim_db)
         post_trim_measure = (
-            loudnorm_measure(trimmed, args.target_i, args.target_tp, args.target_lra)
+            shifted_loudness_measure(post_l2_measure, post_trim_db)
             if post_trim_db > 0.005
             else post_l2_measure
         )
@@ -656,7 +673,7 @@ def main() -> None:
         controlled_current_measure = post_trim_measure
         remaining_makeup_db = max(0.0, args.controlled_limiter_makeup_max_db)
         step_index = 0
-        while remaining_makeup_db > 0.005:
+        while remaining_makeup_db > 0.005 and step_index < CONTROLLED_LIMITER_MAKEUP_MAX_STEPS:
             residual_db = args.target_i - float(controlled_current_measure["input_i"])
             if residual_db <= 0.05:
                 break
@@ -684,6 +701,9 @@ def main() -> None:
             remaining_makeup_db -= step_gain_db
             controlled_current = makeup_limited
             controlled_current_measure = after_measure
+            residual_after_step_db = args.target_i - float(after_measure["input_i"])
+            if residual_after_step_db <= CONTROLLED_LIMITER_MAKEUP_TOLERANCE_DB:
+                break
 
         if controlled_makeup_db > 0.005:
             shutil.copyfile(controlled_current, limited)
@@ -714,6 +734,13 @@ def main() -> None:
             true_peak_safety_trim_db = args.target_tp - output_tp
             apply_gain(args.output_wav, tp_safe, true_peak_safety_trim_db)
             shutil.copyfile(tp_safe, args.output_wav)
+            final_measure = (
+                loudnorm_measure(args.output_wav, args.target_i, args.target_tp, args.target_lra)
+                if args.detailed_loudness_report
+                else shifted_loudness_measure(output_peak_measure, true_peak_safety_trim_db)
+            )
+        else:
+            final_measure = output_peak_measure
         print(
             f"[master] Pregain {pregain_db:.2f} dB; post-pregain TP "
             f"{float(post_gain_measure['input_tp']):.2f} dBTP; post-L2 TP "
@@ -722,7 +749,7 @@ def main() -> None:
             f"controlled makeup {controlled_makeup_db:.2f} dB "
             f"(residual after {controlled_makeup_residual_after_db:.2f}); "
             f"TP safety trim {true_peak_safety_trim_db:.2f} dB; "
-            f"final TP {float(post_limiter_measure['input_tp']):.2f} dBTP "
+            f"final TP {float(final_measure['input_tp']):.2f} dBTP "
             f"(ceiling {args.target_tp:.1f})"
         )
         if declick_report.get("enabled"):
@@ -731,12 +758,15 @@ def main() -> None:
                 f"in {declick_report['events']} isolated event(s)"
             )
 
-    final_measure = loudnorm_measure(args.output_wav, args.target_i, args.target_tp, args.target_lra)
-    final_sections = ebur128_sections(args.output_wav)
-    final_focus_windows = {
-        "38_50s": ebur128_window_summary(final_sections, 38.0, 50.0),
-        "168_182s": ebur128_window_summary(final_sections, 168.0, 182.0),
-    }
+    final_sections = ebur128_sections(args.output_wav) if args.detailed_loudness_report else {}
+    final_focus_windows = (
+        {
+            "38_50s": ebur128_window_summary(final_sections, 38.0, 50.0),
+            "168_182s": ebur128_window_summary(final_sections, 168.0, 182.0),
+        }
+        if args.detailed_loudness_report
+        else {}
+    )
     actual_i_lufs = float(final_measure["input_i"])
     actual_tp_db = float(final_measure["input_tp"])
     target_error_db = round(actual_i_lufs - args.target_i, 3)
@@ -764,6 +794,8 @@ def main() -> None:
         "max_gain_db": args.max_gain_db,
         "max_attenuation_db": args.max_attenuation_db,
         "controlled_limiter_makeup_max_db": args.controlled_limiter_makeup_max_db,
+        "controlled_limiter_makeup_max_steps": CONTROLLED_LIMITER_MAKEUP_MAX_STEPS,
+        "detailed_loudness_report": args.detailed_loudness_report,
         "pregain_db": pregain_db,
         "desired_pregain_db": desired_pregain_db,
         "needed_gain_db": round(needed_gain_db, 3),

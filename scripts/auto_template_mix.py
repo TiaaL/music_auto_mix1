@@ -15,7 +15,7 @@ from analyze_reference import analyse as analyse_reference, analyse_input_pair, 
 
 
 ROOT = Path(__file__).resolve().parent.parent
-CACHE_VERSION = "auto_template_mix_features_v2"
+CACHE_VERSION = "auto_template_mix_features_v3"
 
 
 def default_analyzer() -> Path:
@@ -96,18 +96,31 @@ def file_signature(path: Path) -> dict[str, object]:
 
 
 def cache_key(kind: str, paths: list[Path]) -> str:
+    code_paths = [
+        ROOT / "scripts" / "analyze_reference.py",
+        ROOT / "scripts" / "auto_template_mix.py",
+    ]
     payload = {
         "version": CACHE_VERSION,
         "kind": kind,
         "files": [file_signature(path) for path in paths],
+        "code": [file_signature(path) for path in code_paths if path.exists()],
     }
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()[:24]
 
 
 def cached_feature(kind: str, paths: list[Path], compute) -> dict:
-    print(f"[cache disabled] {kind}: recomputing features")
-    return compute()
+    cache_dir = ROOT / "calibration_outputs" / "cache" / "features"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path = cache_dir / f"{kind}_{cache_key(kind, paths)}.json"
+    if cache_path.exists():
+        print(f"[cache] {kind}: {cache_path}")
+        return json.loads(cache_path.read_text(encoding="utf-8-sig"))
+    value = compute()
+    cache_path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"[cache] {kind}: wrote {cache_path}")
+    return value
 
 
 def run_analyzer(analyzer_python: str, analyzer_script: Path, audio_path: Path) -> dict:
