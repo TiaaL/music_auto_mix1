@@ -46,7 +46,11 @@ def reference_levels(plan: dict | None) -> dict[str, Any]:
     ) or {}
 
 
-def measure_render_balance(vocal_group: Path, accomp_bus: Path) -> dict[str, float | int]:
+def measure_render_balance(
+    vocal_group: Path,
+    accomp_bus: Path,
+    include_loudness: bool = True,
+) -> dict[str, float | int | None]:
     vocal_audio, sr = load_audio_as_float(vocal_group)
     accomp_audio, _ = load_audio_as_float(accomp_bus)
     n = min(vocal_audio.shape[0], accomp_audio.shape[0])
@@ -55,17 +59,33 @@ def measure_render_balance(vocal_group: Path, accomp_bus: Path) -> dict[str, flo
     active_regions = active_intervals_from_vocal(vocal_audio, sr)
     vocal_active_rms = rms_db_for_intervals(to_mono(vocal_audio), sr, active_regions)
     accomp_active_rms = rms_db_for_intervals(to_mono(accomp_audio), sr, active_regions)
-    vocal_lufs = measure_loudness(vocal_group)["lufs_i"]
-    accomp_lufs = measure_loudness(accomp_bus)["lufs_i"]
-    return {
-        "vocal_lufs_i": round(vocal_lufs, 2),
-        "accomp_lufs_i": round(accomp_lufs, 2),
-        "vocal_minus_accomp_lufs_db": round(vocal_lufs - accomp_lufs, 2),
+    out: dict[str, float | int | None] = {
         "active_vocal_rms_db": round(vocal_active_rms, 3),
         "active_accomp_rms_db": round(accomp_active_rms, 3),
         "active_vocal_minus_accomp_db": round(vocal_active_rms - accomp_active_rms, 2),
         "active_region_count": len(active_regions),
     }
+    if include_loudness:
+        vocal_lufs = measure_loudness(vocal_group)["lufs_i"]
+        accomp_lufs = measure_loudness(accomp_bus)["lufs_i"]
+        out.update(
+            {
+                "vocal_lufs_i": round(vocal_lufs, 2),
+                "accomp_lufs_i": round(accomp_lufs, 2),
+                "vocal_minus_accomp_lufs_db": round(vocal_lufs - accomp_lufs, 2),
+                "loudness_measurement": "enabled",
+            }
+        )
+    else:
+        out.update(
+            {
+                "vocal_lufs_i": None,
+                "accomp_lufs_i": None,
+                "vocal_minus_accomp_lufs_db": None,
+                "loudness_measurement": "skipped_not_used_for_bus_gain",
+            }
+        )
+    return out
 
 
 def apply_dead_band(gain_db: float) -> float:
@@ -74,7 +94,7 @@ def apply_dead_band(gain_db: float) -> float:
     return round(gain_db, 2)
 
 
-def compute_bus_gains(ref_balance: dict[str, Any], measured: dict[str, float | int]) -> dict[str, Any]:
+def compute_bus_gains(ref_balance: dict[str, Any], measured: dict[str, float | int | None]) -> dict[str, Any]:
     vocal_gain = 0.0
     accomp_gain = 0.0
     reason = "no reference active vocal/accomp ratio; buses unchanged"
@@ -119,10 +139,15 @@ def main() -> None:
     parser.add_argument("accomp_bus", type=Path, help="Post-FX accompaniment bus WAV.")
     parser.add_argument("--plan", type=Path, default=None, help="Resolved mix plan with reference features.")
     parser.add_argument("--metadata", type=Path, default=None, help="Optional JSON report path.")
+    parser.add_argument(
+        "--skip-loudness",
+        action="store_true",
+        help="Skip integrated LUFS metadata scans; bus gains use active RMS only.",
+    )
     args = parser.parse_args()
 
     plan = load_json(args.plan) if args.plan and args.plan.exists() else None
-    measured = measure_render_balance(args.vocal_group, args.accomp_bus)
+    measured = measure_render_balance(args.vocal_group, args.accomp_bus, include_loudness=not args.skip_loudness)
     ref_balance = reference_levels(plan)
     bus = compute_bus_gains(ref_balance, measured)
 

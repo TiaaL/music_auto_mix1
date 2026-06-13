@@ -391,6 +391,12 @@ Output metadata: `<output>.bus_balance.json`.
 `apply_master_level_staging.py` (pre-master bus staging / window correction) is **no longer
 called** — loudness is handled only on the master bus in `master_loudness_finalize.py`.
 
+Normal template renders call `compute_render_bus_balance.py --skip-loudness`. Integrated
+LUFS for the isolated vocal/accompaniment buses is audit-only metadata and is not used
+to compute the final bus gains; skipping it avoids two full `loudnorm` scans without
+changing the rendered balance. Run `compute_render_bus_balance.py` directly without
+`--skip-loudness` when that metadata is needed for a manual audit.
+
 ---
 
 ## Master loudness finalizer (`master_loudness_finalize.py`)
@@ -677,6 +683,12 @@ report and optional WAV parity metrics.
 The parity report includes correlation, diff RMS, max absolute sample difference,
 loudness for both files, and coarse band deltas. Use it before promoting any fast
 engine change; the legacy renderer remains the reference path.
+
+For the current cold render path, start by profiling `accomp_vocal_duck` and
+`bus_balance_analysis`: historical reports show those two stages dominate measured
+stage time. `apply_accomp_vocal_duck.py --profile-timing` records its internal read,
+filter, envelope, smoothing, gain, and write timings in the duck metadata without
+changing the output audio.
 
 ---
 

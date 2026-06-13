@@ -346,7 +346,8 @@ if [[ -n "$MIX_PLAN" ]]; then
         "$PYTHON_BIN" "$SCRIPT_DIR/compute_render_bus_balance.py" \
             "$VOCAL_GROUP" "$ACCOMP_BUS" \
             --plan "$MIX_PLAN" \
-            --metadata "$BUS_BALANCE_META" | tail -1
+            --metadata "$BUS_BALANCE_META" \
+            --skip-loudness | tail -1
     )
     [[ -n "${_V_GAIN:-}" ]] && VOCAL_BUS_GAIN_DB="$_V_GAIN"
     [[ -n "${_A_GAIN:-}" ]] && ACCOMP_BUS_GAIN_DB="$_A_GAIN"

@@ -5,12 +5,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import soundfile as sf
 from scipy import signal
+
+try:
+    from numba import njit
+except ImportError:  # pragma: no cover - optional speed path
+    njit = None
 
 
 TEMPLATE_PROFILES = {
@@ -79,15 +85,32 @@ def interpolate_frames(times: np.ndarray, values: np.ndarray, n: int, sr: int) -
 
 
 def smooth_gain_db(gain_db: np.ndarray, sr: int, attack_ms: float = 35.0, release_ms: float = 180.0) -> np.ndarray:
-    out = np.empty_like(gain_db)
     attack = np.exp(-1.0 / max(1.0, attack_ms * 0.001 * sr))
     release = np.exp(-1.0 / max(1.0, release_ms * 0.001 * sr))
+    if _smooth_gain_db_numba is not None:
+        return _smooth_gain_db_numba(gain_db, float(attack), float(release))
+    out = np.empty_like(gain_db)
     prev = float(gain_db[0])
     for idx, target in enumerate(gain_db):
         coeff = attack if target < prev else release
         prev = coeff * prev + (1.0 - coeff) * float(target)
         out[idx] = prev
     return out
+
+
+if njit is not None:
+    @njit(cache=True)
+    def _smooth_gain_db_numba(gain_db: np.ndarray, attack: float, release: float) -> np.ndarray:
+        out = np.empty_like(gain_db)
+        prev = float(gain_db[0])
+        for idx in range(gain_db.shape[0]):
+            target = float(gain_db[idx])
+            coeff = attack if target < prev else release
+            prev = coeff * prev + (1.0 - coeff) * target
+            out[idx] = prev
+        return out
+else:
+    _smooth_gain_db_numba = None
 
 
 def butter_filter(samples: np.ndarray, sr: int, kind: str, cutoff: float | tuple[float, float]) -> np.ndarray:
@@ -167,21 +190,39 @@ def profile_from_plan(template: str, plan: dict[str, Any]) -> dict[str, float]:
     return profile
 
 
-def process(accomp: np.ndarray, vocal: np.ndarray, sr: int, template: str, plan: dict[str, Any]) -> tuple[np.ndarray, dict[str, Any]]:
+def process(
+    accomp: np.ndarray,
+    vocal: np.ndarray,
+    sr: int,
+    template: str,
+    plan: dict[str, Any],
+    profile_timing: bool = False,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    timings: dict[str, float] = {}
+
+    def mark(label: str, start: float) -> float:
+        if profile_timing:
+            timings[label] = round(time.perf_counter() - start, 4)
+        return time.perf_counter()
+
+    section_start = time.perf_counter()
     n = min(accomp.shape[0], vocal.shape[0])
     accomp = accomp[:n]
     vocal = vocal[:n]
     vocal_mono = mono(vocal)
     profile = profile_from_plan(template, plan)
+    section_start = mark("prepare", section_start)
 
     low = butter_filter(accomp, sr, "lowpass", 180.0)
     body = butter_filter(accomp, sr, "bandpass", (180.0, 1200.0))
     presence = butter_filter(accomp, sr, "bandpass", (1200.0, 5000.0))
     air = butter_filter(accomp, sr, "highpass", 5000.0)
+    section_start = mark("split_bands_sosfiltfilt", section_start)
 
     vocal_strength = strength_from_vocal(vocal_mono, sr, n)
     low_pressure = pressure_curve(low, sr, n)
     presence_pressure = pressure_curve(presence + air, sr, n)
+    section_start = mark("envelopes_and_pressure", section_start)
 
     low_gain_db = -vocal_strength * (profile["low_base_db"] + profile["low_extra_db"] * low_pressure)
     body_gain_db = -vocal_strength * profile["body_base_db"]
@@ -194,18 +235,19 @@ def process(accomp: np.ndarray, vocal: np.ndarray, sr: int, template: str, plan:
     body_gain_db = smooth_gain_db(body_gain_db, sr)
     presence_gain_db = smooth_gain_db(presence_gain_db, sr)
     air_gain_db = smooth_gain_db(air_gain_db, sr)
-
-    low_g = lin_gain(low_gain_db)[:, None]
-    body_g = lin_gain(body_gain_db)[:, None]
-    presence_g = lin_gain(presence_gain_db)[:, None]
-    air_g = lin_gain(air_gain_db)[:, None]
+    section_start = mark("smooth_gain_curves", section_start)
 
     out = accomp.copy()
-    out += low * (low_g - 1.0)
-    out += body * (body_g - 1.0)
-    out += presence * (presence_g - 1.0)
-    out += air * (air_g - 1.0)
+    np.multiply(low, (lin_gain(low_gain_db) - 1.0)[:, None], out=low)
+    out += low
+    np.multiply(body, (lin_gain(body_gain_db) - 1.0)[:, None], out=body)
+    out += body
+    np.multiply(presence, (lin_gain(presence_gain_db) - 1.0)[:, None], out=presence)
+    out += presence
+    np.multiply(air, (lin_gain(air_gain_db) - 1.0)[:, None], out=air)
+    out += air
     out = np.clip(out, -0.98, 0.98)
+    section_start = mark("apply_gains_and_clip", section_start)
 
     active = vocal_strength > 0.2
     report = {
@@ -223,6 +265,8 @@ def process(accomp: np.ndarray, vocal: np.ndarray, sr: int, template: str, plan:
         "presence_duck_db_active_p90": round(float(np.percentile(presence_gain_db[active], 10)) if np.any(active) else 0.0, 3),
         "policy": "template-profiled multiband accompaniment ducking keyed from post-FX vocal activity",
     }
+    if profile_timing:
+        report["timings_sec"] = timings
     return out, report
 
 
@@ -234,18 +278,26 @@ def main() -> None:
     parser.add_argument("--template", default="template_a")
     parser.add_argument("--plan", type=Path, default=None)
     parser.add_argument("--metadata", type=Path, default=None)
+    parser.add_argument("--profile-timing", action="store_true", help="Record internal duck timing in metadata.")
     args = parser.parse_args()
 
+    read_start = time.perf_counter()
     accomp, sr = read_audio(args.accomp_in)
     vocal, vocal_sr = read_audio(args.vocal_sidechain)
+    read_elapsed = round(time.perf_counter() - read_start, 4)
     if vocal_sr != sr:
         raise SystemExit(f"sample-rate mismatch: accomp {sr}, vocal {vocal_sr}")
 
     plan = load_json(args.plan)
-    out, report = process(accomp, vocal, sr, args.template, plan)
+    out, report = process(accomp, vocal, sr, args.template, plan, profile_timing=args.profile_timing)
+    if args.profile_timing:
+        report.setdefault("timings_sec", {})["read_audio"] = read_elapsed
 
     args.output_wav.parent.mkdir(parents=True, exist_ok=True)
+    write_start = time.perf_counter()
     sf.write(args.output_wav, out, sr, subtype="PCM_16")
+    if args.profile_timing:
+        report.setdefault("timings_sec", {})["write_wav"] = round(time.perf_counter() - write_start, 4)
     if args.metadata:
         args.metadata.parent.mkdir(parents=True, exist_ok=True)
         args.metadata.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
