@@ -4,6 +4,7 @@
 # ================================================================
 # Usage:
 #   ./scripts/render_template_vocal_stages.sh template_b vocal.wav out_dir
+#   ./scripts/render_template_vocal_stages.sh template_d vocal.wav out_dir
 #
 # Saves per-insert stage WAVs plus final_insert.wav, which is the processed
 # mono vocal before stereo group FX/reverb. This is for feature auditing and
@@ -29,12 +30,12 @@ fi
 source "$SCRIPT_DIR/common.sh"
 
 if [[ -z "$TEMPLATE_ID" || -z "$VOCAL_IN" || -z "$OUT_DIR" ]]; then
-    echo "Usage: $0 <template_a|template_b|template_c> <vocal.wav> <out_dir>" >&2
+    echo "Usage: $0 <template_a|template_b|template_c|template_d> <vocal.wav> <out_dir>" >&2
     exit 1
 fi
 
 case "$TEMPLATE_ID" in
-    template_a|template_b|template_c) ;;
+    template_a|template_b|template_c|template_d) ;;
     *)
         echo "Error: unsupported template id: $TEMPLATE_ID" >&2
         exit 1
@@ -89,6 +90,13 @@ case "$TEMPLATE_ID" in
         run_stage "oneknob_brighter_mono" "$OUT_DIR/03_c1_comp.wav" "$OUT_DIR/04_oneknob_brighter_mono.wav"
         cp "$OUT_DIR/04_oneknob_brighter_mono.wav" "$OUT_DIR/final_insert.wav"
         run_stage "vocal_group_fx" "$OUT_DIR/final_insert.wav" "$OUT_DIR/05_vocal_group_fx.wav"
+        ;;
+    template_d)
+        run_stage "rdeesser" "$VOCAL_IN" "$OUT_DIR/01_rdeesser.wav"
+        run_stage "req6" "$OUT_DIR/01_rdeesser.wav" "$OUT_DIR/02_req6.wav"
+        run_stage "c1_comp" "$OUT_DIR/02_req6.wav" "$OUT_DIR/03_c1_comp.wav"
+        cp "$OUT_DIR/03_c1_comp.wav" "$OUT_DIR/final_insert.wav"
+        run_stage "vocal_group_fx" "$OUT_DIR/final_insert.wav" "$OUT_DIR/04_vocal_group_fx.wav"
         ;;
 esac
 
