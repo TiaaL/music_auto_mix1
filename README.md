@@ -642,6 +642,42 @@ band balance status, spectral deviation, and tuning suggestions per template obj
 .venv/bin/python scripts/plan_mix_template.py analysis.json --output resolved_plan.json
 ```
 
+### Profile render cost and parity
+
+`profile_render_job.py` is a safety harness for future fast-path work. It does not
+change the render chain; it either runs the current legacy renderer with
+`--stage-report`, or summarizes an existing summary JSON, then writes a sorted timing
+report and optional WAV parity metrics.
+
+```bash
+# Run the current renderer, collect per-stage timing, and write profile JSON/Markdown
+.venv/bin/python scripts/profile_render_job.py vocal.wav accomp.wav \
+  --label profile_bingchao_huanghun \
+  --out-dir calibration_outputs/profiles
+
+# Summarize an existing render without re-rendering
+.venv/bin/python scripts/profile_render_job.py \
+  --summary-json calibration_outputs/latest/finaltest_bingchao_huanghun_summary.json \
+  --out-dir calibration_outputs/profiles
+
+# Summarize an existing stage report directly
+.venv/bin/python scripts/profile_render_job.py \
+  --stage-report-json calibration_outputs/latest/mix_fixed_loudness_bingchao_huanghun.stage_report.json \
+  --mix-wav calibration_outputs/latest/mix_fixed_loudness_bingchao_huanghun.wav \
+  --label fixed_loudness_bingchao_huanghun \
+  --out-dir calibration_outputs/profiles
+
+# Compare a candidate output against a baseline WAV for parity
+.venv/bin/python scripts/profile_render_job.py \
+  --summary-json calibration_outputs/latest/finaltest_bingchao_huanghun_summary.json \
+  --compare-to calibration_outputs/latest/mix_reference.wav \
+  --out-dir calibration_outputs/profiles
+```
+
+The parity report includes correlation, diff RMS, max absolute sample difference,
+loudness for both files, and coarse band deltas. Use it before promoting any fast
+engine change; the legacy renderer remains the reference path.
+
 ---
 
 ## Modifying DSP parameters
