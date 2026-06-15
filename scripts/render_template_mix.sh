@@ -27,6 +27,7 @@ STAGE_REPORT=""
 GLOBAL_DECLICK="auto"
 FAST_LOUDNESS_STEPS=""
 COMPARE_FAST_LOUDNESS=0
+SPATIAL_FX="auto"
 
 shift 4 || true
 while [[ $# -gt 0 ]]; do
@@ -54,6 +55,17 @@ while [[ $# -gt 0 ]]; do
             ;;
         --compare-fast-loudness)
             COMPARE_FAST_LOUDNESS=1
+            ;;
+        --spatial-fx)
+            shift
+            SPATIAL_FX="${1:-}"
+            if [[ "$SPATIAL_FX" != "auto" && "$SPATIAL_FX" != "off" ]]; then
+                echo "Error: --spatial-fx must be one of: auto, off" >&2
+                exit 1
+            fi
+            ;;
+        --no-spatial-fx)
+            SPATIAL_FX="off"
             ;;
         --stage-report)
             WITH_STAGE_REPORT=1
@@ -250,6 +262,24 @@ run_stage() {
     "$BUILD_DIR/$name" "$in_file" "$out_file"
 }
 
+run_binary_stage() {
+    local label="$1"
+    local binary="$2"
+    local in_file="$3"
+    local out_file="$4"
+
+    if [[ ! -x "$binary" ]]; then
+        echo "Error: binary not executable for $label: $binary" >&2
+        exit 1
+    fi
+    echo ""
+    echo "[run] $label"
+    echo "      bin: $binary"
+    echo "      in : $in_file"
+    echo "      out: $out_file"
+    "$binary" "$in_file" "$out_file"
+}
+
 if [[ "$WITH_VOLUME_AUTOMATION" == "1" ]]; then
     echo "[step 0] Optional volume automation"
     BALANCE_REPORT="${FINAL_OUT%.*}.balance.json"
@@ -317,7 +347,17 @@ else
     echo "[step 1b] Vocal plan EQ skipped: no mix plan"
 fi
 STAGE_START="$(now_ts)"
-run_stage "vocal_group_fx" "$VOCAL_CHAIN_OUT" "$VOCAL_GROUP"
+VOCAL_GROUP_FX_BIN="$BUILD_DIR/vocal_group_fx"
+ensure_binary "vocal_group_fx"
+if [[ -n "$MIX_PLAN" && "$SPATIAL_FX" != "off" ]]; then
+    echo "[step 1c] Reference spatial vocal group FX"
+    SPATIAL_META="${FINAL_OUT%.*}.spatial_fx.json"
+    VOCAL_GROUP_FX_BIN="$("$PYTHON_BIN" "$SCRIPT_DIR/build_spatial_vocal_group.py" \
+        --plan "$MIX_PLAN" \
+        --metadata "$SPATIAL_META" \
+        --mode "$SPATIAL_FX")"
+fi
+run_binary_stage "vocal_group_fx" "$VOCAL_GROUP_FX_BIN" "$VOCAL_CHAIN_OUT" "$VOCAL_GROUP"
 record_stage "vocal_group_fx" "$STAGE_START" \
     --input "vocal=$VOCAL_CHAIN_OUT" \
     --output "vocal=$VOCAL_GROUP"

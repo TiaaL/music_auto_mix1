@@ -11,6 +11,38 @@ The system has two entry points:
 
 ---
 
+## Current sync note — 2026-06-15
+
+This version promotes reference-driven vocal spatial FX from roadmap to first rollout.
+
+Problem being addressed:
+
+- Some renders can keep the vocal/accompaniment loudness ratio correct but still feel too forward or too dry compared with the original song.
+- The previous reference analysis recorded reverb as diagnostic metadata only, so `vocal_group_fx.dsp` always used the same RVerb/SuperTap/Shimmer constants regardless of the reference.
+- Reverb/delay inference is noisy: stem leakage, long sustained notes, pads, and room spill can all make a vocal stem look wetter than it really is.
+
+What changed:
+
+- `analyze_reference.py` now reports reverb confidence, delay-repeat evidence, tail stability, and a vocal-stem leakage guard.
+- `plan_mix_template.py` now writes `reference.overrides.spatial_fx`, with bounded RVerb/SuperTap parameters blended from the Faust baseline by confidence.
+- `render_template_mix.sh` can build a cached per-song `vocal_group_fx` binary from that plan via `build_spatial_vocal_group.py`; metadata is written to `<output>.spatial_fx.json`.
+- `auto_template_mix.py` forwards `--spatial-fx auto|off` and records the selected mode in the summary JSON.
+
+Why this shape:
+
+- It changes only vocal-group space, not bus balance, source EQ, master loudness, de-click, or accompaniment duck/carve policy.
+- It keeps low-confidence delay near baseline and keeps shimmer hidden by default.
+- It can be disabled with `--spatial-fx off` or `--no-spatial-fx` for A/B comparison and rollback.
+
+Known issues / next checks:
+
+- This is a conservative first rollout using generated DSP binaries; the longer-term architecture should make `vocal_group_fx` runtime-parameterized.
+- Accuracy still depends on reference stem quality. Check `<output>.spatial_fx.json` for `reason`, `guards`, and confidence before trusting an unexpected wet/dry result.
+- Validate baseline vs. spatial render on the target songs before widening limits, especially `炳超 - 黄昏` and `佳菲 - 阴天`.
+- If a render becomes too distant, first compare with `--spatial-fx off`; do not compensate by changing vocal/accompaniment bus balance or master loudness.
+
+---
+
 ## Requirements
 
 ### Toolchain
@@ -124,6 +156,11 @@ Optional flags:
 .venv/bin/python scripts/auto_template_mix.py vocal.wav accomp.wav final_mix.wav \
   --reference-audio "ref/原曲.mp3" \
   --reference-root "ref_dataset/"
+
+# Disable the first-rollout reference-driven vocal-group spatial FX
+.venv/bin/python scripts/auto_template_mix.py vocal.wav accomp.wav final_mix.wav \
+  --reference-audio "ref/原曲.mp3" \
+  --spatial-fx off
 ```
 
 The analyzer script location defaults to
@@ -156,7 +193,7 @@ Templates A/B/C share:
 vocal insert chain
   → [step 1b] residual vocal EQ (from mix plan, if --mix-plan is passed)
   → [step 1c] reference vocal source EQ (plan-driven, optional)
-  → vocal_group_fx
+  → vocal_group_fx (baseline or reference spatial plan)
 accompaniment
   → template_music_proq3_{ab|c}
   → [step 2b] reference accomp carve EQ (plan-driven, optional)
@@ -266,6 +303,7 @@ When a reference full-mix, vocal stem, and accompaniment stem are provided (auto
 - **`source_eq.accomp_eq`** — cut-only accompaniment carve EQ after the music template EQ, focused on bands where the current accompaniment masks the current vocal and the vocal sits behind the reference balance. One problem region should only be carved once, and carve decisions are coordinated with dynamic ducking so the same upper/mid issue is not cut twice.
 - **`dry_vocal_strategy`** — current dry-vocal tags and a ducking profile. Low-mid-heavy, dark, or presence-masked vocals ask the accompaniment to yield more in body/presence/air bands while voiced sections are active.
 - **`master_tilt_eq`** — up to 4 EQ moves between amix and master Pro-Q3, applied by `apply_master_tilt_eq.py`. Pushes the mix's 8-band tonal shape toward the reference's.
+- **`spatial_fx`** — bounded vocal-group RVerb/SuperTap parameters derived from reference reverb/delay evidence. The render path applies this only when confidence and stem-quality guards pass; otherwise it records the reason and uses the baseline `vocal_group_fx`.
 
 Master tilt safety rules (in `plan_mix_template.MASTER_TILT_*`):
 
@@ -277,14 +315,18 @@ Master tilt safety rules (in `plan_mix_template.MASTER_TILT_*`):
 | `MASTER_TILT_MAX_ACTIONS` | 4 | Take only the 4 worst deltas |
 | `harsh` (6.2 kHz), `sib` (9.5 kHz) | **cut-only** | Boosting these on a complete mix amplifies sibilance and cymbal hash. Brightness deficit must be accepted, not boosted. |
 
-Reverb characteristics from the reference (`reverb_proxy`) and dynamics are recorded for diagnostics but **not yet applied** — spatial effects still come from the built-in `vocal_group_fx.dsp` sends (Shimmer / RVerb / SuperTap). External `delayverb` is not wired into this pipeline yet.
+Reverb characteristics from the reference (`reverb_proxy`) now feed a conservative
+`spatial_fx` plan when reference stems are available. Rendering defaults to
+`--spatial-fx auto`: if confidence and leakage guards pass, the renderer builds or
+reuses a per-song `vocal_group_fx` binary under `build/spatial/`; otherwise it falls
+back to the fixed built-in `vocal_group_fx.dsp` baseline. External `delayverb` is not
+wired into this pipeline yet.
 
-### Reference spatial FX roadmap
+### Reference spatial FX
 
 Problem being investigated: current renders can place the vocal slightly too far
 forward even when vocal/accompaniment level balance is correct. The likely cause
-is not fader level, but that `vocal_group_fx.dsp` still uses fixed spatial
-constants:
+is not fader level, but fixed vocal-group spatial constants. Baseline values are:
 
 | Module | Current fixed baseline |
 |---|---|
@@ -292,27 +334,27 @@ constants:
 | SuperTap | send `-27 dB`, return `-18.5 dB`, dark repeats, low feedback |
 | Shimmer | send `-18 dB` plus return `-18 dB`, intentionally very hidden |
 
-The target design is **reference-driven spatial planning**, not simply "more
-reverb". Reference analysis should produce a bounded `spatial_fx` plan that
-drives only the vocal group space:
+The design is **reference-driven spatial planning**, not simply "more reverb".
+Reference analysis produces a bounded `spatial_fx` plan that drives only the vocal
+group space:
 
 | Evidence | Intended control | Safety rule |
 |---|---|---|
 | `tail_to_onset_ratio_db` | Reverb wet amount / send delta | Use as a wetness trend only; require multi-phrase stability |
 | `est_rt60_ms` | Reverb length class | Do not map directly to seconds; clamp plugin time to a musical range such as `1.4-3.8 s` |
-| New early-tail proxy | Predelay and early-reflection balance | Avoid moving the dry vocal forward by adding only late tail |
-| Tail spectral tilt | Reverb damping and high shelf | Bright tails must pass harsh/sibilance safety checks |
-| Delay repeat evidence | Delay send, feedback, tap feel | Do not infer delay from `reverb_proxy` alone; low-confidence delay stays near baseline |
-| Tail M/S ratio | Space width | Width changes must be bounded and should not alter bus balance |
+| `confidence`, `valid_tail_count`, `tail_iqr_db` | Whether to apply the reverb plan | Disable or penalize unstable tail evidence |
+| `delay_proxy` | Delay send, feedback, tap feel | Do not infer delay from `reverb_proxy` alone; low-confidence delay stays near baseline |
+| `vocal_stem_quality` | Leakage guard | Do not apply spatial mapping when inactive vocal-stem energy suggests bleed/residual |
 
-Accuracy is the main risk. Stem leakage, long sung notes, pad/room spill, and
-delay/reverb confusion can all inflate the proxy. The first implementation
-should therefore output both values and confidence:
+Accuracy remains the main risk. Stem leakage, long sung notes, pad/room spill, and
+delay/reverb confusion can all inflate the proxy. The plan therefore outputs both
+values and confidence:
 
 ```json
 {
   "spatial_fx": {
     "enabled": true,
+    "applied_to_render": true,
     "confidence": 0.72,
     "reverb": {
       "send_delta_db": 2.5,
@@ -341,14 +383,13 @@ replace it:
 final_param = baseline + confidence * bounded_delta
 ```
 
-Initial rollout should be conservative:
+Current rollout policy:
 
-1. Start with reverb only: send, time, predelay, damping, and high-shelf color.
-2. Record delay evidence but keep delay near baseline until confidence is good.
-3. Keep shimmer hidden by default; only enable a small lift for high-confidence,
-wide, airy references.
-4. Validate on `炳超 - 黄昏` and `佳菲 - 阴天` with baseline vs. spatial-plan
-   renders before generalizing.
+1. Reverb can change send, time, predelay, and high-shelf color, all within `SPATIAL_LIMITS`.
+2. Delay records evidence; low confidence applies only a very small send lift near baseline.
+3. Shimmer remains hidden by default (`policy: hidden_by_default_first_rollout`).
+4. The generated binary and applied parameters are recorded in `<output>.spatial_fx.json`.
+5. Validate on `炳超 - 黄昏` and `佳菲 - 阴天` with baseline vs. spatial-plan renders before widening limits.
 
 Spatial work must not change:
 
@@ -358,11 +399,11 @@ Spatial work must not change:
 - source EQ decisions;
 - final global de-click behavior.
 
-The medium-term implementation path is to make `vocal_group_fx` runtime
-parameterized and pass `spatial_fx` from `resolved_mix_plan.json` at render time.
-A short-term proof of concept may generate a per-song DSP from a template and
-cache the compiled binary by parameter hash, but that is not the desired online
-architecture.
+The current implementation is the short-term proof of concept: generate a per-song
+DSP copy from `src/vocal_group_fx.dsp`, replace only approved constants, and cache
+the compiled binary by parameter hash. The medium-term online path is still to make
+`vocal_group_fx` runtime parameterized and pass `spatial_fx` from
+`resolved_mix_plan.json` without per-song compilation.
 
 ---
 
@@ -905,6 +946,7 @@ make build/vocal_group_fx
 | Volume automation | `scripts/auto_volume_mix.py` | Rule-based level control; continuous FFmpeg gain automation with long-expression fallback |
 | Template strategy | `scripts/plan_mix_template.py` | Spectral analysis → template → residual EQ plan |
 | Residual EQ | `scripts/apply_residual_vocal_eq.py` | Apply plan-driven EQ between template chain and group FX |
+| Spatial FX plan apply | `scripts/build_spatial_vocal_group.py` | Generate/cache per-song `vocal_group_fx` binaries from approved `spatial_fx` constants |
 | Accompaniment yielding | `scripts/apply_accomp_vocal_duck.py` | Template + dry-vocal-driven multiband ducking keyed by the post-FX vocal |
 | Bus balance | `scripts/compute_render_bus_balance.py` | Conservative active vocal/accomp ratio matching at render time (step 3a) |
 | Master loudness | `scripts/master_loudness_finalize.py` | Safe master-bus pregain → L2 → post-trim / controlled makeup → soft true-peak ceiling → global de-click |
@@ -921,7 +963,7 @@ vocal.wav ──► normalize to 44.1 kHz / pcm_f32le ──[optional: auto_volu
                                               │
                                     residual vocal EQ + reference vocal source EQ (plan)
                                               │
-                                       vocal_group_fx (stereo: shimmer + reverb + delay)
+                                       vocal_group_fx (baseline or reference spatial plan)
                                               │
 accomp.wav ─► normalize to 44.1 kHz / pcm_f32le ──[optional: auto_volume_mix]──► template music EQ + reference carve EQ
                                               │
@@ -939,6 +981,7 @@ accomp.wav ─► normalize to 44.1 kHz / pcm_f32le ──[optional: auto_volume
                                                                                           │
                                                                                   final_mix.wav
                                                                                (+ .accomp_duck.json
+                                                                                  + .spatial_fx.json
                                                                                   + .bus_balance.json
                                                                                   + .loudness.json)
 ```

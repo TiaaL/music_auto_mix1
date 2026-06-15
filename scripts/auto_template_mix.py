@@ -15,7 +15,7 @@ from analyze_reference import analyse as analyse_reference, analyse_input_pair, 
 
 
 ROOT = Path(__file__).resolve().parent.parent
-CACHE_VERSION = "auto_template_mix_features_v3"
+CACHE_VERSION = "auto_template_mix_features_v4"
 
 
 def default_analyzer() -> Path:
@@ -157,6 +157,7 @@ def run_renderer(
     global_declick: str = "auto",
     fast_loudness_steps: str = "",
     compare_fast_loudness: bool = False,
+    spatial_fx: str = "auto",
 ) -> dict:
     if legacy_current_renderer:
         script = ROOT / "scripts" / "full_fx_mix.sh"
@@ -194,6 +195,7 @@ def run_renderer(
             cmd += ["--fast-loudness-steps", fast_loudness_steps]
         if compare_fast_loudness:
             cmd.append("--compare-fast-loudness")
+        cmd += ["--spatial-fx", spatial_fx]
         if stage_report:
             cmd.append("--stage-report")
         if stage_report_loudness:
@@ -247,6 +249,17 @@ def main() -> None:
         "--compare-fast-loudness",
         action="store_true",
         help="Also run FFmpeg loudnorm for experimental fast-loudness steps and write deltas.",
+    )
+    parser.add_argument(
+        "--spatial-fx",
+        choices=("auto", "off"),
+        default="auto",
+        help="Use reference-driven vocal-group spatial FX when the resolved plan enables it.",
+    )
+    parser.add_argument(
+        "--no-spatial-fx",
+        action="store_true",
+        help="Legacy alias for --spatial-fx off.",
     )
     parser.add_argument(
         "--legacy-current-renderer",
@@ -376,6 +389,7 @@ def main() -> None:
         global_declick=args.global_declick,
         fast_loudness_steps=args.fast_loudness_steps,
         compare_fast_loudness=args.compare_fast_loudness,
+        spatial_fx="off" if args.no_spatial_fx else args.spatial_fx,
     )
     loudness_path = output_wav.with_suffix(".loudness.json")
     loudness = json.loads(loudness_path.read_text(encoding="utf-8-sig")) if loudness_path.exists() else None
@@ -393,6 +407,7 @@ def main() -> None:
         "global_declick": args.global_declick,
         "fast_loudness_steps": args.fast_loudness_steps,
         "compare_fast_loudness": args.compare_fast_loudness,
+        "spatial_fx": "off" if args.no_spatial_fx else args.spatial_fx,
         "loudness": loudness,
         "stage_report": str(output_wav.with_suffix(".stage_report.json")) if (args.stage_report or args.stage_report_loudness) else None,
         "stage_report_loudness": args.stage_report_loudness,

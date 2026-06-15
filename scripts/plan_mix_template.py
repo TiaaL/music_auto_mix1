@@ -479,6 +479,35 @@ ACCOMP_CARVE_REGION_BY_BAND = {
     "harsh": "presence",
 }
 
+SPATIAL_BASELINE = {
+    "rverb_send_pre_db": -12.5,
+    "rverb_time_s": 1.75,
+    "rverb_predelay_ms": 12.0,
+    "rverb_early_ref_db": -2.0,
+    "rverb_damp": 0.35,
+    "rverb_eq_hi_gain_db": -4.0,
+    "supertap_send_pre_db": -27.0,
+    "supertap_gain_db": -18.5,
+    "supertap_feedback": 0.10,
+    "supertap_width": 0.45,
+    "supertap_color_hz": 2400.0,
+    "shimmer_send_pre_db": -18.0,
+    "shimmer_gain_db": -18.0,
+}
+
+SPATIAL_LIMITS = {
+    "rverb_send_pre_db": (-14.0, -8.5),
+    "rverb_time_s": (1.4, 3.8),
+    "rverb_predelay_ms": (8.0, 35.0),
+    "rverb_eq_hi_gain_db": (-5.0, -2.0),
+    "supertap_send_pre_db": (-30.0, -18.0),
+    "supertap_gain_db": (-20.0, -8.0),
+    "supertap_feedback": (0.06, 0.24),
+    "supertap_width": (0.35, 0.65),
+    "shimmer_send_pre_db": (-24.0, -16.0),
+    "shimmer_gain_db": (-24.0, -16.0),
+}
+
 
 def build_dry_vocal_strategy(
     analysis: dict[str, Any],
@@ -809,6 +838,154 @@ def build_accomp_carve_eq(
     }
 
 
+def reverb_time_target(rt60_ms: float) -> float:
+    if rt60_ms <= 0.0:
+        return SPATIAL_BASELINE["rverb_time_s"]
+    if rt60_ms < 5000.0:
+        return 1.55
+    if rt60_ms < 12000.0:
+        return 2.10
+    if rt60_ms < 18000.0:
+        return 2.65
+    return 3.20
+
+
+def build_spatial_fx_plan(ref_features: dict[str, Any] | None) -> dict[str, Any]:
+    """Build bounded reference-driven vocal-group space parameters."""
+    if not ref_features:
+        return {
+            "enabled": False,
+            "applied_to_render": False,
+            "reason": "no_reference_features",
+            "baseline": SPATIAL_BASELINE,
+        }
+
+    reverb = ref_features.get("reverb_proxy") or {}
+    delay = ref_features.get("delay_proxy") or {}
+    stem_quality = ref_features.get("vocal_stem_quality") or {}
+    reasons: list[str] = []
+
+    if bool(stem_quality.get("severe_leakage")):
+        reasons.append("reference_vocal_stem_leakage_guard")
+
+    valid_tail_count = int(reverb.get("valid_tail_count") or 0)
+    if valid_tail_count < 8:
+        reasons.append("too_few_stable_tail_events")
+
+    tail_iqr = float(reverb.get("tail_iqr_db") or 0.0)
+    reverb_conf = float(reverb.get("confidence") or 0.0)
+    if tail_iqr > 10.0:
+        reverb_conf *= 0.65
+        reasons.append("tail_event_variance_penalty")
+
+    active_inactive_gap = stem_quality.get("active_minus_inactive_db")
+    if isinstance(active_inactive_gap, (int, float)) and float(active_inactive_gap) < 10.0:
+        reverb_conf = min(reverb_conf, 0.70)
+
+    if reverb_conf < 0.40:
+        reasons.append("low_reverb_confidence")
+
+    enabled = not any(reason in reasons for reason in (
+        "reference_vocal_stem_leakage_guard",
+        "too_few_stable_tail_events",
+        "low_reverb_confidence",
+    ))
+
+    baseline = dict(SPATIAL_BASELINE)
+    evidence = {
+        "reverb_proxy": reverb,
+        "delay_proxy": delay,
+        "vocal_stem_quality": stem_quality,
+    }
+    if not enabled:
+        return {
+            "enabled": False,
+            "applied_to_render": False,
+            "reason": ",".join(reasons) if reasons else "disabled_by_policy",
+            "baseline": baseline,
+            "evidence": evidence,
+        }
+
+    tail_ratio = float(reverb.get("tail_to_onset_ratio_db") or -60.0)
+    rt60_ms = float(reverb.get("est_rt60_ms") or 0.0)
+    wet_delta_target = clamp((tail_ratio + 12.0) / 12.0 * 4.0, 0.0, 4.0)
+    wet_delta = wet_delta_target * reverb_conf
+    time_target = reverb_time_target(rt60_ms)
+    predelay_target = clamp(12.0 + wet_delta_target * 4.0, 8.0, 28.0)
+
+    rverb = {
+        "send_pre_db": round(clamp(
+            baseline["rverb_send_pre_db"] + wet_delta,
+            *SPATIAL_LIMITS["rverb_send_pre_db"],
+        ), 3),
+        "time_s": round(clamp(
+            baseline["rverb_time_s"] + reverb_conf * (time_target - baseline["rverb_time_s"]),
+            *SPATIAL_LIMITS["rverb_time_s"],
+        ), 3),
+        "predelay_ms": round(clamp(
+            baseline["rverb_predelay_ms"] + reverb_conf * (predelay_target - baseline["rverb_predelay_ms"]),
+            *SPATIAL_LIMITS["rverb_predelay_ms"],
+        ), 3),
+        "early_ref_db": round(baseline["rverb_early_ref_db"], 3),
+        "damp": round(baseline["rverb_damp"], 3),
+        "eq_hi_gain_db": round(clamp(
+            baseline["rverb_eq_hi_gain_db"] + reverb_conf * 1.0,
+            *SPATIAL_LIMITS["rverb_eq_hi_gain_db"],
+        ), 3),
+        "wet_delta_db": round(wet_delta, 3),
+        "confidence": round(reverb_conf, 3),
+    }
+
+    delay_conf = float(delay.get("confidence") or 0.0)
+    if delay_conf < 0.60:
+        delay_send_delta = min(0.5, max(0.0, delay_conf * 0.8))
+        feedback = baseline["supertap_feedback"]
+        delay_policy = "low_confidence_light_send_only"
+    else:
+        delay_send_delta = min(2.5, delay_conf * 2.5)
+        feedback = baseline["supertap_feedback"] + delay_conf * 0.05
+        delay_policy = "bounded_reference_delay"
+    supertap = {
+        "send_pre_db": round(clamp(
+            baseline["supertap_send_pre_db"] + delay_send_delta,
+            *SPATIAL_LIMITS["supertap_send_pre_db"],
+        ), 3),
+        "gain_db": round(clamp(
+            baseline["supertap_gain_db"] + delay_send_delta,
+            *SPATIAL_LIMITS["supertap_gain_db"],
+        ), 3),
+        "feedback": round(clamp(feedback, *SPATIAL_LIMITS["supertap_feedback"]), 3),
+        "width": round(baseline["supertap_width"], 3),
+        "color_hz": round(baseline["supertap_color_hz"], 1),
+        "send_delta_db": round(delay_send_delta, 3),
+        "confidence": round(delay_conf, 3),
+        "policy": delay_policy,
+    }
+
+    shimmer = {
+        "send_pre_db": round(baseline["shimmer_send_pre_db"], 3),
+        "gain_db": round(baseline["shimmer_gain_db"], 3),
+        "enabled": False,
+        "confidence": 0.0,
+        "policy": "hidden_by_default_first_rollout",
+    }
+
+    return {
+        "enabled": True,
+        "applied_to_render": True,
+        "version": 1,
+        "confidence": round(reverb_conf, 3),
+        "baseline": baseline,
+        "reverb": rverb,
+        "delay": supertap,
+        "shimmer": shimmer,
+        "limits": SPATIAL_LIMITS,
+        "evidence": evidence,
+        "guards": reasons,
+        "policy": "bounded_reference_mapping_confidence_blend",
+    }
+
+
 def build_reference_overrides(
     ref_features: dict[str, Any],
     input_features: dict[str, Any] | None,
@@ -819,11 +996,12 @@ def build_reference_overrides(
 
     Memory-rule clamps applied here:
       - bus gain <= 0 (no positive gain on vocals or accompaniment)
-      - reverb is observation-only in v1 (clean/small preset still owned by Faust binary)
+      - spatial FX changes are bounded and confidence-gated
     """
     overrides: dict[str, Any] = {
         "loudness_target": ref_features.get("loudness", {}),
         "reverb_observation": ref_features.get("reverb_proxy", {}),
+        "spatial_fx": build_spatial_fx_plan(ref_features),
         "reference_dynamics": ref_features.get("dynamics", {}),
     }
 
