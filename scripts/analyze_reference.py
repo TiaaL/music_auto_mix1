@@ -11,7 +11,9 @@ Output JSON keys:
   - tonal_balance:    { sub..air dB per band, normalised so mid=0 }
   - dynamics:         { crest_db, dr_db }
   - vocal_accomp_balance: { vocal_lufs, accomp_lufs, vocal_minus_accomp_db }
-  - reverb_proxy:     { tail_to_onset_ratio_db, est_rt60_ms }  (diagnostic only in v1)
+  - reverb_proxy:     { tail_to_onset_ratio_db, est_rt60_ms, confidence, ... }
+  - delay_proxy:      { peak_corr, peak_lag_ms, confidence }
+  - vocal_stem_quality: active/inactive vocal-stem energy gap used as a leakage guard
   - sources:          paths actually used
 """
 
@@ -82,6 +84,10 @@ def db(value: float, floor: float = -120.0) -> float:
     if value <= 0 or not math.isfinite(value):
         return floor
     return 20.0 * math.log10(value)
+
+
+def clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
 
 
 def load_audio_as_float(path: Path, target_sr: int = 48000) -> tuple[np.ndarray, int]:
@@ -327,18 +333,25 @@ def reverb_proxy(data: np.ndarray, sr: int) -> dict[str, float]:
     """Crude wet/dry proxy: energy 150-400 ms after each transient onset vs onset peak."""
     x = to_mono(data)
     if x.size < sr:
-        return {"tail_to_onset_ratio_db": -60.0, "est_rt60_ms": 0.0}
+        return {"tail_to_onset_ratio_db": -60.0, "est_rt60_ms": 0.0, "confidence": 0.0}
     frame = 1024
     hop = 512
     starts = np.arange(0, x.size - frame + 1, hop)
     env = np.array([np.sqrt(np.mean(np.square(x[s : s + frame]))) for s in starts])
     if env.size < 8:
-        return {"tail_to_onset_ratio_db": -60.0, "est_rt60_ms": 0.0}
+        return {"tail_to_onset_ratio_db": -60.0, "est_rt60_ms": 0.0, "confidence": 0.0}
     diff = np.diff(env)
     threshold = float(np.percentile(diff, 95))
     onset_frames = np.where(diff > max(threshold, 1e-5))[0]
     if onset_frames.size == 0:
-        return {"tail_to_onset_ratio_db": -60.0, "est_rt60_ms": 0.0}
+        return {
+            "tail_to_onset_ratio_db": -60.0,
+            "est_rt60_ms": 0.0,
+            "onset_count": 0,
+            "valid_tail_count": 0,
+            "tail_iqr_db": 0.0,
+            "confidence": 0.0,
+        }
     frames_per_ms = sr / 1000.0 / hop
     tail_start = int(150 * frames_per_ms)
     tail_end = int(400 * frames_per_ms)
@@ -366,12 +379,107 @@ def reverb_proxy(data: np.ndarray, sr: int) -> dict[str, float]:
             except (np.linalg.LinAlgError, ValueError):
                 pass
     if not ratios:
-        return {"tail_to_onset_ratio_db": -60.0, "est_rt60_ms": 0.0}
+        return {
+            "tail_to_onset_ratio_db": -60.0,
+            "est_rt60_ms": 0.0,
+            "onset_count": int(onset_frames.size),
+            "valid_tail_count": 0,
+            "tail_iqr_db": 0.0,
+            "confidence": 0.0,
+        }
     ratio_med = float(np.median(ratios))
     rt60_med = float(np.median(decays)) if decays else 0.0
+    ratio_iqr = float(np.percentile(ratios, 75) - np.percentile(ratios, 25)) if len(ratios) > 1 else 0.0
+    count_score = clamp((len(ratios) - 4.0) / 16.0, 0.0, 1.0)
+    stability_score = 1.0 - clamp(ratio_iqr / 8.0, 0.0, 1.0)
+    wet_score = clamp((ratio_med + 12.0) / 12.0, 0.0, 1.0)
+    confidence = clamp(0.15 + 0.45 * count_score + 0.25 * stability_score + 0.15 * wet_score, 0.0, 1.0)
     return {
         "tail_to_onset_ratio_db": round(ratio_med, 2),
         "est_rt60_ms": round(rt60_med, 1),
+        "onset_count": int(onset_frames.size),
+        "valid_tail_count": int(len(ratios)),
+        "tail_iqr_db": round(ratio_iqr, 2),
+        "confidence": round(confidence, 3),
+    }
+
+
+def delay_proxy(data: np.ndarray, sr: int) -> dict[str, float]:
+    """Envelope autocorrelation proxy for audible 80-800 ms repeat structure."""
+    x = to_mono(data)
+    max_samples = min(x.size, int(sr * 180.0))
+    x = x[:max_samples]
+    if x.size < sr:
+        return {"peak_corr": 0.0, "peak_lag_ms": 0.0, "confidence": 0.0}
+    frame = max(128, int(sr * 0.020))
+    hop = max(64, int(sr * 0.010))
+    starts = np.arange(0, x.size - frame + 1, hop)
+    if starts.size < 100:
+        return {"peak_corr": 0.0, "peak_lag_ms": 0.0, "confidence": 0.0}
+    env = np.array([np.sqrt(np.mean(np.square(x[start : start + frame]))) for start in starts])
+    env = env - float(np.mean(env))
+    energy = float(np.dot(env, env))
+    if energy <= 1e-12:
+        return {"peak_corr": 0.0, "peak_lag_ms": 0.0, "confidence": 0.0}
+    n = 1 << int(np.ceil(np.log2(env.size * 2 - 1)))
+    spectrum = np.fft.rfft(env, n=n)
+    corr = np.fft.irfft(spectrum * np.conj(spectrum), n=n)[: env.size]
+    corr = corr / max(corr[0], 1e-12)
+    min_lag = max(1, int(0.080 / 0.010))
+    max_lag = min(corr.size - 1, int(0.800 / 0.010))
+    if max_lag <= min_lag:
+        return {"peak_corr": 0.0, "peak_lag_ms": 0.0, "confidence": 0.0}
+    segment = corr[min_lag : max_lag + 1]
+    peak_offset = int(np.argmax(segment))
+    peak_corr = float(segment[peak_offset])
+    peak_lag_ms = float((min_lag + peak_offset) * hop / sr * 1000.0)
+    confidence = clamp((peak_corr - 0.10) / 0.25, 0.0, 1.0)
+    boundary_lag_guard = peak_lag_ms <= 90.0 or peak_lag_ms >= 790.0
+    if boundary_lag_guard:
+        confidence = min(confidence, 0.45)
+    return {
+        "peak_corr": round(peak_corr, 3),
+        "peak_lag_ms": round(peak_lag_ms, 1),
+        "confidence": round(confidence, 3),
+        "boundary_lag_guard": bool(boundary_lag_guard),
+    }
+
+
+def interval_mask(length: int, sr: int, intervals: list[tuple[float, float]]) -> np.ndarray:
+    mask = np.zeros(length, dtype=bool)
+    for start, end in intervals:
+        s0 = max(0, min(length, int(start * sr)))
+        s1 = max(0, min(length, int(end * sr)))
+        if s1 > s0:
+            mask[s0:s1] = True
+    return mask
+
+
+def vocal_stem_quality(data: np.ndarray, sr: int, intervals: list[tuple[float, float]]) -> dict[str, float | bool]:
+    """Estimate whether the reference vocal stem has too much non-vocal residual."""
+    x = to_mono(data)
+    if x.size == 0:
+        return {
+            "active_rms_db": -120.0,
+            "inactive_rms_db": -120.0,
+            "active_minus_inactive_db": 0.0,
+            "active_coverage": 0.0,
+            "severe_leakage": True,
+        }
+    mask = interval_mask(x.size, sr, intervals)
+    active = x[mask]
+    inactive = x[~mask]
+    active_rms = float(np.sqrt(np.mean(np.square(active)))) if active.size else 0.0
+    inactive_rms = float(np.sqrt(np.mean(np.square(inactive)))) if inactive.size else 0.0
+    gap = db(active_rms) - db(inactive_rms)
+    coverage = float(np.mean(mask)) if mask.size else 0.0
+    severe = inactive.size > sr and gap < 6.0
+    return {
+        "active_rms_db": round(db(active_rms), 3),
+        "inactive_rms_db": round(db(inactive_rms), 3),
+        "active_minus_inactive_db": round(gap, 3),
+        "active_coverage": round(coverage, 4),
+        "severe_leakage": bool(severe),
     }
 
 
@@ -500,7 +608,9 @@ def analyse(full_mix: Path, vocal: Path, accomp: Path) -> dict[str, Any]:
             "coverage_sec": round(sum(end - start for start, end in active_regions), 3),
             "regions": intervals_to_rows(active_regions),
         },
+        "vocal_stem_quality": vocal_stem_quality(vocal_audio, full_sr, active_regions),
         "reverb_proxy": reverb_proxy(vocal_audio, full_sr),
+        "delay_proxy": delay_proxy(vocal_audio, full_sr),
     }
 
 

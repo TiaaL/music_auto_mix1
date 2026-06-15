@@ -218,8 +218,11 @@ def run_legacy_render(args: argparse.Namespace, out_dir: Path) -> tuple[dict[str
         cmd.append("--no-volume-automation")
     if args.no_loudness_finalizer:
         cmd.append("--no-loudness-finalizer")
+    cmd += ["--global-declick", args.global_declick]
     if args.reference_audio:
         cmd += ["--reference-audio", str(args.reference_audio)]
+    if args.stage_report_loudness:
+        cmd.append("--stage-report-loudness")
 
     start = time.perf_counter()
     proc = subprocess.run(
@@ -317,6 +320,17 @@ def main() -> None:
     parser.add_argument("--reference-audio", type=Path)
     parser.add_argument("--no-volume-automation", action="store_true")
     parser.add_argument("--no-loudness-finalizer", action="store_true")
+    parser.add_argument(
+        "--global-declick",
+        choices=("auto", "always", "off"),
+        default="auto",
+        help="Final isolated-click handling in the loudness finalizer.",
+    )
+    parser.add_argument(
+        "--stage-report-loudness",
+        action="store_true",
+        help="Also measure LUFS/true-peak in the stage report. Slower; cached by file signature.",
+    )
     args = parser.parse_args()
 
     out_dir = args.out_dir.resolve(strict=False)

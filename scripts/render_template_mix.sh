@@ -20,9 +20,14 @@ FINAL_OUT="${4:-}"
 WITH_VOLUME_AUTOMATION=0
 WITH_LOUDNESS_FINALIZER=1
 WITH_STAGE_REPORT=0
+WITH_STAGE_REPORT_LOUDNESS=0
 MIX_PLAN=""
 REFERENCE_AUDIO=""
 STAGE_REPORT=""
+GLOBAL_DECLICK="auto"
+FAST_LOUDNESS_STEPS=""
+COMPARE_FAST_LOUDNESS=0
+SPATIAL_FX="auto"
 
 shift 4 || true
 while [[ $# -gt 0 ]]; do
@@ -33,8 +38,41 @@ while [[ $# -gt 0 ]]; do
         --no-loudness-finalizer)
             WITH_LOUDNESS_FINALIZER=0
             ;;
+        --global-declick)
+            shift
+            GLOBAL_DECLICK="${1:-}"
+            if [[ "$GLOBAL_DECLICK" != "auto" && "$GLOBAL_DECLICK" != "always" && "$GLOBAL_DECLICK" != "off" ]]; then
+                echo "Error: --global-declick must be one of: auto, always, off" >&2
+                exit 1
+            fi
+            ;;
+        --no-global-declick)
+            GLOBAL_DECLICK="off"
+            ;;
+        --fast-loudness-steps)
+            shift
+            FAST_LOUDNESS_STEPS="${1:-}"
+            ;;
+        --compare-fast-loudness)
+            COMPARE_FAST_LOUDNESS=1
+            ;;
+        --spatial-fx)
+            shift
+            SPATIAL_FX="${1:-}"
+            if [[ "$SPATIAL_FX" != "auto" && "$SPATIAL_FX" != "off" ]]; then
+                echo "Error: --spatial-fx must be one of: auto, off" >&2
+                exit 1
+            fi
+            ;;
+        --no-spatial-fx)
+            SPATIAL_FX="off"
+            ;;
         --stage-report)
             WITH_STAGE_REPORT=1
+            ;;
+        --stage-report-loudness)
+            WITH_STAGE_REPORT=1
+            WITH_STAGE_REPORT_LOUDNESS=1
             ;;
         --stage-report-path)
             shift
@@ -87,7 +125,7 @@ source "$SCRIPT_DIR/common.sh"
 PYTHON_BIN="$(project_python_bin)"
 
 if [[ -z "$TEMPLATE_ID" || -z "$VOCAL_IN" || -z "$ACCOMP_IN" || -z "$FINAL_OUT" ]]; then
-    echo "Usage: $0 <template_a|template_b|template_c|template_d> <vocal.wav> <accomp.wav> <final.wav> [--with-volume-automation] [--no-loudness-finalizer] [--mix-plan plan.json]"
+    echo "Usage: $0 <template_a|template_b|template_c|template_d> <vocal.wav> <accomp.wav> <final.wav> [--with-volume-automation] [--no-loudness-finalizer] [--global-declick auto|always|off] [--mix-plan plan.json]"
     exit 1
 fi
 
@@ -124,7 +162,11 @@ if [[ "$WITH_STAGE_REPORT" == "1" ]]; then
         STAGE_REPORT="${FINAL_OUT%.*}.stage_report.json"
     fi
     rm -f "$STAGE_REPORT"
-    echo "[stage-report] enabled: $STAGE_REPORT"
+    if [[ "$WITH_STAGE_REPORT_LOUDNESS" == "1" ]]; then
+        echo "[stage-report] enabled with loudness measurements: $STAGE_REPORT"
+    else
+        echo "[stage-report] enabled (lite, no loudness measurements): $STAGE_REPORT"
+    fi
 fi
 
 now_ts() {
@@ -142,11 +184,15 @@ record_stage() {
     local elapsed
     end_ts="$(now_ts)"
     elapsed="$("$PYTHON_BIN" -c 'import sys; print(f"{float(sys.argv[2]) - float(sys.argv[1]):.6f}")' "$start_ts" "$end_ts")"
-    "$PYTHON_BIN" "$SCRIPT_DIR/record_stage_report.py" \
+    local report_cmd=("$PYTHON_BIN" "$SCRIPT_DIR/record_stage_report.py" \
         --metadata "$STAGE_REPORT" \
         --stage "$label" \
-        --elapsed-sec "$elapsed" \
-        "$@"
+        --elapsed-sec "$elapsed")
+    if [[ "$WITH_STAGE_REPORT_LOUDNESS" == "1" ]]; then
+        report_cmd+=(--measure-loudness)
+    fi
+    report_cmd+=("$@")
+    "${report_cmd[@]}"
 }
 
 RESAMPLED_VOCAL=""
@@ -216,6 +262,24 @@ run_stage() {
     "$BUILD_DIR/$name" "$in_file" "$out_file"
 }
 
+run_binary_stage() {
+    local label="$1"
+    local binary="$2"
+    local in_file="$3"
+    local out_file="$4"
+
+    if [[ ! -x "$binary" ]]; then
+        echo "Error: binary not executable for $label: $binary" >&2
+        exit 1
+    fi
+    echo ""
+    echo "[run] $label"
+    echo "      bin: $binary"
+    echo "      in : $in_file"
+    echo "      out: $out_file"
+    "$binary" "$in_file" "$out_file"
+}
+
 if [[ "$WITH_VOLUME_AUTOMATION" == "1" ]]; then
     echo "[step 0] Optional volume automation"
     BALANCE_REPORT="${FINAL_OUT%.*}.balance.json"
@@ -283,7 +347,17 @@ else
     echo "[step 1b] Vocal plan EQ skipped: no mix plan"
 fi
 STAGE_START="$(now_ts)"
-run_stage "vocal_group_fx" "$VOCAL_CHAIN_OUT" "$VOCAL_GROUP"
+VOCAL_GROUP_FX_BIN="$BUILD_DIR/vocal_group_fx"
+ensure_binary "vocal_group_fx"
+if [[ -n "$MIX_PLAN" && "$SPATIAL_FX" != "off" ]]; then
+    echo "[step 1c] Reference spatial vocal group FX"
+    SPATIAL_META="${FINAL_OUT%.*}.spatial_fx.json"
+    VOCAL_GROUP_FX_BIN="$("$PYTHON_BIN" "$SCRIPT_DIR/build_spatial_vocal_group.py" \
+        --plan "$MIX_PLAN" \
+        --metadata "$SPATIAL_META" \
+        --mode "$SPATIAL_FX")"
+fi
+run_binary_stage "vocal_group_fx" "$VOCAL_GROUP_FX_BIN" "$VOCAL_CHAIN_OUT" "$VOCAL_GROUP"
 record_stage "vocal_group_fx" "$STAGE_START" \
     --input "vocal=$VOCAL_CHAIN_OUT" \
     --output "vocal=$VOCAL_GROUP"
@@ -326,7 +400,8 @@ DUCK_CMD=("$PYTHON_BIN" "$SCRIPT_DIR/apply_accomp_vocal_duck.py"
     "$VOCAL_GROUP"
     "$ACCOMP_DUCKED"
     --template "$TEMPLATE_ID"
-    --metadata "$ACCOMP_DUCK_META")
+    --metadata "$ACCOMP_DUCK_META"
+    --profile-timing)
 if [[ -n "$MIX_PLAN" ]]; then
     DUCK_CMD+=(--plan "$MIX_PLAN")
 fi
@@ -406,12 +481,19 @@ if [[ "$WITH_LOUDNESS_FINALIZER" == "1" ]]; then
     LOUDNESS_CMD=("$PYTHON_BIN" "$SCRIPT_DIR/master_loudness_finalize.py"
         "$MASTER_2"
         "$FINAL_OUT"
-        --limiter "$BUILD_DIR/master_l2_stereo")
+        --limiter "$BUILD_DIR/master_l2_stereo"
+        --global-declick "$GLOBAL_DECLICK")
     if [[ -n "$REFERENCE_AUDIO" ]]; then
         LOUDNESS_CMD+=(--reference-audio "$REFERENCE_AUDIO")
     fi
     if [[ -n "$MIX_PLAN" ]]; then
         LOUDNESS_CMD+=(--mix-plan "$MIX_PLAN")
+    fi
+    if [[ -n "$FAST_LOUDNESS_STEPS" ]]; then
+        LOUDNESS_CMD+=(--fast-loudness-steps "$FAST_LOUDNESS_STEPS")
+    fi
+    if [[ "$COMPARE_FAST_LOUDNESS" == "1" ]]; then
+        LOUDNESS_CMD+=(--compare-fast-loudness)
     fi
     "${LOUDNESS_CMD[@]}"
     record_stage "master_loudness_finalize" "$STAGE_START" \

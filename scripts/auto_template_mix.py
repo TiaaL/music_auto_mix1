@@ -15,7 +15,7 @@ from analyze_reference import analyse as analyse_reference, analyse_input_pair, 
 
 
 ROOT = Path(__file__).resolve().parent.parent
-CACHE_VERSION = "auto_template_mix_features_v3"
+CACHE_VERSION = "auto_template_mix_features_v4"
 
 
 def default_analyzer() -> Path:
@@ -153,6 +153,11 @@ def run_renderer(
     reference_audio: Path | None = None,
     mix_plan: Path | None = None,
     stage_report: bool = False,
+    stage_report_loudness: bool = False,
+    global_declick: str = "auto",
+    fast_loudness_steps: str = "",
+    compare_fast_loudness: bool = False,
+    spatial_fx: str = "auto",
 ) -> dict:
     if legacy_current_renderer:
         script = ROOT / "scripts" / "full_fx_mix.sh"
@@ -170,6 +175,8 @@ def run_renderer(
             cmd += ["--mix-plan", str(mix_plan)]
         if stage_report:
             cmd.append("--stage-report")
+        if stage_report_loudness:
+            cmd.append("--stage-report-loudness")
     else:
         script = ROOT / "scripts" / "render_template_mix.sh"
         cmd = build_bash_command(renderer, script, [template_id, vocal, accomp, output])
@@ -183,8 +190,16 @@ def run_renderer(
         if mix_plan is not None:
             plan_arg = to_msys_path(mix_plan) if is_msys_bash(renderer) else str(mix_plan)
             cmd += ["--mix-plan", plan_arg]
+        cmd += ["--global-declick", global_declick]
+        if fast_loudness_steps:
+            cmd += ["--fast-loudness-steps", fast_loudness_steps]
+        if compare_fast_loudness:
+            cmd.append("--compare-fast-loudness")
+        cmd += ["--spatial-fx", spatial_fx]
         if stage_report:
             cmd.append("--stage-report")
+        if stage_report_loudness:
+            cmd.append("--stage-report-loudness")
     if dry_run:
         return {"ran": False, "command": cmd}
     proc = subprocess.run(cmd, text=True, encoding="utf-8", errors="replace", capture_output=True, check=False, cwd=ROOT)
@@ -218,6 +233,33 @@ def main() -> None:
         "--no-loudness-finalizer",
         action="store_true",
         help="Skip final LUFS/true-peak normalization after the template master bus.",
+    )
+    parser.add_argument(
+        "--global-declick",
+        choices=("auto", "always", "off"),
+        default="auto",
+        help="Final isolated-click handling in the loudness finalizer.",
+    )
+    parser.add_argument(
+        "--fast-loudness-steps",
+        default="",
+        help="Experimental comma-separated finalizer steps to measure with libebur128.",
+    )
+    parser.add_argument(
+        "--compare-fast-loudness",
+        action="store_true",
+        help="Also run FFmpeg loudnorm for experimental fast-loudness steps and write deltas.",
+    )
+    parser.add_argument(
+        "--spatial-fx",
+        choices=("auto", "off"),
+        default="auto",
+        help="Use reference-driven vocal-group spatial FX when the resolved plan enables it.",
+    )
+    parser.add_argument(
+        "--no-spatial-fx",
+        action="store_true",
+        help="Legacy alias for --spatial-fx off.",
     )
     parser.add_argument(
         "--legacy-current-renderer",
@@ -256,7 +298,12 @@ def main() -> None:
     parser.add_argument(
         "--stage-report",
         action="store_true",
-        help="Measure elapsed time plus LUFS/true-peak at each large render stage.",
+        help="Record elapsed time and file paths at each large render stage.",
+    )
+    parser.add_argument(
+        "--stage-report-loudness",
+        action="store_true",
+        help="Also measure LUFS/true-peak for stage inputs/outputs. Slower; cached by file signature.",
     )
     args = parser.parse_args()
 
@@ -337,7 +384,12 @@ def main() -> None:
         args.legacy_current_renderer,
         reference_audio=ref_full_mix,
         mix_plan=plan_path,
-        stage_report=args.stage_report,
+        stage_report=args.stage_report or args.stage_report_loudness,
+        stage_report_loudness=args.stage_report_loudness,
+        global_declick=args.global_declick,
+        fast_loudness_steps=args.fast_loudness_steps,
+        compare_fast_loudness=args.compare_fast_loudness,
+        spatial_fx="off" if args.no_spatial_fx else args.spatial_fx,
     )
     loudness_path = output_wav.with_suffix(".loudness.json")
     loudness = json.loads(loudness_path.read_text(encoding="utf-8-sig")) if loudness_path.exists() else None
@@ -352,8 +404,13 @@ def main() -> None:
         "reference_overrides": (plan.get("reference") or {}).get("overrides"),
         "render": render,
         "loudness_finalizer": not args.no_loudness_finalizer,
+        "global_declick": args.global_declick,
+        "fast_loudness_steps": args.fast_loudness_steps,
+        "compare_fast_loudness": args.compare_fast_loudness,
+        "spatial_fx": "off" if args.no_spatial_fx else args.spatial_fx,
         "loudness": loudness,
-        "stage_report": str(output_wav.with_suffix(".stage_report.json")) if args.stage_report else None,
+        "stage_report": str(output_wav.with_suffix(".stage_report.json")) if (args.stage_report or args.stage_report_loudness) else None,
+        "stage_report_loudness": args.stage_report_loudness,
         "important_note": (
             "A/B/C now render through template-specific Faust approximation chains. "
             "Default backend is native Faust shell rendering. Use --render-backend wasm only for "

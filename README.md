@@ -11,6 +11,38 @@ The system has two entry points:
 
 ---
 
+## Current sync note — 2026-06-15
+
+This version promotes reference-driven vocal spatial FX from roadmap to first rollout.
+
+Problem being addressed:
+
+- Some renders can keep the vocal/accompaniment loudness ratio correct but still feel too forward or too dry compared with the original song.
+- The previous reference analysis recorded reverb as diagnostic metadata only, so `vocal_group_fx.dsp` always used the same RVerb/SuperTap/Shimmer constants regardless of the reference.
+- Reverb/delay inference is noisy: stem leakage, long sustained notes, pads, and room spill can all make a vocal stem look wetter than it really is.
+
+What changed:
+
+- `analyze_reference.py` now reports reverb confidence, delay-repeat evidence, tail stability, and a vocal-stem leakage guard.
+- `plan_mix_template.py` now writes `reference.overrides.spatial_fx`, with bounded RVerb/SuperTap parameters blended from the Faust baseline by confidence.
+- `render_template_mix.sh` can build a cached per-song `vocal_group_fx` binary from that plan via `build_spatial_vocal_group.py`; metadata is written to `<output>.spatial_fx.json`.
+- `auto_template_mix.py` forwards `--spatial-fx auto|off` and records the selected mode in the summary JSON.
+
+Why this shape:
+
+- It changes only vocal-group space, not bus balance, source EQ, master loudness, de-click, or accompaniment duck/carve policy.
+- It keeps low-confidence delay near baseline and keeps shimmer hidden by default.
+- It can be disabled with `--spatial-fx off` or `--no-spatial-fx` for A/B comparison and rollback.
+
+Known issues / next checks:
+
+- This is a conservative first rollout using generated DSP binaries; the longer-term architecture should make `vocal_group_fx` runtime-parameterized.
+- Accuracy still depends on reference stem quality. Check `<output>.spatial_fx.json` for `reason`, `guards`, and confidence before trusting an unexpected wet/dry result.
+- Validate baseline vs. spatial render on the target songs before widening limits, especially `炳超 - 黄昏` and `佳菲 - 阴天`.
+- If a render becomes too distant, first compare with `--spatial-fx off`; do not compensate by changing vocal/accompaniment bus balance or master loudness.
+
+---
+
 ## Requirements
 
 ### Toolchain
@@ -21,6 +53,7 @@ The system has two entry points:
 | `g++` / `clang++` | Compile C++ → native binary |
 | `make` | Orchestrate builds |
 | `ffmpeg` + `ffprobe` | Audio I/O, volume analysis, mix down |
+| `libebur128` | Optional fast intermediate LUFS/LRA measurement for `--fast-loudness-steps` |
 | project Python (≥ 3.10) | Automation scripts and rule engine; scripts prefer `.venv/bin/python` when present |
 | `libsndfile` | Required by compiled Faust binaries |
 
@@ -111,10 +144,23 @@ Optional flags:
 .venv/bin/python scripts/auto_template_mix.py vocal.wav accomp.wav final_mix.wav \
   --report-dir reports/
 
+# Collect lightweight stage timing while rendering
+.venv/bin/python scripts/auto_template_mix.py vocal.wav accomp.wav final_mix.wav \
+  --stage-report
+
+# Use the validated hybrid fast loudness probes for intermediate finalizer decisions
+.venv/bin/python scripts/auto_template_mix.py vocal.wav accomp.wav final_mix.wav \
+  --fast-loudness-steps pre_master,post_l2,controlled_makeup_1,controlled_makeup_2
+
 # Point at a reference full mix (drives stem balance, source EQ, master tilt, loudness target)
 .venv/bin/python scripts/auto_template_mix.py vocal.wav accomp.wav final_mix.wav \
   --reference-audio "ref/原曲.mp3" \
   --reference-root "ref_dataset/"
+
+# Disable the first-rollout reference-driven vocal-group spatial FX
+.venv/bin/python scripts/auto_template_mix.py vocal.wav accomp.wav final_mix.wav \
+  --reference-audio "ref/原曲.mp3" \
+  --spatial-fx off
 ```
 
 The analyzer script location defaults to
@@ -147,7 +193,7 @@ Templates A/B/C share:
 vocal insert chain
   → [step 1b] residual vocal EQ (from mix plan, if --mix-plan is passed)
   → [step 1c] reference vocal source EQ (plan-driven, optional)
-  → vocal_group_fx
+  → vocal_group_fx (baseline or reference spatial plan)
 accompaniment
   → template_music_proq3_{ab|c}
   → [step 2b] reference accomp carve EQ (plan-driven, optional)
@@ -189,7 +235,7 @@ Optionally produce a stereo mix and a balance audit report:
 
 - Silence-detection segments the vocal track
 - Per-segment gain is computed toward a −18 dBFS RMS target (gains capped at 0 dB — no positive boost)
-- Gain changes are applied via a single continuous FFmpeg `volume` expression (no `atrim`/`concat`), avoiding segment-boundary amplitude dips
+- Gain changes are applied without `atrim`/`concat`: short maps use one continuous FFmpeg `volume` expression; long maps switch to an `enable=` filter chain to avoid FFmpeg nested-expression failures
 - Accompaniment is kept below the vocal during voiced sections; intro/outro stay at base gain
 - A second-pass balance check trims either track if the vocal/accompaniment gap is outside limits
 
@@ -257,6 +303,7 @@ When a reference full-mix, vocal stem, and accompaniment stem are provided (auto
 - **`source_eq.accomp_eq`** — cut-only accompaniment carve EQ after the music template EQ, focused on bands where the current accompaniment masks the current vocal and the vocal sits behind the reference balance. One problem region should only be carved once, and carve decisions are coordinated with dynamic ducking so the same upper/mid issue is not cut twice.
 - **`dry_vocal_strategy`** — current dry-vocal tags and a ducking profile. Low-mid-heavy, dark, or presence-masked vocals ask the accompaniment to yield more in body/presence/air bands while voiced sections are active.
 - **`master_tilt_eq`** — up to 4 EQ moves between amix and master Pro-Q3, applied by `apply_master_tilt_eq.py`. Pushes the mix's 8-band tonal shape toward the reference's.
+- **`spatial_fx`** — bounded vocal-group RVerb/SuperTap parameters derived from reference reverb/delay evidence. The render path applies this only when confidence and stem-quality guards pass; otherwise it records the reason and uses the baseline `vocal_group_fx`.
 
 Master tilt safety rules (in `plan_mix_template.MASTER_TILT_*`):
 
@@ -268,7 +315,95 @@ Master tilt safety rules (in `plan_mix_template.MASTER_TILT_*`):
 | `MASTER_TILT_MAX_ACTIONS` | 4 | Take only the 4 worst deltas |
 | `harsh` (6.2 kHz), `sib` (9.5 kHz) | **cut-only** | Boosting these on a complete mix amplifies sibilance and cymbal hash. Brightness deficit must be accepted, not boosted. |
 
-Reverb characteristics from the reference (`reverb_proxy`) and dynamics are recorded for diagnostics but **not yet applied** — spatial effects still come from the built-in `vocal_group_fx.dsp` sends (Shimmer / RVerb / SuperTap). External `delayverb` is not wired into this pipeline yet.
+Reverb characteristics from the reference (`reverb_proxy`) now feed a conservative
+`spatial_fx` plan when reference stems are available. Rendering defaults to
+`--spatial-fx auto`: if confidence and leakage guards pass, the renderer builds or
+reuses a per-song `vocal_group_fx` binary under `build/spatial/`; otherwise it falls
+back to the fixed built-in `vocal_group_fx.dsp` baseline. External `delayverb` is not
+wired into this pipeline yet.
+
+### Reference spatial FX
+
+Problem being investigated: current renders can place the vocal slightly too far
+forward even when vocal/accompaniment level balance is correct. The likely cause
+is not fader level, but fixed vocal-group spatial constants. Baseline values are:
+
+| Module | Current fixed baseline |
+|---|---|
+| RVerb | send `-12.5 dB`, time `1.75 s`, predelay `12 ms`, return path has an additional `-6 dB` trim |
+| SuperTap | send `-27 dB`, return `-18.5 dB`, dark repeats, low feedback |
+| Shimmer | send `-18 dB` plus return `-18 dB`, intentionally very hidden |
+
+The design is **reference-driven spatial planning**, not simply "more reverb".
+Reference analysis produces a bounded `spatial_fx` plan that drives only the vocal
+group space:
+
+| Evidence | Intended control | Safety rule |
+|---|---|---|
+| `tail_to_onset_ratio_db` | Reverb wet amount / send delta | Use as a wetness trend only; require multi-phrase stability |
+| `est_rt60_ms` | Reverb length class | Do not map directly to seconds; clamp plugin time to a musical range such as `1.4-3.8 s` |
+| `confidence`, `valid_tail_count`, `tail_iqr_db` | Whether to apply the reverb plan | Disable or penalize unstable tail evidence |
+| `delay_proxy` | Delay send, feedback, tap feel | Do not infer delay from `reverb_proxy` alone; low-confidence delay stays near baseline |
+| `vocal_stem_quality` | Leakage guard | Do not apply spatial mapping when inactive vocal-stem energy suggests bleed/residual |
+
+Accuracy remains the main risk. Stem leakage, long sung notes, pad/room spill, and
+delay/reverb confusion can all inflate the proxy. The plan therefore outputs both
+values and confidence:
+
+```json
+{
+  "spatial_fx": {
+    "enabled": true,
+    "applied_to_render": true,
+    "confidence": 0.72,
+    "reverb": {
+      "send_delta_db": 2.5,
+      "time_s": 2.6,
+      "predelay_ms": 18,
+      "damp": 0.32,
+      "confidence": 0.78
+    },
+    "delay": {
+      "send_delta_db": 1.5,
+      "feedback": 0.14,
+      "confidence": 0.52
+    },
+    "shimmer": {
+      "enabled": false,
+      "confidence": 0.31
+    }
+  }
+}
+```
+
+Renderer policy should blend from the Cubase/Faust baseline rather than fully
+replace it:
+
+```text
+final_param = baseline + confidence * bounded_delta
+```
+
+Current rollout policy:
+
+1. Reverb can change send, time, predelay, and high-shelf color, all within `SPATIAL_LIMITS`.
+2. Delay records evidence; low confidence applies only a very small send lift near baseline.
+3. Shimmer remains hidden by default (`policy: hidden_by_default_first_rollout`).
+4. The generated binary and applied parameters are recorded in `<output>.spatial_fx.json`.
+5. Validate on `炳超 - 黄昏` and `佳菲 - 阴天` with baseline vs. spatial-plan renders before widening limits.
+
+Spatial work must not change:
+
+- vocal/accompaniment bus balance;
+- master loudness target or final loudness validation;
+- accompaniment carve/duck policy;
+- source EQ decisions;
+- final global de-click behavior.
+
+The current implementation is the short-term proof of concept: generate a per-song
+DSP copy from `src/vocal_group_fx.dsp`, replace only approved constants, and cache
+the compiled binary by parameter hash. The medium-term online path is still to make
+`vocal_group_fx` runtime parameterized and pass `spatial_fx` from
+`resolved_mix_plan.json` without per-song compilation.
 
 ---
 
@@ -432,10 +567,11 @@ MASTER_2 (post MixCentric, typically ~−24 … −26 LUFS)
 - **Master-bus only** — all loudness compensation stays on the master bus; vocal/accompaniment balance remains owned by step 3a.
 - **Safe pregain first** — pregain is capped by both `--max-gain-db` and the input true-peak headroom before L2.
 - **Controlled makeup only when needed** — post-L2 makeup is split into at most two small passes through the soft true-peak limiter instead of blindly adding master gain.
-- **No loudnorm on the output** — the finalizer does not run FFmpeg `loudnorm` dynamic normalization on the rendered file.
+- **No loudnorm normalization on the output** — the finalizer does not run FFmpeg `loudnorm` dynamic normalization on the rendered file. The final FFmpeg `loudnorm` pass is kept as a measurement/validation report.
 - **True-peak safety can cut, not boost** — the final safety trim only attenuates files that still measure above the TP ceiling.
 - **No bus staging** — do not push level on individual buses to “make room” for mastering; stem balance stays in step 3a.
 - **De-click is not loudness control** — the final global scan only interpolates very short isolated sample spikes and records the touched times in `.loudness.json`.
+- **Do not merge gain into limiter stages without parity proof** — tests showed that combining controlled-makeup gain and soft limiter into one FFmpeg pass changed limiter behavior and final LUFS on `阴天`; keep these pass boundaries unless a new implementation proves sample/audible parity.
 
 ### Why the limiter was changed (crackle / 爆破音)
 
@@ -467,10 +603,46 @@ sample peaks before the FFmpeg ceiling.
 | `--limiter` | `build/master_l2_stereo` | Faust L2 binary (passed by `render_template_mix.sh`) |
 | `--reference-audio` | — | Reference full mix; its integrated LUFS becomes the target |
 | `--mix-plan` | — | Resolved plan; may supply a clamped `loudness_target.lufs_i` |
-| `--no-global-declick` | off | Skip the final isolated-click scan |
+| `--global-declick` | `auto` | Probe for isolated clicks first; run the full repair scan only when candidates are found. Use `always` for the old full scan or `off` to skip |
+| `--no-global-declick` | off | Legacy alias for `--global-declick off` |
 | `--declick-threshold` | `0.6` | Residual threshold for global click detection |
 | `--max-declick-samples` | `4` | Longest burst treated as an isolated click |
 | `--detailed-loudness-report` | off | Also measure EBU R128 section/focus diagnostics; slower |
+| `--fast-loudness-steps` | off | Experimental comma-separated fast measurement steps: `pre_master,post_l2,controlled_makeup_1,controlled_makeup_2` |
+| `--compare-fast-loudness` | off | For enabled fast steps, also run FFmpeg `loudnorm` and record deltas. Diagnostic only; adds back the slow passes |
+
+### Fast loudness measurement
+
+The finalizer supports an experimental hybrid measurement mode for intermediate
+decision points. It is designed for online latency work while preserving the final
+delivery validator:
+
+- `input_i`, `input_lra`, and `input_thresh` come from `libebur128`.
+- `input_tp` comes from FFmpeg `ebur128=peak=true`, conservatively rounded upward to 0.1 dB.
+- Final `output_loudnorm` remains FFmpeg `loudnorm` and must stay in place.
+
+Recommended fast path once validated for a batch:
+
+```bash
+--fast-loudness-steps pre_master,post_l2,controlled_makeup_1,controlled_makeup_2
+```
+
+Why hybrid instead of pure `libebur128`: `阴天` showed that `libebur128` true-peak could
+under-read headroom by roughly 0.3-0.6 dB at intermediate steps, which changed the
+master gain decision and moved the final render by about 0.8 LU. The hybrid path keeps
+LUFS/LRA speedups while using FFmpeg for true-peak-sensitive decisions.
+
+Measured examples from `calibration_outputs/probe`:
+
+| Song / path | Baseline finalizer | Hybrid finalizer | Final result |
+|---|---:|---:|---|
+| `黄昏` | ~33.5 s | ~14 s | `-12.55 LUFS`, `-0.8 dBTP` |
+| `春天里` | `27.7 s` | `14.6 s` | `-12.53 LUFS`, `-1.21 dBTP` |
+| `阴天` fast3 → fast4 | `19.1 s` | `15.4 s` | sample-identical output; `controlled_makeup_2` measurement replaced |
+
+`--compare-fast-loudness` should be used before promoting a new song class or a new
+measurement implementation. Do not treat the compare run as a real performance number:
+it intentionally runs both fast probes and slow FFmpeg `loudnorm` passes.
 
 Metadata is written to `<output>.loudness.json` (`pre_master`, `post_pregain`, `post_l2`,
 `post_trim`, `controlled_limiter_makeup`, `post_limiter`, `global_declick`, `final`,
@@ -485,7 +657,7 @@ visible instead of silently producing a quiet render.
 
 | Field | Purpose |
 |---|---|
-| `processing_timings_sec` | Per-step wall-clock timing inside `master_loudness_finalize.py`; used to identify slow `loudnorm`, limiter, and de-click stages. |
+| `timings_sec` | Per-step wall-clock timing inside `master_loudness_finalize.py`; used to identify slow `loudnorm`, limiter, and de-click stages. |
 | `loudness_strategy_audit` | Explains why the finalizer input is low, whether each `loudnorm` measurement is used for a decision, controlled-makeup LUFS/TP margins, and whether the middle makeup `loudnorm` would be safe to skip. |
 
 These fields do **not** control audio processing and must remain diagnostic only.
@@ -494,7 +666,7 @@ After the loudness strategy review is complete, the audit can be removed as one 
 - remove `load_mix_plan_audit_context`
 - remove `build_loudness_strategy_audit`
 - remove the `loudness_strategy_audit` entry from finalizer metadata
-- optionally remove `processing_timings_sec` if no longer profiling finalizer cost
+- optionally remove `timings_sec` if no longer profiling finalizer cost
 
 Current skip policy candidate recorded under
 `loudness_strategy_audit.safe_skip_policy_candidate`: skip the middle controlled-makeup
@@ -702,7 +874,10 @@ band balance status, spectral deviation, and tuning suggestions per template obj
 `profile_render_job.py` is a safety harness for future fast-path work. It does not
 change the render chain; it either runs the current legacy renderer with
 `--stage-report`, or summarizes an existing summary JSON, then writes a sorted timing
-report and optional WAV parity metrics.
+report and optional WAV parity metrics. `--stage-report` is intentionally lightweight:
+it records stage elapsed time and file paths only. Use `--stage-report-loudness` only
+when you need LUFS/true-peak for every stage input/output; those measurements are
+diagnostic-only, slower, and cached by file signature within the report.
 
 ```bash
 # Run the current renderer, collect per-stage timing, and write profile JSON/Markdown
@@ -733,11 +908,63 @@ The parity report includes correlation, diff RMS, max absolute sample difference
 loudness for both files, and coarse band deltas. Use it before promoting any fast
 engine change; the legacy renderer remains the reference path.
 
-For the current cold render path, start by profiling `accomp_vocal_duck` and
-`bus_balance_analysis`: historical reports show those two stages dominate measured
-stage time. `apply_accomp_vocal_duck.py --profile-timing` records its internal read,
-filter, envelope, smoothing, gain, and write timings in the duck metadata without
-changing the output audio.
+For runtime optimization, use probe outputs under `calibration_outputs/probe/`.
+Avoid `run_latest_auto_mix.py` for timing experiments unless you intentionally want to
+refresh `calibration_outputs/latest/mix.wav`.
+
+### Current runtime optimization status
+
+Goal: keep normal online renders below roughly **40 seconds** for a full-length song
+on the current local CPU path, without audible or sample-level regressions in the
+mastering decisions.
+
+Changes already validated:
+
+| Area | Status | Notes |
+|---|---|---|
+| Stage report | Lite by default | `--stage-report` records elapsed time and paths only. `--stage-report-loudness` is opt-in because per-stage loudness scans were creating dozens of extra `loudnorm` passes |
+| Final global de-click | Vectorized | NumPy scan/repair keeps the same isolated-sample interpolation behavior and reduced a full-file Python pass by several seconds |
+| Finalizer intermediate loudness | Hybrid fast path | `libebur128` for LUFS/LRA/threshold, FFmpeg `ebur128=peak=true` for true peak, final FFmpeg `output_loudnorm` retained |
+| `controlled_makeup_2` | Safe to fast-measure | On `阴天`, adding `controlled_makeup_2` to fast steps made the output sample-identical to fast3 hybrid while reducing finalizer timing from ~19.1 s to ~15.4 s |
+| Volume automation long expressions | Fixed | Long per-segment gain maps switch away from deeply nested FFmpeg `if()` expressions; `春天里` no longer fails in volume automation |
+
+Known recent measurements:
+
+| Song | Current relevant result |
+|---|---|
+| `黄昏` | Fast intermediate loudness brought finalizer to ~14 s and total wall time to ~34-35 s |
+| `春天里` | Previously failed in volume automation; now renders. Hybrid finalizer ~14.6 s |
+| `阴天` | Baseline was under-compensated (`~ -14.8 LUFS`) because peak headroom is the bottleneck. Hybrid preserves that behavior; pure `libebur128` true peak did not |
+
+Optimization directions still open:
+
+| Area | Direction | Risk |
+|---|---|---|
+| `accomp_vocal_duck` | Reduce cost of multiband split/envelope/gain arrays; current timing shows `sosfiltfilt` band split is the main cost | Medium: changes the ducking curve and therefore the mix |
+| `vocal_group_fx` | Inspect Faust/native binary performance, compile flags, and possible DSP simplification | Medium/high: this is audible spatial FX, not just measurement |
+| Finalizer copies | Only remove copies proven to be bit/sample equivalent | Medium: pass-boundary changes can alter limiter input and output |
+| Final `output_loudnorm` | Keep as FFmpeg for now | High: replacing it weakens the delivery report and final TP/LUFS validation |
+
+`apply_accomp_vocal_duck.py --profile-timing` records internal read, filter, envelope,
+smoothing, gain, and write timings in `<output>.accomp_duck.json`. Recent `阴天`
+timing showed the main costs are roughly:
+
+| Duck sub-step | Approx. cost |
+|---|---:|
+| `split_bands_sosfiltfilt` | ~1.5 s |
+| `envelopes_and_pressure` | ~0.7 s |
+| `smooth_gain_curves` | ~0.5 s |
+| `apply_gains_and_clip` | ~0.6 s |
+
+### Runtime guardrails
+
+Do not take these shortcuts without a parity report:
+
+- Do **not** replace final `output_loudnorm` with an approximate meter. Intermediate decisions can be fast; final validation stays FFmpeg.
+- Do **not** use pure `libebur128` true peak for headroom decisions. It under-read true peak on `阴天` intermediate files and changed final loudness.
+- Do **not** merge controlled-makeup gain and the soft peak limiter into one FFmpeg pass. A trial changed `阴天` from `-14.85 LUFS` to `-14.61 LUFS` and produced nonzero waveform differences.
+- Do **not** optimize by changing vocal/accompaniment bus balance or master loudness policy. Runtime work must preserve the existing mix decisions.
+- Do **not** remove global de-click by default. It is useful on these renders; optimize its implementation, not its existence.
 
 ---
 
@@ -765,9 +992,10 @@ make build/vocal_group_fx
 | Layer | Files | Purpose |
 |---|---|---|
 | DSP | `src/*.dsp` | Plugin approximations compiled to native binaries |
-| Volume automation | `scripts/auto_volume_mix.py` | Rule-based level control; single-pass FFmpeg volume expression |
+| Volume automation | `scripts/auto_volume_mix.py` | Rule-based level control; continuous FFmpeg gain automation with long-expression fallback |
 | Template strategy | `scripts/plan_mix_template.py` | Spectral analysis → template → residual EQ plan |
 | Residual EQ | `scripts/apply_residual_vocal_eq.py` | Apply plan-driven EQ between template chain and group FX |
+| Spatial FX plan apply | `scripts/build_spatial_vocal_group.py` | Generate/cache per-song `vocal_group_fx` binaries from approved `spatial_fx` constants |
 | Accompaniment yielding | `scripts/apply_accomp_vocal_duck.py` | Template + dry-vocal-driven multiband ducking keyed by the post-FX vocal |
 | Bus balance | `scripts/compute_render_bus_balance.py` | Conservative active vocal/accomp ratio matching at render time (step 3a) |
 | Master loudness | `scripts/master_loudness_finalize.py` | Safe master-bus pregain → L2 → post-trim / controlled makeup → soft true-peak ceiling → global de-click |
@@ -784,7 +1012,7 @@ vocal.wav ──► normalize to 44.1 kHz / pcm_f32le ──[optional: auto_volu
                                               │
                                     residual vocal EQ + reference vocal source EQ (plan)
                                               │
-                                       vocal_group_fx (stereo: shimmer + reverb + delay)
+                                       vocal_group_fx (baseline or reference spatial plan)
                                               │
 accomp.wav ─► normalize to 44.1 kHz / pcm_f32le ──[optional: auto_volume_mix]──► template music EQ + reference carve EQ
                                               │
@@ -802,6 +1030,7 @@ accomp.wav ─► normalize to 44.1 kHz / pcm_f32le ──[optional: auto_volume
                                                                                           │
                                                                                   final_mix.wav
                                                                                (+ .accomp_duck.json
+                                                                                  + .spatial_fx.json
                                                                                   + .bus_balance.json
                                                                                   + .loudness.json)
 ```
