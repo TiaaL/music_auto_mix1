@@ -44,6 +44,8 @@ ENERGY_FOLLOW_STRENGTH = 0.35
 ENERGY_FOLLOW_MAX_TRIM_DB = 2.0
 MAX_ADJACENT_GAIN_JUMP_DB = 1.5
 BOUNDARY_FADE_SEC = 0.008
+MAX_INLINE_VOLUME_EXPR_CHARS = 6000
+MAX_INLINE_VOLUME_SEGMENTS = 48
 
 
 def command_path(name: str) -> str:
@@ -841,6 +843,79 @@ def build_volume_expr(segments: list[Segment]) -> str:
     return expr
 
 
+def db_to_lin(db_val: float) -> float:
+    return 10.0 ** (db_val / 20.0)
+
+
+def build_enabled_volume_chain(segments: list[Segment]) -> str:
+    """Piecewise gain automation without deeply nested expressions."""
+    filters: list[str] = []
+    for seg in sorted(segments, key=lambda s: s.start):
+        lin = db_to_lin(seg.gain_db)
+        if abs(lin - 1.0) < 0.0000005:
+            continue
+        filters.append(
+            "volume="
+            f"{lin:.6f}:"
+            f"enable='gte(t,{seg.start:.6f})*lt(t,{seg.end:.6f})'"
+        )
+    return ",".join(filters) if filters else "anull"
+
+
+def build_automation_filter_chain(segments: list[Segment], limiter: str) -> str:
+    vol_expr = build_volume_expr(segments)
+    if len(segments) <= MAX_INLINE_VOLUME_SEGMENTS and len(vol_expr) <= MAX_INLINE_VOLUME_EXPR_CHARS:
+        return f"volume='{vol_expr}':eval=frame,{limiter}"
+    return f"{build_enabled_volume_chain(segments)},{limiter}"
+
+
+def run_audio_filter(
+    input_path: str,
+    output_path: str,
+    filter_chain: str,
+    output_args: list[str] | None = None,
+) -> None:
+    output_args = output_args or []
+    if len(filter_chain) <= MAX_INLINE_VOLUME_EXPR_CHARS:
+        run(
+            [
+                FFMPEG,
+                "-y",
+                "-hide_banner",
+                "-i",
+                input_path,
+                "-af",
+                filter_chain,
+                *output_args,
+                output_path,
+            ]
+        )
+        return
+
+    with tempfile.NamedTemporaryFile("w", suffix=".ffgraph", encoding="utf-8", delete=False) as graph_file:
+        graph_file.write(f"[0:a]{filter_chain}[out]\n")
+        graph_path = graph_file.name
+    try:
+        run(
+            [
+                FFMPEG,
+                "-y",
+                "-hide_banner",
+                "-i",
+                input_path,
+                "-filter_complex_script",
+                graph_path,
+                "-map",
+                "[out]",
+                *output_args,
+                output_path,
+            ]
+        )
+    finally:
+        if os.path.exists(graph_path):
+            os.unlink(graph_path)
+
+
 def build_segment_filter(
     segments: list[Segment],
     post_chain: list[str] | None = None,
@@ -881,20 +956,11 @@ def render_vocal(
     segments: list[Segment],
     cfg: MixConfig,
 ) -> None:
-    vol_expr = build_volume_expr(segments)
-    run(
-        [
-            FFMPEG,
-            "-y",
-            "-hide_banner",
-            "-i",
-            input_path,
-            "-af",
-            f"volume='{vol_expr}':eval=frame,{limiter_filter(cfg.vocal.limiter_ceiling)}",
-            "-ac",
-            "1",
-            output_path,
-        ]
+    run_audio_filter(
+        input_path,
+        output_path,
+        build_automation_filter_chain(segments, limiter_filter(cfg.vocal.limiter_ceiling)),
+        ["-ac", "1"],
     )
 
 
@@ -919,18 +985,10 @@ def render_segmented_volume(
     segments: list[Segment],
     cfg: MixConfig,
 ) -> None:
-    vol_expr = build_volume_expr(segments)
-    run(
-        [
-            FFMPEG,
-            "-y",
-            "-hide_banner",
-            "-i",
-            input_path,
-            "-af",
-            f"volume='{vol_expr}':eval=frame,{limiter_filter(cfg.accompaniment.limiter_ceiling)}",
-            output_path,
-        ]
+    run_audio_filter(
+        input_path,
+        output_path,
+        build_automation_filter_chain(segments, limiter_filter(cfg.accompaniment.limiter_ceiling)),
     )
 
 

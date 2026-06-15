@@ -93,6 +93,12 @@ def main() -> None:
         help="Skip final LUFS/true-peak normalization after the template master bus.",
     )
     parser.add_argument(
+        "--global-declick",
+        choices=("auto", "always", "off"),
+        default="auto",
+        help="Final isolated-click handling in the loudness finalizer.",
+    )
+    parser.add_argument(
         "--with-vocal-debug",
         action="store_true",
         help="Also export vocal stage WAVs and a feature audit for debugging.",
@@ -106,7 +112,12 @@ def main() -> None:
     parser.add_argument(
         "--stage-report",
         action="store_true",
-        help="Measure elapsed time plus LUFS/true-peak at each large render stage.",
+        help="Record elapsed time and file paths at each large render stage.",
+    )
+    parser.add_argument(
+        "--stage-report-loudness",
+        action="store_true",
+        help="Also measure LUFS/true-peak for stage inputs/outputs. Slower; cached by file signature.",
     )
     args = parser.parse_args()
 
@@ -137,10 +148,13 @@ def main() -> None:
         auto_mix_cmd.append("--with-volume-automation")
     if args.no_loudness_finalizer:
         auto_mix_cmd.append("--no-loudness-finalizer")
+    auto_mix_cmd += ["--global-declick", args.global_declick]
     if args.reference_audio:
         auto_mix_cmd += ["--reference-audio", str(args.reference_audio)]
-    if args.stage_report:
+    if args.stage_report or args.stage_report_loudness:
         auto_mix_cmd.append("--stage-report")
+    if args.stage_report_loudness:
+        auto_mix_cmd.append("--stage-report-loudness")
     run(auto_mix_cmd)
 
     summary = load_json(report_dir / f"{batch_label}_summary.json")
@@ -192,6 +206,7 @@ def main() -> None:
         "loudness": summary.get("loudness"),
         "balance": summary.get("balance"),
         "stage_report": summary.get("stage_report"),
+        "stage_report_loudness": summary.get("stage_report_loudness"),
         "feature_audit": feature_audit,
     }
     shutil.copy2(mix_path, latest_mix_path)
