@@ -1,0 +1,28 @@
+{
+  "active_vocal_rms_db": -25.287,
+  "active_accomp_rms_db": -19.016,
+  "active_vocal_minus_accomp_db": -6.27,
+  "active_region_count": 12,
+  "vocal_lufs_i": null,
+  "accomp_lufs_i": null,
+  "vocal_minus_accomp_lufs_db": null,
+  "loudness_measurement": "skipped_not_used_for_bus_gain",
+  "vocal_bus_gain_db": 2.88,
+  "accomp_bus_gain_db": -1.92,
+  "reference_vocal_lufs_i": -14.81,
+  "reference_accomp_lufs_i": -14.07,
+  "reference_vocal_minus_accomp_lufs_db": -0.74,
+  "reference_active_vocal_minus_accomp_db": -1.42,
+  "policy": "match_reference_active_vocal_accomp_ratio_conservative",
+  "measurement_basis": "post_fx_vocal_group_and_accomp_bus_active_vocal_regions",
+  "reason": "match reference active vocal/accomp ratio conservatively: render gap -6.3 dB -> predicted -1.5 dB; reference -1.4 dB; correction capped to +4.8 dB.",
+  "reference_balance": {
+    "vocal_lufs": -14.81,
+    "accomp_lufs": -14.07,
+    "vocal_minus_accomp_db": -0.74,
+    "active_vocal_rms_db": -17.951,
+    "active_accomp_rms_db": -16.529,
+    "active_vocal_minus_accomp_db": -1.42,
+    "basis": "reference_vocal_active_regions"
+  }
+}

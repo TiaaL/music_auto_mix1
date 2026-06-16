@@ -1,0 +1,704 @@
+{
+  "classification_label": "template_A",
+  "selected_template": "template_a",
+  "selected_template_name": "模版a",
+  "analysis_json": "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/leyuan_huanghun_analysis.json",
+  "resolved_mix_plan": "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/leyuan_huanghun_resolved_mix_plan.json",
+  "output_wav": "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_leyuan_huanghun.wav",
+  "reference_used": {
+    "full_mix": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲/周传雄 - 黄昏.mp3",
+    "vocal": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲人声/黄昏-原曲人声.wav",
+    "accomp": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/伴奏/乐园中文歌曲-黄昏_伴奏.wav"
+  },
+  "reference_overrides": {
+    "loudness_target": {
+      "lufs_i": -10.98,
+      "true_peak_db": 0.2,
+      "lra": 16.1
+    },
+    "reverb_observation": {
+      "tail_to_onset_ratio_db": -0.82,
+      "est_rt60_ms": 14981.6,
+      "onset_count": 1614,
+      "valid_tail_count": 1614,
+      "tail_iqr_db": 8.37,
+      "confidence": 0.74
+    },
+    "spatial_fx": {
+      "enabled": true,
+      "applied_to_render": true,
+      "version": 1,
+      "confidence": 0.74,
+      "baseline": {
+        "rverb_send_pre_db": -12.5,
+        "rverb_time_s": 1.75,
+        "rverb_predelay_ms": 12.0,
+        "rverb_early_ref_db": -2.0,
+        "rverb_damp": 0.35,
+        "rverb_eq_hi_gain_db": -4.0,
+        "supertap_send_pre_db": -27.0,
+        "supertap_gain_db": -18.5,
+        "supertap_feedback": 0.1,
+        "supertap_width": 0.45,
+        "supertap_color_hz": 2400.0,
+        "shimmer_send_pre_db": -18.0,
+        "shimmer_gain_db": -18.0
+      },
+      "reverb": {
+        "send_pre_db": -9.742,
+        "time_s": 2.416,
+        "predelay_ms": 23.031,
+        "early_ref_db": -2.0,
+        "damp": 0.35,
+        "eq_hi_gain_db": -3.26,
+        "wet_delta_db": 2.758,
+        "confidence": 0.74
+      },
+      "delay": {
+        "send_pre_db": -26.64,
+        "gain_db": -18.14,
+        "feedback": 0.1,
+        "width": 0.45,
+        "color_hz": 2400.0,
+        "send_delta_db": 0.36,
+        "confidence": 0.45,
+        "policy": "low_confidence_light_send_only"
+      },
+      "shimmer": {
+        "send_pre_db": -18.0,
+        "gain_db": -18.0,
+        "enabled": false,
+        "confidence": 0.0,
+        "policy": "hidden_by_default_first_rollout"
+      },
+      "limits": {
+        "rverb_send_pre_db": [
+          -14.0,
+          -8.5
+        ],
+        "rverb_time_s": [
+          1.4,
+          3.8
+        ],
+        "rverb_predelay_ms": [
+          8.0,
+          35.0
+        ],
+        "rverb_eq_hi_gain_db": [
+          -5.0,
+          -2.0
+        ],
+        "supertap_send_pre_db": [
+          -30.0,
+          -18.0
+        ],
+        "supertap_gain_db": [
+          -20.0,
+          -8.0
+        ],
+        "supertap_feedback": [
+          0.06,
+          0.24
+        ],
+        "supertap_width": [
+          0.35,
+          0.65
+        ],
+        "shimmer_send_pre_db": [
+          -24.0,
+          -16.0
+        ],
+        "shimmer_gain_db": [
+          -24.0,
+          -16.0
+        ]
+      },
+      "evidence": {
+        "reverb_proxy": {
+          "tail_to_onset_ratio_db": -0.82,
+          "est_rt60_ms": 14981.6,
+          "onset_count": 1614,
+          "valid_tail_count": 1614,
+          "tail_iqr_db": 8.37,
+          "confidence": 0.74
+        },
+        "delay_proxy": {
+          "peak_corr": 0.763,
+          "peak_lag_ms": 80.0,
+          "confidence": 0.45,
+          "boundary_lag_guard": true
+        },
+        "vocal_stem_quality": {
+          "active_rms_db": -17.881,
+          "inactive_rms_db": -70.364,
+          "active_minus_inactive_db": 52.483,
+          "active_coverage": 0.5814,
+          "severe_leakage": false
+        }
+      },
+      "guards": [],
+      "policy": "bounded_reference_mapping_confidence_blend"
+    },
+    "reference_dynamics": {
+      "crest_db": 13.787,
+      "dr_db": 25.558
+    },
+    "master_tilt_eq": {
+      "enabled": true,
+      "actions": [
+        {
+          "band": "low",
+          "type": "cut",
+          "freq_hz": 130.0,
+          "q": 0.7,
+          "gain_db": -5.0,
+          "source": "reference_tonal_delta",
+          "reason": "reference low +5.5 dB vs input mix +19.4 dB (delta -13.9 dB)"
+        },
+        {
+          "band": "sub",
+          "type": "cut",
+          "freq_hz": 60.0,
+          "q": 0.7,
+          "gain_db": -5.0,
+          "source": "reference_tonal_delta",
+          "reason": "reference sub +10.7 dB vs input mix +20.0 dB (delta -9.3 dB)"
+        },
+        {
+          "band": "lowmid",
+          "type": "cut",
+          "freq_hz": 320.0,
+          "q": 0.7,
+          "gain_db": -5.0,
+          "source": "reference_tonal_delta",
+          "reason": "reference lowmid +4.7 dB vs input mix +10.1 dB (delta -5.4 dB)"
+        },
+        {
+          "band": "harsh",
+          "type": "cut",
+          "freq_hz": 6200.0,
+          "q": 1.0,
+          "gain_db": -4.48,
+          "source": "reference_tonal_delta",
+          "reason": "reference harsh -19.2 dB vs input mix -14.7 dB (delta -4.5 dB)"
+        }
+      ]
+    },
+    "bus_balance": {
+      "policy": "match_reference_stem_lufs_per_bus at render time",
+      "balance_basis": "active_vocal_regions_preferred",
+      "measurement_basis": "post_fx_vocal_group_active_regions",
+      "reference_active_vocal_rms_db": -18.106,
+      "reference_active_accomp_rms_db": -15.285,
+      "reference_vocal_minus_accomp_db": -2.82,
+      "dry_input_vocal_minus_accomp_db": -7.02,
+      "note": "Dry input balance is diagnostic only. Render-time bus gains align post-FX vocal/accomp active-region RMS to the reference stems."
+    },
+    "source_eq": {
+      "vocal_eq": {
+        "enabled": true,
+        "mode": "post_template_pre_group_fx",
+        "actions": [
+          {
+            "band": "low",
+            "type": "cut",
+            "freq_hz": 130.0,
+            "q": 0.8,
+            "gain_db": -2.5,
+            "source": "reference_vocal_tonal_delta",
+            "reason": "reference vocal low -9.2 dB vs input vocal +25.5 dB (delta -34.7 dB)",
+            "evidence": null
+          },
+          {
+            "band": "lowmid",
+            "type": "cut",
+            "freq_hz": 320.0,
+            "q": 0.9,
+            "gain_db": -2.5,
+            "source": "reference_vocal_tonal_delta",
+            "reason": "reference vocal lowmid +1.1 dB vs input vocal +14.9 dB (delta -13.8 dB)",
+            "evidence": null
+          },
+          {
+            "band": "harsh",
+            "type": "cut",
+            "freq_hz": 6200.0,
+            "q": 1.2,
+            "gain_db": -2.5,
+            "source": "reference_vocal_tonal_delta",
+            "reason": "reference vocal harsh -20.8 dB vs input vocal -8.1 dB (delta -12.7 dB)",
+            "evidence": null
+          },
+          {
+            "band": "sib",
+            "type": "cut",
+            "freq_hz": 9500.0,
+            "q": 1.4,
+            "gain_db": -2.5,
+            "source": "reference_vocal_tonal_delta",
+            "reason": "reference vocal sib -21.7 dB vs input vocal -12.0 dB (delta -9.7 dB)",
+            "evidence": null
+          }
+        ],
+        "skipped": [
+          {
+            "band": "upper",
+            "type": "boost",
+            "delta_db": 2.08,
+            "reason": "harsh/sibilance evidence is not safe enough for high-frequency boost",
+            "safety": {
+              "safe": false,
+              "harsh_safe": true,
+              "sib_safe": false,
+              "harsh_ratio": 0.0103,
+              "sib_ratio": 0.0055,
+              "peakiness_harsh": 7.788,
+              "peakiness_upper": 8.009,
+              "input_harsh_db": -8.11,
+              "input_sib_db": -12.0
+            }
+          },
+          {
+            "band": "air",
+            "type": "boost",
+            "delta_db": 13.27,
+            "reason": "harsh/sibilance evidence is not safe enough for high-frequency boost",
+            "safety": {
+              "safe": false,
+              "harsh_safe": true,
+              "sib_safe": false,
+              "harsh_ratio": 0.0103,
+              "sib_ratio": 0.0055,
+              "peakiness_harsh": 7.788,
+              "peakiness_upper": 8.009,
+              "input_harsh_db": -8.11,
+              "input_sib_db": -12.0
+            }
+          }
+        ],
+        "policy": "match current dry vocal tonal shape toward the reference, but gate upper/air boosts by template and harsh/sibilance safety evidence; 14k air is conservative"
+      },
+      "accomp_eq": {
+        "enabled": true,
+        "mode": "post_template_music_eq_pre_sum",
+        "actions": [
+          {
+            "band": "upper",
+            "region": "presence",
+            "type": "cut",
+            "freq_hz": 2800.0,
+            "q": 0.9,
+            "gain_db": -2.0,
+            "source": "reference_relative_masking_carve",
+            "reason": "input active vocal gap -7.0 dB trails reference -2.8 dB; current upper masking +18.2 dB vs reference -3.9 dB (excess +22.1 dB)",
+            "evidence": {
+              "current_masking_db": 18.24,
+              "reference_masking_db": -3.87,
+              "masking_excess_db": 22.11,
+              "vocal_deficit_db": 2.08,
+              "needed_relative_vocal_lift_db": 4.2
+            }
+          },
+          {
+            "band": "lowmid",
+            "region": "body",
+            "type": "cut",
+            "freq_hz": 320.0,
+            "q": 0.9,
+            "gain_db": -2.0,
+            "source": "reference_relative_masking_carve",
+            "reason": "input active vocal gap -7.0 dB trails reference -2.8 dB; current lowmid masking +4.6 dB vs reference -1.7 dB (excess +6.3 dB)",
+            "evidence": {
+              "current_masking_db": 4.61,
+              "reference_masking_db": -1.68,
+              "masking_excess_db": 6.3,
+              "vocal_deficit_db": 0.0,
+              "needed_relative_vocal_lift_db": 4.2
+            }
+          }
+        ],
+        "duck_coordination": {
+          "mode": "carve_reduces_duck",
+          "regions": {
+            "presence": 2.0,
+            "body": 2.0
+          },
+          "preserve_dynamic_duck": {
+            "presence": 1.0,
+            "body": 0.525
+          },
+          "policy": "one static carve per spectral problem region; matching dynamic duck bands are reduced, but strong reference-relative masking preserves more dynamic duck so a small carve does not pretend the masking problem is solved"
+        },
+        "reference_active_gap_db": -2.82,
+        "input_active_gap_db": -7.02,
+        "needed_relative_vocal_lift_db": 4.2,
+        "policy": "cut only; one carve per problem region, coordinated with vocal-aware ducking"
+      }
+    },
+    "dry_vocal_strategy": {
+      "enabled": true,
+      "selected_template": "template_a",
+      "classification_label": "template_A",
+      "tags": [
+        "lowmid_body_heavy",
+        "presence_masked_by_body",
+        "dry_vocal_low_pressure"
+      ],
+      "strong_rules": [
+        "very_high_lowmid",
+        "strong_body_to_presence"
+      ],
+      "ratios": {
+        "lowmid": 0.3745,
+        "body": 0.3869,
+        "presence": 0.0135,
+        "body_to_presence": 28.599
+      },
+      "duck_profile": {
+        "low_extra_db": 0.25,
+        "body_extra_db": 0.25,
+        "presence_extra_db": 0.8,
+        "air_extra_db": 0.0
+      },
+      "policy": "Use dry vocal spectral shape to decide where accompaniment yields; overall vocal/accomp gain still follows the reference active ratio conservatively."
+    }
+  },
+  "render": {
+    "ran": true,
+    "command": [
+      "bash",
+      "/Users/xy/Desktop/1/code/music/music_auto_mix1/scripts/render_template_mix.sh",
+      "template_a",
+      "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/干声/乐园中文歌曲-黄昏_干声.wav",
+      "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/伴奏/乐园中文歌曲-黄昏_伴奏.wav",
+      "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_leyuan_huanghun.wav",
+      "--with-volume-automation",
+      "--reference-audio",
+      "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲/周传雄 - 黄昏.mp3",
+      "--mix-plan",
+      "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/leyuan_huanghun_resolved_mix_plan.json",
+      "--global-declick",
+      "auto",
+      "--spatial-fx",
+      "auto",
+      "--export-vocal-group",
+      "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_leyuan_huanghun.vocal_group.wav",
+      "--stage-report"
+    ],
+    "returncode": 0,
+    "stdout": "[stage-report] enabled (lite, no loudness measurements): /Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_leyuan_huanghun.stage_report.json\n[prep] Normalizing input format: vocal 24000 Hz -> 44100 Hz, mono, pcm_f32le\n[prep] Normalizing input format: accomp 44100 Hz -> 44100 Hz, stereo, pcm_f32le\n[stage-report] prep_normalize: 1.321s in [not measured] -> out [not measured]\n[step 0] Optional volume automation\nVoice segments: 33\nVocal paragraphs: 11\nParagraph ranges: 28.93-31.95s, 35.01-38.32s, 41.18-50.61s, 53.51-58.39s, 59.68-63.18s, 65.86-75.83s, 78.54-127.41s, 139.53-149.29s ...\nVocal gain range: -2.46 dB to 0.00 dB\nVocal rules hit: ENERGY_FOLLOW, KEEP, PEAK_TRIM, TARGET_BOOST\nVocal rule target: -18.00 dBFS (per-segment boost enabled, max +0.0 dB)\nVocal compressor ratio: 2.20\nAccompaniment base gain: 0.00 dB\nAccompaniment paragraph gain range: -3.00 dB to -1.03 dB\nAccompaniment paragraph rules hit: ENERGY_FOLLOW, RATIO_DUCK\nAccompaniment compressor ratio: 1.70\nLead-in/out accompaniment gain: 0.00 dB\nRaw balance gap: median -4.43 dB, p90 1.50 dB, max 7.36 dB\nBalance gap before trim: median -2.32 dB, p90 3.59 dB, max 9.46 dB\nVocal balance trim: -0.00 dB\nAccompaniment balance trim: -0.32 dB\nFlagged vocal gain jumps: 0\nFlagged accompaniment gain jumps: 0\nPositive gain violation: False\nBalance gap after trim: median -2.00 dB, p90 3.91 dB, max 9.78 dB\nBalance report: /Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_leyuan_huanghun.balance.json\nVocal out: /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_auto_vocal.QFauvE.wav\nAccompaniment out: /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_auto_accomp.jQ5aOA.wav\n[stage-report] volume_automation: 8.733s in [not measured] -> out [not measured]\n[step 1] Vocal insert chain: template_a\n\n[run] c1_gate\n      in : /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_auto_vocal.QFauvE.wav\n      out: /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_vocal_1.nCSPy3.wav\n\n[run] template_a_vocal_proq3\n      in : /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_vocal_1.nCSPy3.wav\n      out: /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_vocal_2.XEETKH.wav\n\n[run] c1_comp\n      in : /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_vocal_2.XEETKH.wav\n      out: /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_vocal_3.fHSxhQ.wav\n\n[run] sibilance_mono\n      in : /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_vocal_3.fHSxhQ.wav\n      out: /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_vocal_4.WN8NGa.wav\n[stage-report] vocal_insert_chain: 15.371s in [not measured] -> out [not measured]\n[step 1b] Combined residual/source vocal EQ\n[vocal-plan-eq] applying:\n  - covered_strong_hit lowmid cut -1.0 dB @ 320.0 Hz\n  - reference_vocal_tonal_delta low cut -2.5 dB @ 130.0 Hz\n  - reference_vocal_tonal_delta lowmid cut -2.5 dB @ 320.0 Hz\n  - reference_vocal_tonal_delta harsh cut -2.5 dB @ 6200.0 Hz\n  - reference_vocal_tonal_delta sib cut -2.5 dB @ 9500.0 Hz\n[stage-report] vocal_plan_eq: 0.989s in [not measured] -> out [not measured]\n[step 1c] Reference spatial vocal group FX\n\n[run] vocal_group_fx\n      bin: /Users/xy/Desktop/1/code/music/music_auto_mix1/build/spatial/vocal_group_fx_20cfd5323929aec2\n      in : /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_vocal_source_eq.jqrC7V.wav\n      out: /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_vocal_group.AcJ1fJ.wav\n[stage-report] vocal_group_fx: 25.684s in [not measured] -> out [not measured]\n[audit] Exported post-FX vocal group: /Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_leyuan_huanghun.vocal_group.wav\n[step 2] Accompaniment insert chain: template_a\n\n[run] template_music_proq3_ab\n      in : /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_auto_accomp.jQ5aOA.wav\n      out: /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_accomp_1.uvjjlO.wav\n[stage-report] accomp_insert_chain: 910.428s in [not measured] -> out [not measured]\n[step 2b] Reference accompaniment carve EQ\n[source-eq:accomp_eq] applying:\n  - reference_relative_masking_carve upper cut -2.0 dB @ 2800.0 Hz\n  - reference_relative_masking_carve lowmid cut -2.0 dB @ 320.0 Hz\n[stage-report] accomp_plan_eq: 1.942s in [not measured] -> out [not measured]\n[step 2c] Vocal-aware accompaniment ducking\n[accomp-duck] template=template_a low p50 -1.517 dB, presence p50 -2.122 dB\n[stage-report] accomp_vocal_duck: 34.978s in [not measured] -> out [not measured]\n[step 3a] Bus balance from post-FX buses: vocal 2.160 dB, accomp -1.440 dB\n[stage-report] bus_balance_analysis: 7.198s in [not measured] -> out [not measured]\n[step 3] Stereo Out summing\n[stage-report] stereo_sum: 1.018s in [not measured] -> out [not measured]\n[step 3b] Master tilt EQ from reference features\n[master-tilt-eq] applying:\n  - low cut -5.0 dB @ 130.0 Hz\n  - sub cut -5.0 dB @ 60.0 Hz\n  - lowmid cut -5.0 dB @ 320.0 Hz\n  - harsh cut -4.48 dB @ 6200.0 Hz\n[stage-report] master_tilt_eq: 1.841s in [not measured] -> out [not measured]\n[step 4] Master bus chain: Pro-Q3 -> GW MixCentric -> L2 -> loudness finalizer\n\n[run] template_bus_proq3_ab\n      in : /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_mix_tilted.PI2U3L.wav\n      out: /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_master_1.7uv3kl.wav\n\n[run] gw_mixcentric_stereo\n      in : /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_master_1.7uv3kl.wav\n      out: /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_master_2.ZIngE6.wav\n[stage-report] master_bus_chain: 1071.677s in [not measured] -> out [not measured]\n[ref] Using cached reference loudness from mix plan: -12.5 LUFS\n[ref] Reference measured: -12.5 LUFS; render target -12.5 LUFS\n[target] Master pregain -> soft TP trim; window [-13.5, -12.5] LUFS -> -12.5 LUFS\n[master] Initial pregain: 14.21 dB (needed 16.86, input TP -14.51, safe ceiling 14.21); L2 handles only the safe pregain stage before soft TP makeup.\n[master] Pregain 14.21 dB; post-pregain TP -0.30 dBTP; post-L2 TP -3.41 dBTP; post-trim 2.11 dB (residual need 2.98, headroom 2.11); controlled makeup 0.87 dB (residual after 0.01); TP safety trim -0.05 dB; final TP -0.80 dBTP (ceiling -0.8)\n[master] Global de-click repaired 10 sample(s) in 8 isolated event(s)\n{\n  \"enabled\": true,\n  \"mode\": \"master_safe_pregain_l2_controlled_makeup_soft_tp\",\n  \"reference_audio\": {\n    \"path\": \"/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲/周传雄 - 黄昏.mp3\",\n    \"input_i_lufs\": -12.5,\n    \"input_lra\": 14.0,\n    \"derived_target_i\": -12.5,\n    \"derived_target_lra\": 14.0\n  },\n  \"final_loudness_window_lufs\": [\n    -13.5,\n    -12.5\n  ],\n  \"target_i_lufs\": -12.5,\n  \"target_tp_db\": -0.8,\n  \"target_lra\": 14.0,\n  \"max_gain_db\": 18.0,\n  \"max_attenuation_db\": 12.0,\n  \"controlled_limiter_makeup_max_db\": 8.0,\n  \"controlled_limiter_makeup_max_steps\": 2,\n  \"detailed_loudness_report\": false,\n  \"fast_loudness_steps\": [],\n  \"fast_loudness_comparisons\": {},\n  \"timings_sec\": {\n    \"load_mix_plan_loudness\": 0.003,\n    \"pre_master_loudnorm\": 37.194,\n    \"apply_pregain\": 0.498,\n    \"master_l2\": 5.96,\n    \"post_l2_loudnorm\": 37.806,\n    \"apply_post_trim\": 0.517,\n    \"controlled_makeup_1_gain\": 0.437,\n    \"controlled_makeup_1_soft_peak_limit\": 10.003,\n    \"controlled_makeup_1_loudnorm\": 37.468,\n    \"copy_controlled_makeup_to_limited\": 0.024,\n    \"global_declick\": 6.551,\n    \"copy_declicked_to_output\": 0.031,\n    \"output_loudnorm\": 37.621,\n    \"true_peak_safety_trim_gain\": 0.424,\n    \"copy_true_peak_safe_to_output\": 0.043,\n    \"total\": 174.597\n  },\n  \"pregain_db\": 14.209999999999999,\n  \"desired_pregain_db\": 16.86,\n  \"needed_gain_db\": 16.86,\n  \"available_gain_db\": 24.32,\n  \"safe_pregain_ceiling_db\": 14.21,\n  \"pre_l2_gain_ceiling_db\": 14.21,\n  \"pre_trim_db\": 0.0,\n  \"post_trim_db\": 2.1100000000000003,\n  \"post_trim_headroom_db\": 2.11,\n  \"true_peak_safety_trim_db\": -0.05,\n  \"controlled_limiter_makeup\": {\n    \"enabled\": true,\n    \"applied_db\": 0.87,\n    \"residual_before_db\": 0.87,\n    \"residual_after_db\": 0.01,\n    \"steps\": [\n      {\n        \"gain_db\": 0.87,\n        \"input_i_before\": -13.37,\n        \"input_i_after\": -12.51,\n        \"input_tp_after\": -0.75\n      }\n    ]\n  },\n  \"post_pregain\": {\n    \"input_i\": -15.15,\n    \"input_tp\": -0.3,\n    \"input_lra\": 15.8,\n    \"input_thresh\": -25.86,\n    \"output_i\": 3.18,\n    \"output_tp\": 13.41,\n    \"output_lra\": 7.6,\n    \"output_thresh\": -7.17,\n    \"normalization_type\": \"dynamic\",\n    \"target_offset\": -15.68,\n    \"estimated_after_linear_gain_db\": 14.21\n  },\n  \"post_l2\": {\n    \"input_i\": -15.48,\n    \"input_tp\": -3.41,\n    \"input_lra\": 15.4,\n    \"input_thresh\": -26.18,\n    \"output_i\": -10.53,\n    \"output_tp\": -0.8,\n    \"output_lra\": 8.8,\n    \"output_thresh\": -20.9,\n    \"normalization_type\": \"dynamic\",\n    \"target_offset\": -1.97\n  },\n  \"post_trim\": {\n    \"input_i\": -13.37,\n    \"input_tp\": -1.3,\n    \"input_lra\": 15.4,\n    \"input_thresh\": -24.07,\n    \"output_i\": -8.42,\n    \"output_tp\": 1.31,\n    \"output_lra\": 8.8,\n    \"output_thresh\": -18.79,\n    \"normalization_type\": \"dynamic\",\n    \"target_offset\": -4.08,\n    \"estimated_after_linear_gain_db\": 2.11\n  },\n  \"pre_master\": {\n    \"input_i\": -29.36,\n    \"input_tp\": -14.51,\n    \"input_lra\": 15.8,\n    \"input_thresh\": -40.07,\n    \"output_i\": -11.03,\n    \"output_tp\": -0.8,\n    \"output_lra\": 7.6,\n    \"output_thresh\": -21.38,\n    \"normalization_type\": \"dynamic\",\n    \"target_offset\": -1.47\n  },\n  \"pre_master_sections\": {},\n  \"post_limiter\": {\n    \"input_i\": -12.51,\n    \"input_tp\": -0.75,\n    \"input_lra\": 15.5,\n    \"input_thresh\": -23.21,\n    \"output_i\": -10.53,\n    \"output_tp\": -0.8,\n    \"output_lra\": 8.8,\n    \"output_thresh\": -20.89,\n    \"normalization_type\": \"dynamic\",\n    \"target_offset\": -1.97\n  },\n  \"global_declick\": {\n    \"enabled\": true,\n    \"engine\": \"numpy\",\n    \"threshold\": 0.6,\n    \"max_click_samples\": 4,\n    \"max_events\": 2000,\n    \"events\": 8,\n    \"samples_repaired\": 10,\n    \"per_channel_events\": [\n      0,\n      8\n    ],\n    \"examples\": [\n      {\n        \"time_sec\": 184.79839,\n        \"channel\": 1,\n        \"samples\": 1,\n        \"max_residual\": 0.783997,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 184.798435,\n        \"channel\": 1,\n        \"samples\": 1,\n        \"max_residual\": 0.830872,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 230.944603,\n        \"channel\": 1,\n        \"samples\": 1,\n        \"max_residual\": 0.793442,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 304.027052,\n        \"channel\": 1,\n        \"samples\": 1,\n        \"max_residual\": 0.643631,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 304.027098,\n        \"channel\": 1,\n        \"samples\": 1,\n        \"max_residual\": 0.655487,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 312.084286,\n        \"channel\": 1,\n        \"samples\": 1,\n        \"max_residual\": 0.713608,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 184.798322,\n        \"channel\": 1,\n        \"samples\": 2,\n        \"max_residual\": 0.417053,\n        \"type\": \"short_jump_burst\"\n      },\n      {\n        \"time_sec\": 312.084218,\n        \"channel\": 1,\n        \"samples\": 2,\n        \"max_residual\": 0.544708,\n        \"type\": \"short_jump_burst\"\n      }\n    ],\n    \"truncated\": false,\n    \"mode\": \"auto\",\n    \"triggered\": true\n  },\n  \"final\": {\n    \"input_i\": -12.56,\n    \"input_tp\": -0.8,\n    \"input_lra\": 15.5,\n    \"input_thresh\": -23.26,\n    \"output_i\": -10.58,\n    \"output_tp\": -0.85,\n    \"output_lra\": 8.8,\n    \"output_thresh\": -20.94,\n    \"normalization_type\": \"dynamic\",\n    \"target_offset\": -1.92,\n    \"estimated_after_linear_gain_db\": -0.05\n  },\n  \"actual_i_lufs\": -12.56,\n  \"actual_tp_db\": -0.8,\n  \"actual_lra\": 15.5,\n  \"in_target_window\": true,\n  \"target_error_db\": -0.06,\n  \"loudness_under_compensated\": false,\n  \"final_sections\": {},\n  \"final_focus_windows\": {}\n}\n[stage-report] master_loudness_finalize: 2986.397s in [not measured] -> out [not measured]\n\n[done] Template render finished.\n       Template: template_a\n       Output: /Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_leyuan_huanghun.wav\n",
+    "stderr": "[bus-balance] vocal +2.16 dB, accomp -1.44 dB\n[bus-balance] match reference active vocal/accomp ratio conservatively: render gap -6.4 dB -> predicted -2.8 dB; reference -2.8 dB; correction capped to +3.6 dB.\n"
+  },
+  "loudness_finalizer": true,
+  "global_declick": "auto",
+  "fast_loudness_steps": "",
+  "compare_fast_loudness": false,
+  "spatial_fx": "auto",
+  "direct_vocal_side_layer": "off",
+  "spatial_audit": {
+    "ran": true,
+    "command": [
+      "/opt/homebrew/opt/python@3.14/bin/python3.14",
+      "/Users/xy/Desktop/1/code/music/music_auto_mix1/scripts/audit_active_spatial_lift.py",
+      "--reference-vocal",
+      "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲人声/黄昏-原曲人声.wav",
+      "--reference-target",
+      "vocal_stem",
+      "--candidate",
+      "vocal_group=/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_leyuan_huanghun.vocal_group.wav",
+      "--output-json",
+      "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_leyuan_huanghun.vocal_group_spatial_audit.json",
+      "--reference-audio",
+      "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲/周传雄 - 黄昏.mp3"
+    ],
+    "returncode": 0,
+    "stdout": "{\n  \"reference_target\": \"/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲人声/黄昏-原曲人声.wav\",\n  \"reference_target_kind\": \"vocal_stem\",\n  \"reference_audio\": \"/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲/周传雄 - 黄昏.mp3\",\n  \"reference_vocal\": \"/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲人声/黄昏-原曲人声.wav\",\n  \"active_regions\": {\n    \"count\": 18,\n    \"coverage_sec\": 200.115,\n    \"basis\": \"reference_vocal_active_regions\"\n  },\n  \"reference\": {\n    \"path\": \"/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲人声/黄昏-原曲人声.wav\",\n    \"mid_active_db\": -14.871,\n    \"mid_inactive_db\": -67.354,\n    \"mid_lift_db\": 52.483,\n    \"side_active_db\": -41.318,\n    \"side_inactive_db\": -80.757,\n    \"side_lift_db\": 39.439,\n    \"active_side_minus_mid_db\": -26.447,\n    \"inactive_side_minus_mid_db\": -13.403,\n    \"lr_correlation_active\": 0.99592,\n    \"lr_correlation_inactive\": 0.91311,\n    \"mono_fold_down_loss_active_db\": -0.01,\n    \"mono_fold_down_loss_inactive_db\": -0.194\n  },\n  \"candidates\": [\n    {\n      \"label\": \"vocal_group\",\n      \"path\": \"/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_leyuan_huanghun.vocal_group.wav\",\n      \"mid_active_db\": -23.412,\n      \"mid_inactive_db\": -61.381,\n      \"mid_lift_db\": 37.97,\n      \"side_active_db\": -42.597,\n      \"side_inactive_db\": -61.156,\n      \"side_lift_db\": 18.559,\n      \"active_side_minus_mid_db\": -19.185,\n      \"inactive_side_minus_mid_db\": 0.226,\n      \"lr_correlation_active\": 0.97617,\n      \"lr_correlation_inactive\": -0.02598,\n      \"mono_fold_down_loss_active_db\": -0.052,\n      \"mono_fold_down_loss_inactive_db\": -3.125,\n      \"reference_error\": {\n        \"mid_lift_db_error_db\": -14.513,\n        \"side_lift_db_error_db\": -20.88,\n        \"active_side_minus_mid_db_error_db\": 7.262,\n        \"inactive_side_minus_mid_db_error_db\": 13.629\n      },\n      \"recommendation\": {\n        \"action\": \"keep_current_vocal_group\",\n        \"reason\": \"current_active_side_is_close_to_reference\",\n        \"side_deficit_db\": -7.262\n      }\n    }\n  ],\n  \"policy_note\": \"Use reference-relative Mid/Side active lift; do not treat side_lift as a fixed global target across songs.\"\n}\n",
+    "stderr": "",
+    "output_json": "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_leyuan_huanghun.vocal_group_spatial_audit.json",
+    "report": {
+      "reference_target": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲人声/黄昏-原曲人声.wav",
+      "reference_target_kind": "vocal_stem",
+      "reference_audio": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲/周传雄 - 黄昏.mp3",
+      "reference_vocal": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲人声/黄昏-原曲人声.wav",
+      "active_regions": {
+        "count": 18,
+        "coverage_sec": 200.115,
+        "basis": "reference_vocal_active_regions"
+      },
+      "reference": {
+        "path": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲人声/黄昏-原曲人声.wav",
+        "mid_active_db": -14.871,
+        "mid_inactive_db": -67.354,
+        "mid_lift_db": 52.483,
+        "side_active_db": -41.318,
+        "side_inactive_db": -80.757,
+        "side_lift_db": 39.439,
+        "active_side_minus_mid_db": -26.447,
+        "inactive_side_minus_mid_db": -13.403,
+        "lr_correlation_active": 0.99592,
+        "lr_correlation_inactive": 0.91311,
+        "mono_fold_down_loss_active_db": -0.01,
+        "mono_fold_down_loss_inactive_db": -0.194
+      },
+      "candidates": [
+        {
+          "label": "vocal_group",
+          "path": "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_leyuan_huanghun.vocal_group.wav",
+          "mid_active_db": -23.412,
+          "mid_inactive_db": -61.381,
+          "mid_lift_db": 37.97,
+          "side_active_db": -42.597,
+          "side_inactive_db": -61.156,
+          "side_lift_db": 18.559,
+          "active_side_minus_mid_db": -19.185,
+          "inactive_side_minus_mid_db": 0.226,
+          "lr_correlation_active": 0.97617,
+          "lr_correlation_inactive": -0.02598,
+          "mono_fold_down_loss_active_db": -0.052,
+          "mono_fold_down_loss_inactive_db": -3.125,
+          "reference_error": {
+            "mid_lift_db_error_db": -14.513,
+            "side_lift_db_error_db": -20.88,
+            "active_side_minus_mid_db_error_db": 7.262,
+            "inactive_side_minus_mid_db_error_db": 13.629
+          },
+          "recommendation": {
+            "action": "keep_current_vocal_group",
+            "reason": "current_active_side_is_close_to_reference",
+            "side_deficit_db": -7.262
+          }
+        }
+      ],
+      "policy_note": "Use reference-relative Mid/Side active lift; do not treat side_lift as a fixed global target across songs."
+    }
+  },
+  "vocal_group_output": "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_leyuan_huanghun.vocal_group.wav",
+  "loudness": {
+    "enabled": true,
+    "mode": "master_safe_pregain_l2_controlled_makeup_soft_tp",
+    "reference_audio": {
+      "path": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲/周传雄 - 黄昏.mp3",
+      "input_i_lufs": -12.5,
+      "input_lra": 14.0,
+      "derived_target_i": -12.5,
+      "derived_target_lra": 14.0
+    },
+    "final_loudness_window_lufs": [
+      -13.5,
+      -12.5
+    ],
+    "target_i_lufs": -12.5,
+    "target_tp_db": -0.8,
+    "target_lra": 14.0,
+    "max_gain_db": 18.0,
+    "max_attenuation_db": 12.0,
+    "controlled_limiter_makeup_max_db": 8.0,
+    "controlled_limiter_makeup_max_steps": 2,
+    "detailed_loudness_report": false,
+    "fast_loudness_steps": [],
+    "fast_loudness_comparisons": {},
+    "timings_sec": {
+      "load_mix_plan_loudness": 0.003,
+      "pre_master_loudnorm": 37.194,
+      "apply_pregain": 0.498,
+      "master_l2": 5.96,
+      "post_l2_loudnorm": 37.806,
+      "apply_post_trim": 0.517,
+      "controlled_makeup_1_gain": 0.437,
+      "controlled_makeup_1_soft_peak_limit": 10.003,
+      "controlled_makeup_1_loudnorm": 37.468,
+      "copy_controlled_makeup_to_limited": 0.024,
+      "global_declick": 6.551,
+      "copy_declicked_to_output": 0.031,
+      "output_loudnorm": 37.621,
+      "true_peak_safety_trim_gain": 0.424,
+      "copy_true_peak_safe_to_output": 0.043,
+      "total": 174.597
+    },
+    "pregain_db": 14.209999999999999,
+    "desired_pregain_db": 16.86,
+    "needed_gain_db": 16.86,
+    "available_gain_db": 24.32,
+    "safe_pregain_ceiling_db": 14.21,
+    "pre_l2_gain_ceiling_db": 14.21,
+    "pre_trim_db": 0.0,
+    "post_trim_db": 2.1100000000000003,
+    "post_trim_headroom_db": 2.11,
+    "true_peak_safety_trim_db": -0.05,
+    "controlled_limiter_makeup": {
+      "enabled": true,
+      "applied_db": 0.87,
+      "residual_before_db": 0.87,
+      "residual_after_db": 0.01,
+      "steps": [
+        {
+          "gain_db": 0.87,
+          "input_i_before": -13.37,
+          "input_i_after": -12.51,
+          "input_tp_after": -0.75
+        }
+      ]
+    },
+    "post_pregain": {
+      "input_i": -15.15,
+      "input_tp": -0.3,
+      "input_lra": 15.8,
+      "input_thresh": -25.86,
+      "output_i": 3.18,
+      "output_tp": 13.41,
+      "output_lra": 7.6,
+      "output_thresh": -7.17,
+      "normalization_type": "dynamic",
+      "target_offset": -15.68,
+      "estimated_after_linear_gain_db": 14.21
+    },
+    "post_l2": {
+      "input_i": -15.48,
+      "input_tp": -3.41,
+      "input_lra": 15.4,
+      "input_thresh": -26.18,
+      "output_i": -10.53,
+      "output_tp": -0.8,
+      "output_lra": 8.8,
+      "output_thresh": -20.9,
+      "normalization_type": "dynamic",
+      "target_offset": -1.97
+    },
+    "post_trim": {
+      "input_i": -13.37,
+      "input_tp": -1.3,
+      "input_lra": 15.4,
+      "input_thresh": -24.07,
+      "output_i": -8.42,
+      "output_tp": 1.31,
+      "output_lra": 8.8,
+      "output_thresh": -18.79,
+      "normalization_type": "dynamic",
+      "target_offset": -4.08,
+      "estimated_after_linear_gain_db": 2.11
+    },
+    "pre_master": {
+      "input_i": -29.36,
+      "input_tp": -14.51,
+      "input_lra": 15.8,
+      "input_thresh": -40.07,
+      "output_i": -11.03,
+      "output_tp": -0.8,
+      "output_lra": 7.6,
+      "output_thresh": -21.38,
+      "normalization_type": "dynamic",
+      "target_offset": -1.47
+    },
+    "pre_master_sections": {},
+    "post_limiter": {
+      "input_i": -12.51,
+      "input_tp": -0.75,
+      "input_lra": 15.5,
+      "input_thresh": -23.21,
+      "output_i": -10.53,
+      "output_tp": -0.8,
+      "output_lra": 8.8,
+      "output_thresh": -20.89,
+      "normalization_type": "dynamic",
+      "target_offset": -1.97
+    },
+    "global_declick": {
+      "enabled": true,
+      "engine": "numpy",
+      "threshold": 0.6,
+      "max_click_samples": 4,
+      "max_events": 2000,
+      "events": 8,
+      "samples_repaired": 10,
+      "per_channel_events": [
+        0,
+        8
+      ],
+      "examples": [
+        {
+          "time_sec": 184.79839,
+          "channel": 1,
+          "samples": 1,
+          "max_residual": 0.783997,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 184.798435,
+          "channel": 1,
+          "samples": 1,
+          "max_residual": 0.830872,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 230.944603,
+          "channel": 1,
+          "samples": 1,
+          "max_residual": 0.793442,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 304.027052,
+          "channel": 1,
+          "samples": 1,
+          "max_residual": 0.643631,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 304.027098,
+          "channel": 1,
+          "samples": 1,
+          "max_residual": 0.655487,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 312.084286,
+          "channel": 1,
+          "samples": 1,
+          "max_residual": 0.713608,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 184.798322,
+          "channel": 1,
+          "samples": 2,
+          "max_residual": 0.417053,
+          "type": "short_jump_burst"
+        },
+        {
+          "time_sec": 312.084218,
+          "channel": 1,
+          "samples": 2,
+          "max_residual": 0.544708,
+          "type": "short_jump_burst"
+        }
+      ],
+      "truncated": false,
+      "mode": "auto",
+      "triggered": true
+    },
+    "final": {
+      "input_i": -12.56,
+      "input_tp": -0.8,
+      "input_lra": 15.5,
+      "input_thresh": -23.26,
+      "output_i": -10.58,
+      "output_tp": -0.85,
+      "output_lra": 8.8,
+      "output_thresh": -20.94,
+      "normalization_type": "dynamic",
+      "target_offset": -1.92,
+      "estimated_after_linear_gain_db": -0.05
+    },
+    "actual_i_lufs": -12.56,
+    "actual_tp_db": -0.8,
+    "actual_lra": 15.5,
+    "in_target_window": true,
+    "target_error_db": -0.06,
+    "loudness_under_compensated": false,
+    "final_sections": {},
+    "final_focus_windows": {}
+  },
+  "stage_report": "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_leyuan_huanghun.stage_report.json",
+  "stage_report_loudness": false,
+  "important_note": "A/B/C now render through template-specific Faust approximation chains. Default backend is native Faust shell rendering. Use --render-backend wasm only for development smoke checks, or --legacy-current-renderer to force the older full_fx_mix.sh path."
+}

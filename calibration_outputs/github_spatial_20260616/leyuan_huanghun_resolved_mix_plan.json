@@ -1,0 +1,1473 @@
+{
+  "analysis": {
+    "audio_path": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/干声/乐园中文歌曲-黄昏_干声.wav",
+    "sample_rate": 44100,
+    "native_sample_rate": 24000,
+    "effective_nyquist_hz": 12000.0,
+    "dropped_bands": [
+      "air"
+    ],
+    "n_fft": 4096,
+    "hop_length": 1024,
+    "trim_silence": true,
+    "top_db": 40.0,
+    "band_energies": {
+      "sub": 1027228.5625,
+      "low": 192204672.0,
+      "lowmid": 121826360.0,
+      "mid": 4024305.0,
+      "upper": 1050542.75,
+      "harsh": 3350040.0,
+      "sib": 1797450.0,
+      "air": 0.0
+    },
+    "ratios": {
+      "sub": 0.003157976737097404,
+      "low": 0.5908888295125037,
+      "lowmid": 0.3745269795739871,
+      "mid": 0.012371795369528354,
+      "upper": 0.0032296508167103596,
+      "harsh": 0.010298923505980478,
+      "sib": 0.00552584448419261,
+      "air": 0.0
+    },
+    "group_ratios": {
+      "body": 0.3868987749435155,
+      "presence": 0.013528574322690837
+    },
+    "body_to_presence": 28.598636169266445,
+    "peakiness_upper": 8.00938606262207,
+    "peakiness_harsh": 7.787528991699219,
+    "peakiness_sib": 8.233253479003906,
+    "classification": {
+      "label": "template_A",
+      "label_name": "Muddy / Boxy Vocal",
+      "template_A": {
+        "name": "Muddy / Boxy Vocal",
+        "tags": [
+          "厚",
+          "闷",
+          "糊",
+          "鼻",
+          "箱感",
+          "主体偏暗"
+        ],
+        "hits": 2,
+        "hit_rules": [
+          "lowmid_ratio_high",
+          "body_to_presence_high"
+        ],
+        "strong_hits": 2,
+        "strong_rules": [
+          "very_high_lowmid",
+          "strong_body_to_presence"
+        ],
+        "qualified": true
+      },
+      "template_B": {
+        "name": "Peaky / Harsh Vocal",
+        "tags": [
+          "炸",
+          "刺",
+          "硬",
+          "毛",
+          "金属感",
+          "某些字突然冲"
+        ],
+        "hits": 0,
+        "hit_rules": [],
+        "strong_hits": 0,
+        "strong_rules": [],
+        "qualified": false
+      },
+      "template_C": {
+        "name": "Imbalanced / Heavy Low-Mid",
+        "tags": [
+          "闷",
+          "糊",
+          "头重脚轻",
+          "缺高频",
+          "不通透"
+        ],
+        "hits": 0,
+        "hit_rules": [],
+        "strong_hits": 0,
+        "strong_rules": [],
+        "qualified": false
+      }
+    }
+  },
+  "classification_label": "template_A",
+  "selected_template": "template_a",
+  "selected_template_name": "模版a",
+  "render_mode": "template_dsp_approximation_chain",
+  "vocal_sibilance_profile": {
+    "ess_freq_hz": 6800.0,
+    "thresh_db": -12.0,
+    "range_db": 12.0,
+    "source": {
+      "vocal_sib_db": 20.326,
+      "vocal_harsh_db": 24.213,
+      "crest_db": null
+    }
+  },
+  "residual_vocal_eq": {
+    "enabled": true,
+    "mode": "post_template_pre_group_fx",
+    "policy": "base template first, then second-pass all detected features; uncovered hits (classification + spectral deviation + ratio excess) get corrective EQ, covered strong hits get small reinforcement",
+    "selected_template": "template_a",
+    "covered_bands": [
+      "low",
+      "lowmid",
+      "mid",
+      "nasal",
+      "sub"
+    ],
+    "coverage_details": [
+      {
+        "problem": "rumble / proximity cleanup",
+        "bands": [
+          "sub",
+          "low"
+        ],
+        "range_hz": [
+          30,
+          200
+        ],
+        "processors": [
+          "template_a_vocal_proq3"
+        ]
+      },
+      {
+        "problem": "muddy / boxy body",
+        "bands": [
+          "lowmid",
+          "mid"
+        ],
+        "range_hz": [
+          200,
+          1200
+        ],
+        "processors": [
+          "template_a_vocal_proq3"
+        ]
+      },
+      {
+        "problem": "nasal / honky correction",
+        "bands": [
+          "nasal"
+        ],
+        "range_hz": [
+          800,
+          1200
+        ],
+        "processors": [
+          "residual_vocal_eq"
+        ]
+      }
+    ],
+    "actions": [
+      {
+        "band": "lowmid",
+        "type": "cut",
+        "freq_hz": 320.0,
+        "q": 0.9,
+        "gain_db": -1.0,
+        "source": "covered_strong_hit",
+        "feature_rule": "very_high_lowmid",
+        "classification_label": "template_A",
+        "strong": true,
+        "reason": "very_high_lowmid is strong; selected template covers lowmid, so add a small reinforcement move"
+      }
+    ],
+    "ignored": [
+      {
+        "feature_rule": "lowmid_ratio_high",
+        "band": "lowmid",
+        "reason": "covered_by_selected_template",
+        "template": "template_a",
+        "strong": false
+      },
+      {
+        "feature_rule": "body_to_presence_high",
+        "band": "lowmid",
+        "reason": "covered_by_selected_template",
+        "template": "template_a",
+        "strong": false
+      }
+    ],
+    "suppressed_high_boosts": [
+      {
+        "band": "upper",
+        "type": "boost",
+        "freq_hz": 3600.0,
+        "q": 0.85,
+        "gain_db": 1.5,
+        "source": "ratio_excess",
+        "feature_rule": "ratio_upper_low",
+        "classification_label": null,
+        "strong": false,
+        "reason": "harsh/sibilance evidence is not safe enough for high-frequency boost",
+        "high_frequency_safety": {
+          "safe": false,
+          "harsh_safe": true,
+          "sib_safe": false,
+          "harsh_ratio": 0.0103,
+          "sib_ratio": 0.0055,
+          "peakiness_harsh": 7.788,
+          "peakiness_upper": 8.009,
+          "input_harsh_db": -8.11,
+          "input_sib_db": -12.0
+        }
+      }
+    ],
+    "diagnostic_only_sources": [
+      "body_presence_diagnosis",
+      "non_selected_template_hits"
+    ]
+  },
+  "vocal_track": {
+    "name": "模版a",
+    "cubase_type_hint": "AudioTrack",
+    "routing": {
+      "output_bus_uid": "R",
+      "output_bus_name": "Group 01",
+      "output_level_db": 0.0,
+      "output_level_confidence": "low",
+      "notes": [
+        "OutputBusValue points to bus UID R, which is Group 01's input bus.",
+        "The visible channel Volume/Output fields look like unity, but Cubase's binary fader value was not fully decoded; 0.0 dB is recorded as an assumed unity feed."
+      ]
+    },
+    "notes": [
+      "Active vocal chain per user-confirmed Cubase screenshot: C1 gate -> Pro-Q 3 -> C1 comp -> Sibilance. Red-boxed Aphex and DeEsser records are inactive and intentionally ignored."
+    ],
+    "insert_chain": [
+      {
+        "slot": 1,
+        "plugin_name": "C1 gate Mono",
+        "vendor_family": "Waves",
+        "preset": "Classic gate",
+        "plugin_sub_component": "GATM",
+        "plugin_version": "12.7.0.209",
+        "confidence": "high",
+        "enabled": true,
+        "preset_json": "config/extracted_vstpresets/vocal_a__C1_gate.json"
+      },
+      {
+        "slot": 2,
+        "plugin_name": "Pro-Q 3",
+        "vendor_family": "FabFilter",
+        "preset": "Default Setting",
+        "confidence": "medium",
+        "enabled": true,
+        "preset_json": "config/extracted_vstpresets/vocal_a__Pro-Q3.json"
+      },
+      {
+        "slot": 3,
+        "plugin_name": "Aphex Vintage Exciter Mono",
+        "vendor_family": "Waves",
+        "preset": "VG Vocal",
+        "plugin_sub_component": "APHM",
+        "plugin_version": "12.7.0.209",
+        "enabled": false,
+        "bypass_source": "user_screenshot_red_box",
+        "confidence": "high",
+        "skip_reason": "not active per user confirmation"
+      },
+      {
+        "slot": 4,
+        "plugin_name": "C1 comp Mono",
+        "vendor_family": "Waves",
+        "preset": "Classic compressor",
+        "plugin_sub_component": "CMPM",
+        "plugin_version": "12.7.0.209",
+        "confidence": "high",
+        "enabled": true,
+        "preset_json": "config/extracted_vstpresets/vocal_a__C1_comp.json"
+      },
+      {
+        "slot": 5,
+        "plugin_name": "DeEsser Mono",
+        "vendor_family": "Waves",
+        "preset": "Full Mix",
+        "plugin_sub_component": "DSAM",
+        "plugin_version": "12.7.0.209",
+        "enabled": false,
+        "bypass_source": "user_screenshot_red_box",
+        "confidence": "high",
+        "skip_reason": "not active per user confirmation"
+      },
+      {
+        "slot": 6,
+        "plugin_name": "Sibilance Mono",
+        "vendor_family": "Waves",
+        "preset": "Voice-over",
+        "plugin_sub_component": "SIBM",
+        "plugin_version": "12.7.0.209",
+        "confidence": "high",
+        "enabled": true,
+        "preset_json": "config/extracted_vstpresets/vocal_a__Sibilance.json"
+      },
+      {
+        "slot": 7,
+        "plugin_name": "EQ",
+        "role": "Cubase channel EQ/module state",
+        "enabled": false,
+        "preset": null,
+        "confidence": "high",
+        "notes": [
+          "User confirmed templates do not use Cubase EQ as an active plugin."
+        ],
+        "skip_reason": "Cubase channel EQ is not active in templates per user confirmation"
+      }
+    ]
+  },
+  "accompaniment_track": {
+    "name": "伴奏轨处理-模版a&模版b",
+    "cubase_type_hint": "AudioTrack",
+    "routing": {
+      "output_bus_uid": "&",
+      "output_bus_name": "Stereo Out",
+      "output_level_db": 0.0,
+      "output_level_confidence": "low",
+      "notes": [
+        "OutputBusValue points to bus UID &, which matches the Stereo Out input bus.",
+        "This means the shared A/B accompaniment track appears to bypass Group 01 and feed Stereo Out directly."
+      ]
+    },
+    "notes": [
+      "This accompaniment track is shared by template A and template B according to the Cubase track name."
+    ],
+    "insert_chain": [
+      {
+        "slot": 1,
+        "plugin_name": "Pro-Q 3",
+        "vendor_family": "FabFilter",
+        "preset": "Default Setting",
+        "confidence": "medium",
+        "enabled": true,
+        "preset_json": "config/extracted_vstpresets/music__music_eq.json"
+      },
+      {
+        "slot": 2,
+        "plugin_name": "C6-SideChain Stereo",
+        "vendor_family": "Waves",
+        "preset": "Lead A",
+        "plugin_sub_component": "C6SS",
+        "plugin_version": "12.7.0.209",
+        "runtime_enabled": false,
+        "confidence": "high",
+        "skip_reason": "kept as extracted DAW context only; default render skips C6 because prior Faust C6 renders caused noise",
+        "enabled": true,
+        "preset_json": "config/extracted_vstpresets/music__music_comp.json"
+      },
+      {
+        "slot": 3,
+        "plugin_name": "EQ",
+        "role": "Cubase channel EQ/module state",
+        "enabled": false,
+        "preset": "Default A",
+        "confidence": "high",
+        "notes": [
+          "User confirmed templates do not use Cubase EQ as an active plugin."
+        ],
+        "skip_reason": "Cubase channel EQ is not active in templates per user confirmation"
+      }
+    ]
+  },
+  "group_fx": {
+    "id": "common_group_fx",
+    "source": {
+      "cpr_file": "d:/cubase/project/混音模版0512/通用混音模板_纯净版.cpr",
+      "cubase_version_found": "Cubase 12.0.0",
+      "extraction_method": "UTF-8/printable-string scan anchored by Cubase track names and plugin records",
+      "confidence": "medium"
+    },
+    "groups": [
+      {
+        "name": "Group 01",
+        "cubase_type_hint": "GroupChannel",
+        "bus_uids": {
+          "input_bus_uid": "R",
+          "recorder_bus_uid": "Q",
+          "output_bus_uid": "&",
+          "output_bus_name": "Stereo Out"
+        },
+        "routing": {
+          "output_level_db": 0.0,
+          "output_level_confidence": "low",
+          "fx_sends": [
+            {
+              "target": "FX 02-RVerb Stereo",
+              "send_level_db": -7.73,
+              "send_position": "post_fader",
+              "enabled": true,
+              "source": "user_screenshot",
+              "confidence": "high"
+            },
+            {
+              "target": "FX 03-ValhallaVintageVerb",
+              "actual_plugin": "ValhallaShimmer",
+              "send_level_db": -18.2,
+              "send_position": "post_fader",
+              "enabled": true,
+              "source": "user_screenshot",
+              "confidence": "high"
+            },
+            {
+              "target": "FX 01-SuperTap 2-Taps Stereo",
+              "send_level_db": -26.0,
+              "send_position": "post_fader",
+              "enabled": true,
+              "source": "user_screenshot",
+              "confidence": "high"
+            }
+          ],
+          "notes": [
+            "Group 01 receives the vocal template tracks via bus UID R and outputs to Stereo Out bus UID &.",
+            "The visible channel Volume/Output fields look like unity, but Cubase's binary fader value was not fully decoded; 0.0 dB is recorded as an assumed unity feed.",
+            "FX send levels and post-fader positions are taken from the user-provided Cubase Sends screenshot/context."
+          ]
+        },
+        "insert_chain": [
+          {
+            "slot": 1,
+            "plugin_name": "EQ",
+            "role": "Cubase channel EQ/module state",
+            "enabled": false,
+            "preset": null,
+            "confidence": "high",
+            "notes": [
+              "User confirmed templates do not use Cubase EQ as an active plugin."
+            ]
+          }
+        ],
+        "routing_notes": [
+          "The CPR exposes GroupChannel and Group 01 records. Template vocal tracks A/B/C resolve to Group 01 via output bus UID R.",
+          "FX send target levels are confirmed from the user-provided Sends screenshot."
+        ]
+      }
+    ],
+    "fx_returns": [
+      {
+        "name": "FX 01-SuperTap 2-Taps Stereo",
+        "cubase_type_hint": "FxChannel",
+        "bus_uids": {
+          "input_bus_uid": "T",
+          "recorder_bus_uid": "S",
+          "output_bus_uid": "&",
+          "output_bus_name": "Stereo Out"
+        },
+        "routing": {
+          "output_level_db": 0.0,
+          "output_level_confidence": "low"
+        },
+        "insert_chain": [
+          {
+            "slot": 1,
+            "plugin_name": "SuperTap 2-Taps Stereo",
+            "vendor_family": "Waves",
+            "preset": "Ping pong",
+            "plugin_sub_component": "MT2S",
+            "plugin_version": "12.7.0.209",
+            "parameter_snapshot_type": "Waves PresetChunkXMLTree RealWorld",
+            "confidence": "high"
+          },
+          {
+            "slot": 2,
+            "plugin_name": "EQ",
+            "role": "Cubase channel EQ/module state",
+            "enabled": false,
+            "preset": null,
+            "confidence": "high",
+            "notes": [
+              "User confirmed templates do not use Cubase EQ as an active plugin."
+            ]
+          }
+        ]
+      },
+      {
+        "name": "FX 02-RVerb Stereo",
+        "cubase_type_hint": "FxChannel 2",
+        "bus_uids": {
+          "input_bus_uid": "V",
+          "recorder_bus_uid": "U",
+          "output_bus_uid": "&",
+          "output_bus_name": "Stereo Out"
+        },
+        "routing": {
+          "output_level_db": 0.0,
+          "output_level_confidence": "low"
+        },
+        "insert_chain": [
+          {
+            "slot": 1,
+            "plugin_name": "RVerb Stereo",
+            "vendor_family": "Waves",
+            "preset": "Vocal Plate",
+            "plugin_sub_component": "RRFS",
+            "plugin_version": "12.7.0.209",
+            "parameter_snapshot_type": "Waves PresetChunkXMLTree RealWorld",
+            "confidence": "high"
+          },
+          {
+            "slot": 2,
+            "plugin_name": "EQ",
+            "role": "Cubase channel EQ/module state",
+            "enabled": false,
+            "preset": null,
+            "confidence": "high",
+            "notes": [
+              "User confirmed templates do not use Cubase EQ as an active plugin."
+            ]
+          }
+        ]
+      },
+      {
+        "name": "FX 03-ValhallaVintageVerb",
+        "cubase_type_hint": "FxChannel 3",
+        "bus_uids": {
+          "input_bus_uid": "X",
+          "recorder_bus_uid": "W",
+          "output_bus_uid": "&",
+          "output_bus_name": "Stereo Out"
+        },
+        "routing": {
+          "output_level_db": 0.0,
+          "output_level_confidence": "low"
+        },
+        "insert_chain": [
+          {
+            "slot": 1,
+            "plugin_name": "ValhallaShimmer",
+            "vendor_family": "Valhalla DSP",
+            "preset": null,
+            "parameter_snapshot_type": "MYPLUGINSETTINGS",
+            "parameter_snapshot": {
+              "parameter0": 0.5899999737739563,
+              "parameter1": 1.0,
+              "parameter2": 0.0,
+              "parameter3": 0.9191919565200806,
+              "parameter4": 0.5,
+              "parameter5": 0.1557788997888565,
+              "parameter6": 0.4020134210586548,
+              "parameter7": 0.1000000014901161,
+              "parameter8": 0.300000011920929,
+              "parameter9": 0.5,
+              "parameter10": 0.0,
+              "parameter11": 0.0
+            },
+            "confidence": "high"
+          },
+          {
+            "slot": 2,
+            "plugin_name": "EQ",
+            "role": "Cubase channel EQ/module state",
+            "enabled": false,
+            "preset": null,
+            "confidence": "high",
+            "notes": [
+              "User confirmed templates do not use Cubase EQ as an active plugin."
+            ]
+          }
+        ],
+        "notes": [
+          "The Cubase FX channel name says ValhallaVintageVerb, but the plugin record inside the channel is ValhallaShimmer."
+        ]
+      }
+    ],
+    "master_bus": {
+      "name": "Stereo Out",
+      "cubase_type_hint": "OutputChannel",
+      "bus_uids": {
+        "input_bus_uid": "&",
+        "output_bus_uid": "'",
+        "recorder_bus_uid": "%"
+      },
+      "routing": {
+        "hardware_outputs": [
+          "Focusrite USB ASIO|Output 1",
+          "Focusrite USB ASIO|Output 2"
+        ],
+        "output_level_db": 0.0,
+        "output_level_confidence": "low"
+      },
+      "insert_chain": [
+        {
+          "slot": 1,
+          "plugin_name": "Pro-Q 3",
+          "vendor_family": "FabFilter",
+          "preset": "Default Setting",
+          "confidence": "medium"
+        },
+        {
+          "slot": 2,
+          "plugin_name": "GW MixCentric Stereo",
+          "vendor_family": "Waves",
+          "preset": "GW You Clean Up Real Nice",
+          "plugin_sub_component": "GWMS",
+          "plugin_version": "12.7.0.209",
+          "confidence": "high"
+        },
+        {
+          "slot": 3,
+          "plugin_name": "SoftClipper",
+          "vendor_family": "Steinberg/Cubase",
+          "enabled": false,
+          "preset": null,
+          "confidence": "high",
+          "notes": [
+            "User confirmed templates A/B/C do not use SoftClipper."
+          ]
+        },
+        {
+          "slot": 4,
+          "plugin_name": "L2 Stereo",
+          "vendor_family": "Waves",
+          "preset": "Hi Res CD Master",
+          "plugin_sub_component": "L2MS",
+          "plugin_version": "12.7.0.209",
+          "confidence": "high"
+        },
+        {
+          "slot": 5,
+          "plugin_name": "EQ",
+          "role": "Cubase channel EQ/module state",
+          "enabled": false,
+          "preset": null,
+          "confidence": "high",
+          "notes": [
+            "User confirmed templates do not use Cubase EQ as an active plugin."
+          ]
+        }
+      ]
+    },
+    "undecoded": [
+      "FX send levels are confirmed from the user screenshot, not from CPR binary decoding.",
+      "SendFolder contains On/Volume/Output fields, but its target bus mapping is not stored as a nearby readable name in the CPR fragments.",
+      "Channel/output fader fields look like unity; they are recorded as 0.0 dB with low confidence until the Cubase binary fader encoding is decoded."
+    ]
+  },
+  "preset_links": {
+    "vocal_track": {
+      "C1 gate Mono": "vocal_a__C1_gate.json",
+      "Pro-Q 3": "vocal_a__Pro-Q3.json",
+      "Aphex Vintage Exciter Mono": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "not active per user confirmation"
+      },
+      "C1 comp Mono": "vocal_a__C1_comp.json",
+      "DeEsser Mono": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "not active per user confirmation"
+      },
+      "Sibilance Mono": "vocal_a__Sibilance.json",
+      "EQ": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "Cubase channel EQ is not active in templates per user confirmation"
+      }
+    },
+    "accompaniment_track": {
+      "Pro-Q 3": "music__music_eq.json",
+      "C6-SideChain Stereo": {
+        "preset_json": "music__music_comp.json",
+        "runtime_enabled": false,
+        "reason": "default render skips C6 because prior Faust C6 renders caused noise"
+      },
+      "EQ": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "Cubase channel EQ is not active in templates per user confirmation"
+      }
+    },
+    "master_bus": {
+      "Pro-Q 3": "bus__eq.json",
+      "GW MixCentric Stereo": "bus__GW_MixCentric.json",
+      "SoftClipper": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "Templates A/B/C do not use SoftClipper per user confirmation"
+      },
+      "L2 Stereo": "bus__limiter.json",
+      "EQ": {
+        "preset_json": null,
+        "enabled": false,
+        "reason": "Cubase channel EQ is not active in templates per user confirmation"
+      }
+    }
+  },
+  "notes": [
+    "This plan records the selected Cubase template and preset snapshots.",
+    "Rendering uses template-specific Faust approximation chains. Exact proprietary parameter maps remain marked as uncertain where not decoded."
+  ],
+  "reference": {
+    "features": {
+      "sources": {
+        "full_mix": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲/周传雄 - 黄昏.mp3",
+        "vocal": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲人声/黄昏-原曲人声.wav",
+        "accomp": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/伴奏/乐园中文歌曲-黄昏_伴奏.wav"
+      },
+      "loudness": {
+        "lufs_i": -10.98,
+        "true_peak_db": 0.2,
+        "lra": 16.1
+      },
+      "tonal_balance": {
+        "sub": 10.707,
+        "low": 5.453,
+        "lowmid": 4.741,
+        "mid": 0.0,
+        "upper": -13.011,
+        "harsh": -19.228,
+        "sib": -22.263,
+        "air": -33.906
+      },
+      "vocal_tonal_balance": {
+        "sub": -41.133,
+        "low": -9.15,
+        "lowmid": 1.117,
+        "mid": 0.0,
+        "upper": -12.825,
+        "harsh": -20.829,
+        "sib": -21.679,
+        "air": -33.396
+      },
+      "accomp_tonal_balance": {
+        "sub": 21.719,
+        "low": 14.741,
+        "lowmid": 6.944,
+        "mid": 0.0,
+        "upper": -9.183,
+        "harsh": -19.117,
+        "sib": -25.71,
+        "air": -34.845
+      },
+      "active_band_levels": {
+        "vocal": {
+          "sub": 11.151,
+          "low": 43.133,
+          "lowmid": 53.4,
+          "mid": 52.283,
+          "upper": 39.458,
+          "harsh": 31.454,
+          "sib": 30.604,
+          "air": 18.887
+        },
+        "accomp": {
+          "sub": 66.49,
+          "low": 59.512,
+          "lowmid": 51.715,
+          "mid": 44.771,
+          "upper": 35.588,
+          "harsh": 25.654,
+          "sib": 19.061,
+          "air": 9.926
+        }
+      },
+      "dynamics": {
+        "crest_db": 13.787,
+        "dr_db": 25.558
+      },
+      "vocal_accomp_balance": {
+        "vocal_lufs": -14.51,
+        "accomp_lufs": -12.6,
+        "vocal_minus_accomp_db": -1.91,
+        "active_vocal_rms_db": -18.106,
+        "active_accomp_rms_db": -15.285,
+        "active_vocal_minus_accomp_db": -2.82,
+        "basis": "reference_vocal_active_regions"
+      },
+      "active_vocal_regions": {
+        "count": 18,
+        "coverage_sec": 200.115,
+        "regions": [
+          {
+            "start": 28.935,
+            "end": 32.015,
+            "duration": 3.08
+          },
+          {
+            "start": 35.01,
+            "end": 38.315,
+            "duration": 3.305
+          },
+          {
+            "start": 41.185,
+            "end": 47.14,
+            "duration": 5.955
+          },
+          {
+            "start": 47.36,
+            "end": 50.64,
+            "duration": 3.28
+          },
+          {
+            "start": 53.51,
+            "end": 58.415,
+            "duration": 4.905
+          },
+          {
+            "start": 59.685,
+            "end": 63.19,
+            "duration": 3.505
+          },
+          {
+            "start": 65.86,
+            "end": 75.815,
+            "duration": 9.955
+          },
+          {
+            "start": 78.535,
+            "end": 90.14,
+            "duration": 11.605
+          },
+          {
+            "start": 90.385,
+            "end": 117.89,
+            "duration": 27.505
+          },
+          {
+            "start": 118.11,
+            "end": 127.74,
+            "duration": 9.63
+          },
+          {
+            "start": 139.535,
+            "end": 144.915,
+            "duration": 5.38
+          },
+          {
+            "start": 145.51,
+            "end": 149.29,
+            "duration": 3.78
+          },
+          {
+            "start": 151.935,
+            "end": 163.24,
+            "duration": 11.305
+          },
+          {
+            "start": 164.685,
+            "end": 171.015,
+            "duration": 6.33
+          },
+          {
+            "start": 171.235,
+            "end": 176.29,
+            "duration": 5.055
+          },
+          {
+            "start": 176.585,
+            "end": 188.59,
+            "duration": 12.005
+          },
+          {
+            "start": 189.01,
+            "end": 214.665,
+            "duration": 25.655
+          },
+          {
+            "start": 238.51,
+            "end": 286.39,
+            "duration": 47.88
+          }
+        ]
+      },
+      "vocal_stem_quality": {
+        "active_rms_db": -17.881,
+        "inactive_rms_db": -70.364,
+        "active_minus_inactive_db": 52.483,
+        "active_coverage": 0.5814,
+        "severe_leakage": false
+      },
+      "reverb_proxy": {
+        "tail_to_onset_ratio_db": -0.82,
+        "est_rt60_ms": 14981.6,
+        "onset_count": 1614,
+        "valid_tail_count": 1614,
+        "tail_iqr_db": 8.37,
+        "confidence": 0.74
+      },
+      "delay_proxy": {
+        "peak_corr": 0.763,
+        "peak_lag_ms": 80.0,
+        "confidence": 0.45,
+        "boundary_lag_guard": true
+      }
+    },
+    "input_features": {
+      "sources": {
+        "vocal": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/干声/乐园中文歌曲-黄昏_干声.wav",
+        "accomp": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/伴奏/乐园中文歌曲-黄昏_伴奏.wav"
+      },
+      "tonal_balance": {
+        "sub": 20.018,
+        "low": 19.358,
+        "lowmid": 10.101,
+        "mid": 0.0,
+        "upper": -10.269,
+        "harsh": -14.749,
+        "sib": -21.565,
+        "air": -40.236
+      },
+      "vocal_tonal_balance": {
+        "sub": 0.233,
+        "low": 25.525,
+        "lowmid": 14.891,
+        "mid": 0.0,
+        "upper": -14.903,
+        "harsh": -8.112,
+        "sib": -11.999,
+        "air": -46.662
+      },
+      "accomp_tonal_balance": {
+        "sub": 22.036,
+        "low": 14.83,
+        "lowmid": 6.97,
+        "mid": 0.0,
+        "upper": -9.2,
+        "harsh": -19.048,
+        "sib": -25.593,
+        "air": -34.672
+      },
+      "active_band_levels": {
+        "vocal": {
+          "sub": 32.557,
+          "low": 57.849,
+          "lowmid": 47.216,
+          "mid": 32.325,
+          "upper": 17.422,
+          "harsh": 24.213,
+          "sib": 20.326,
+          "air": -14.338
+        },
+        "accomp": {
+          "sub": 66.896,
+          "low": 59.69,
+          "lowmid": 51.83,
+          "mid": 44.86,
+          "upper": 35.659,
+          "harsh": 25.812,
+          "sib": 19.267,
+          "air": 10.188
+        }
+      },
+      "dynamics": {
+        "crest_db": 16.144,
+        "dr_db": 25.177
+      },
+      "vocal_accomp_balance": {
+        "vocal_lufs": -19.9,
+        "accomp_lufs": -12.6,
+        "vocal_minus_accomp_db": -7.3,
+        "active_vocal_rms_db": -22.24,
+        "active_accomp_rms_db": -15.215,
+        "active_vocal_minus_accomp_db": -7.02,
+        "basis": "input_vocal_active_regions"
+      },
+      "active_vocal_regions": {
+        "count": 28,
+        "coverage_sec": 196.29,
+        "regions": [
+          {
+            "start": 28.935,
+            "end": 31.99,
+            "duration": 3.055
+          },
+          {
+            "start": 35.01,
+            "end": 38.315,
+            "duration": 3.305
+          },
+          {
+            "start": 41.285,
+            "end": 47.14,
+            "duration": 5.855
+          },
+          {
+            "start": 47.36,
+            "end": 50.665,
+            "duration": 3.305
+          },
+          {
+            "start": 53.51,
+            "end": 58.39,
+            "duration": 4.88
+          },
+          {
+            "start": 59.685,
+            "end": 63.19,
+            "duration": 3.505
+          },
+          {
+            "start": 65.86,
+            "end": 75.84,
+            "duration": 9.98
+          },
+          {
+            "start": 78.56,
+            "end": 84.89,
+            "duration": 6.33
+          },
+          {
+            "start": 85.085,
+            "end": 90.14,
+            "duration": 5.055
+          },
+          {
+            "start": 90.435,
+            "end": 93.29,
+            "duration": 2.855
+          },
+          {
+            "start": 93.485,
+            "end": 96.34,
+            "duration": 2.855
+          },
+          {
+            "start": 96.535,
+            "end": 102.765,
+            "duration": 6.23
+          },
+          {
+            "start": 102.96,
+            "end": 117.89,
+            "duration": 14.93
+          },
+          {
+            "start": 118.11,
+            "end": 127.415,
+            "duration": 9.305
+          },
+          {
+            "start": 139.535,
+            "end": 144.915,
+            "duration": 5.38
+          },
+          {
+            "start": 145.51,
+            "end": 149.29,
+            "duration": 3.78
+          },
+          {
+            "start": 151.935,
+            "end": 163.24,
+            "duration": 11.305
+          },
+          {
+            "start": 164.685,
+            "end": 176.29,
+            "duration": 11.605
+          },
+          {
+            "start": 176.585,
+            "end": 179.265,
+            "duration": 2.68
+          },
+          {
+            "start": 179.635,
+            "end": 182.315,
+            "duration": 2.68
+          },
+          {
+            "start": 182.56,
+            "end": 188.59,
+            "duration": 6.03
+          },
+          {
+            "start": 189.235,
+            "end": 200.915,
+            "duration": 11.68
+          },
+          {
+            "start": 201.185,
+            "end": 203.915,
+            "duration": 2.73
+          },
+          {
+            "start": 204.285,
+            "end": 214.565,
+            "duration": 10.28
+          },
+          {
+            "start": 238.51,
+            "end": 253.09,
+            "duration": 14.58
+          },
+          {
+            "start": 253.435,
+            "end": 262.74,
+            "duration": 9.305
+          },
+          {
+            "start": 263.11,
+            "end": 277.79,
+            "duration": 14.68
+          },
+          {
+            "start": 278.135,
+            "end": 286.265,
+            "duration": 8.13
+          }
+        ]
+      }
+    },
+    "overrides": {
+      "loudness_target": {
+        "lufs_i": -10.98,
+        "true_peak_db": 0.2,
+        "lra": 16.1
+      },
+      "reverb_observation": {
+        "tail_to_onset_ratio_db": -0.82,
+        "est_rt60_ms": 14981.6,
+        "onset_count": 1614,
+        "valid_tail_count": 1614,
+        "tail_iqr_db": 8.37,
+        "confidence": 0.74
+      },
+      "spatial_fx": {
+        "enabled": true,
+        "applied_to_render": true,
+        "version": 1,
+        "confidence": 0.74,
+        "baseline": {
+          "rverb_send_pre_db": -12.5,
+          "rverb_time_s": 1.75,
+          "rverb_predelay_ms": 12.0,
+          "rverb_early_ref_db": -2.0,
+          "rverb_damp": 0.35,
+          "rverb_eq_hi_gain_db": -4.0,
+          "supertap_send_pre_db": -27.0,
+          "supertap_gain_db": -18.5,
+          "supertap_feedback": 0.1,
+          "supertap_width": 0.45,
+          "supertap_color_hz": 2400.0,
+          "shimmer_send_pre_db": -18.0,
+          "shimmer_gain_db": -18.0
+        },
+        "reverb": {
+          "send_pre_db": -9.742,
+          "time_s": 2.416,
+          "predelay_ms": 23.031,
+          "early_ref_db": -2.0,
+          "damp": 0.35,
+          "eq_hi_gain_db": -3.26,
+          "wet_delta_db": 2.758,
+          "confidence": 0.74
+        },
+        "delay": {
+          "send_pre_db": -26.64,
+          "gain_db": -18.14,
+          "feedback": 0.1,
+          "width": 0.45,
+          "color_hz": 2400.0,
+          "send_delta_db": 0.36,
+          "confidence": 0.45,
+          "policy": "low_confidence_light_send_only"
+        },
+        "shimmer": {
+          "send_pre_db": -18.0,
+          "gain_db": -18.0,
+          "enabled": false,
+          "confidence": 0.0,
+          "policy": "hidden_by_default_first_rollout"
+        },
+        "limits": {
+          "rverb_send_pre_db": [
+            -14.0,
+            -8.5
+          ],
+          "rverb_time_s": [
+            1.4,
+            3.8
+          ],
+          "rverb_predelay_ms": [
+            8.0,
+            35.0
+          ],
+          "rverb_eq_hi_gain_db": [
+            -5.0,
+            -2.0
+          ],
+          "supertap_send_pre_db": [
+            -30.0,
+            -18.0
+          ],
+          "supertap_gain_db": [
+            -20.0,
+            -8.0
+          ],
+          "supertap_feedback": [
+            0.06,
+            0.24
+          ],
+          "supertap_width": [
+            0.35,
+            0.65
+          ],
+          "shimmer_send_pre_db": [
+            -24.0,
+            -16.0
+          ],
+          "shimmer_gain_db": [
+            -24.0,
+            -16.0
+          ]
+        },
+        "evidence": {
+          "reverb_proxy": {
+            "tail_to_onset_ratio_db": -0.82,
+            "est_rt60_ms": 14981.6,
+            "onset_count": 1614,
+            "valid_tail_count": 1614,
+            "tail_iqr_db": 8.37,
+            "confidence": 0.74
+          },
+          "delay_proxy": {
+            "peak_corr": 0.763,
+            "peak_lag_ms": 80.0,
+            "confidence": 0.45,
+            "boundary_lag_guard": true
+          },
+          "vocal_stem_quality": {
+            "active_rms_db": -17.881,
+            "inactive_rms_db": -70.364,
+            "active_minus_inactive_db": 52.483,
+            "active_coverage": 0.5814,
+            "severe_leakage": false
+          }
+        },
+        "guards": [],
+        "policy": "bounded_reference_mapping_confidence_blend"
+      },
+      "reference_dynamics": {
+        "crest_db": 13.787,
+        "dr_db": 25.558
+      },
+      "master_tilt_eq": {
+        "enabled": true,
+        "actions": [
+          {
+            "band": "low",
+            "type": "cut",
+            "freq_hz": 130.0,
+            "q": 0.7,
+            "gain_db": -5.0,
+            "source": "reference_tonal_delta",
+            "reason": "reference low +5.5 dB vs input mix +19.4 dB (delta -13.9 dB)"
+          },
+          {
+            "band": "sub",
+            "type": "cut",
+            "freq_hz": 60.0,
+            "q": 0.7,
+            "gain_db": -5.0,
+            "source": "reference_tonal_delta",
+            "reason": "reference sub +10.7 dB vs input mix +20.0 dB (delta -9.3 dB)"
+          },
+          {
+            "band": "lowmid",
+            "type": "cut",
+            "freq_hz": 320.0,
+            "q": 0.7,
+            "gain_db": -5.0,
+            "source": "reference_tonal_delta",
+            "reason": "reference lowmid +4.7 dB vs input mix +10.1 dB (delta -5.4 dB)"
+          },
+          {
+            "band": "harsh",
+            "type": "cut",
+            "freq_hz": 6200.0,
+            "q": 1.0,
+            "gain_db": -4.48,
+            "source": "reference_tonal_delta",
+            "reason": "reference harsh -19.2 dB vs input mix -14.7 dB (delta -4.5 dB)"
+          }
+        ]
+      },
+      "bus_balance": {
+        "policy": "match_reference_stem_lufs_per_bus at render time",
+        "balance_basis": "active_vocal_regions_preferred",
+        "measurement_basis": "post_fx_vocal_group_active_regions",
+        "reference_active_vocal_rms_db": -18.106,
+        "reference_active_accomp_rms_db": -15.285,
+        "reference_vocal_minus_accomp_db": -2.82,
+        "dry_input_vocal_minus_accomp_db": -7.02,
+        "note": "Dry input balance is diagnostic only. Render-time bus gains align post-FX vocal/accomp active-region RMS to the reference stems."
+      },
+      "source_eq": {
+        "vocal_eq": {
+          "enabled": true,
+          "mode": "post_template_pre_group_fx",
+          "actions": [
+            {
+              "band": "low",
+              "type": "cut",
+              "freq_hz": 130.0,
+              "q": 0.8,
+              "gain_db": -2.5,
+              "source": "reference_vocal_tonal_delta",
+              "reason": "reference vocal low -9.2 dB vs input vocal +25.5 dB (delta -34.7 dB)",
+              "evidence": null
+            },
+            {
+              "band": "lowmid",
+              "type": "cut",
+              "freq_hz": 320.0,
+              "q": 0.9,
+              "gain_db": -2.5,
+              "source": "reference_vocal_tonal_delta",
+              "reason": "reference vocal lowmid +1.1 dB vs input vocal +14.9 dB (delta -13.8 dB)",
+              "evidence": null
+            },
+            {
+              "band": "harsh",
+              "type": "cut",
+              "freq_hz": 6200.0,
+              "q": 1.2,
+              "gain_db": -2.5,
+              "source": "reference_vocal_tonal_delta",
+              "reason": "reference vocal harsh -20.8 dB vs input vocal -8.1 dB (delta -12.7 dB)",
+              "evidence": null
+            },
+            {
+              "band": "sib",
+              "type": "cut",
+              "freq_hz": 9500.0,
+              "q": 1.4,
+              "gain_db": -2.5,
+              "source": "reference_vocal_tonal_delta",
+              "reason": "reference vocal sib -21.7 dB vs input vocal -12.0 dB (delta -9.7 dB)",
+              "evidence": null
+            }
+          ],
+          "skipped": [
+            {
+              "band": "upper",
+              "type": "boost",
+              "delta_db": 2.08,
+              "reason": "harsh/sibilance evidence is not safe enough for high-frequency boost",
+              "safety": {
+                "safe": false,
+                "harsh_safe": true,
+                "sib_safe": false,
+                "harsh_ratio": 0.0103,
+                "sib_ratio": 0.0055,
+                "peakiness_harsh": 7.788,
+                "peakiness_upper": 8.009,
+                "input_harsh_db": -8.11,
+                "input_sib_db": -12.0
+              }
+            },
+            {
+              "band": "air",
+              "type": "boost",
+              "delta_db": 13.27,
+              "reason": "harsh/sibilance evidence is not safe enough for high-frequency boost",
+              "safety": {
+                "safe": false,
+                "harsh_safe": true,
+                "sib_safe": false,
+                "harsh_ratio": 0.0103,
+                "sib_ratio": 0.0055,
+                "peakiness_harsh": 7.788,
+                "peakiness_upper": 8.009,
+                "input_harsh_db": -8.11,
+                "input_sib_db": -12.0
+              }
+            }
+          ],
+          "policy": "match current dry vocal tonal shape toward the reference, but gate upper/air boosts by template and harsh/sibilance safety evidence; 14k air is conservative"
+        },
+        "accomp_eq": {
+          "enabled": true,
+          "mode": "post_template_music_eq_pre_sum",
+          "actions": [
+            {
+              "band": "upper",
+              "region": "presence",
+              "type": "cut",
+              "freq_hz": 2800.0,
+              "q": 0.9,
+              "gain_db": -2.0,
+              "source": "reference_relative_masking_carve",
+              "reason": "input active vocal gap -7.0 dB trails reference -2.8 dB; current upper masking +18.2 dB vs reference -3.9 dB (excess +22.1 dB)",
+              "evidence": {
+                "current_masking_db": 18.24,
+                "reference_masking_db": -3.87,
+                "masking_excess_db": 22.11,
+                "vocal_deficit_db": 2.08,
+                "needed_relative_vocal_lift_db": 4.2
+              }
+            },
+            {
+              "band": "lowmid",
+              "region": "body",
+              "type": "cut",
+              "freq_hz": 320.0,
+              "q": 0.9,
+              "gain_db": -2.0,
+              "source": "reference_relative_masking_carve",
+              "reason": "input active vocal gap -7.0 dB trails reference -2.8 dB; current lowmid masking +4.6 dB vs reference -1.7 dB (excess +6.3 dB)",
+              "evidence": {
+                "current_masking_db": 4.61,
+                "reference_masking_db": -1.68,
+                "masking_excess_db": 6.3,
+                "vocal_deficit_db": 0.0,
+                "needed_relative_vocal_lift_db": 4.2
+              }
+            }
+          ],
+          "duck_coordination": {
+            "mode": "carve_reduces_duck",
+            "regions": {
+              "presence": 2.0,
+              "body": 2.0
+            },
+            "preserve_dynamic_duck": {
+              "presence": 1.0,
+              "body": 0.525
+            },
+            "policy": "one static carve per spectral problem region; matching dynamic duck bands are reduced, but strong reference-relative masking preserves more dynamic duck so a small carve does not pretend the masking problem is solved"
+          },
+          "reference_active_gap_db": -2.82,
+          "input_active_gap_db": -7.02,
+          "needed_relative_vocal_lift_db": 4.2,
+          "policy": "cut only; one carve per problem region, coordinated with vocal-aware ducking"
+        }
+      },
+      "dry_vocal_strategy": {
+        "enabled": true,
+        "selected_template": "template_a",
+        "classification_label": "template_A",
+        "tags": [
+          "lowmid_body_heavy",
+          "presence_masked_by_body",
+          "dry_vocal_low_pressure"
+        ],
+        "strong_rules": [
+          "very_high_lowmid",
+          "strong_body_to_presence"
+        ],
+        "ratios": {
+          "lowmid": 0.3745,
+          "body": 0.3869,
+          "presence": 0.0135,
+          "body_to_presence": 28.599
+        },
+        "duck_profile": {
+          "low_extra_db": 0.25,
+          "body_extra_db": 0.25,
+          "presence_extra_db": 0.8,
+          "air_extra_db": 0.0
+        },
+        "policy": "Use dry vocal spectral shape to decide where accompaniment yields; overall vocal/accomp gain still follows the reference active ratio conservatively."
+      }
+    }
+  }
+}

@@ -28,6 +28,8 @@ GLOBAL_DECLICK="auto"
 FAST_LOUDNESS_STEPS=""
 COMPARE_FAST_LOUDNESS=0
 SPATIAL_FX="auto"
+EXPORT_VOCAL_GROUP=""
+DIRECT_VOCAL_SIDE_LAYER="off"
 
 shift 4 || true
 while [[ $# -gt 0 ]]; do
@@ -99,6 +101,22 @@ while [[ $# -gt 0 ]]; do
                 exit 1
             fi
             ;;
+        --export-vocal-group)
+            shift
+            EXPORT_VOCAL_GROUP="${1:-}"
+            if [[ -z "$EXPORT_VOCAL_GROUP" ]]; then
+                echo "Error: --export-vocal-group requires a path" >&2
+                exit 1
+            fi
+            ;;
+        --direct-vocal-side-layer)
+            shift
+            DIRECT_VOCAL_SIDE_LAYER="${1:-}"
+            if [[ "$DIRECT_VOCAL_SIDE_LAYER" != "off" && "$DIRECT_VOCAL_SIDE_LAYER" != "light" ]]; then
+                echo "Error: --direct-vocal-side-layer must be one of: off, light" >&2
+                exit 1
+            fi
+            ;;
         --reference-vocal|--reference-accomp)
             shift
             # accepted for caller compatibility; pipeline does not use delayverb
@@ -154,6 +172,9 @@ fi
 ensure_command "ffmpeg" "Install FFmpeg to run template rendering"
 ensure_command "ffprobe" "Install FFmpeg so ffprobe is available"
 ensure_parent_writable "$FINAL_OUT"
+if [[ -n "$EXPORT_VOCAL_GROUP" ]]; then
+    ensure_parent_writable "$EXPORT_VOCAL_GROUP"
+fi
 ensure_audio_channels "$VOCAL_IN" "1" "vocal input"
 ensure_audio_channels "$ACCOMP_IN" "2" "accompaniment input"
 
@@ -210,6 +231,7 @@ VOCAL_5="$(make_temp_wav template_vocal_5)"
 VOCAL_CORRECTED="$(make_temp_wav template_vocal_residual_eq)"
 VOCAL_SOURCE_EQ="$(make_temp_wav template_vocal_source_eq)"
 VOCAL_GROUP="$(make_temp_wav template_vocal_group)"
+VOCAL_GROUP_SIDE="$(make_temp_wav template_vocal_group_side)"
 ACCOMP_1="$(make_temp_wav template_accomp_1)"
 ACCOMP_SOURCE_EQ="$(make_temp_wav template_accomp_source_eq)"
 ACCOMP_DUCKED="$(make_temp_wav template_accomp_ducked)"
@@ -219,7 +241,7 @@ MIX_TILTED="$(make_temp_wav template_mix_tilted)"
 MASTER_1="$(make_temp_wav template_master_1)"
 MASTER_2="$(make_temp_wav template_master_2)"
 
-trap 'rm -f "$RESAMPLED_VOCAL" "$RESAMPLED_ACCOMP" "$AUTO_VOCAL" "$AUTO_ACCOMP" "$VOCAL_1" "$VOCAL_2" "$VOCAL_3" "$VOCAL_4" "$VOCAL_5" "$VOCAL_CORRECTED" "$VOCAL_SOURCE_EQ" "$VOCAL_GROUP" "$ACCOMP_1" "$ACCOMP_SOURCE_EQ" "$ACCOMP_DUCKED" "$ACCOMP_BUS" "$MIX_TMP" "$MIX_TILTED" "$MASTER_1" "$MASTER_2"' EXIT
+trap 'rm -f "$RESAMPLED_VOCAL" "$RESAMPLED_ACCOMP" "$AUTO_VOCAL" "$AUTO_ACCOMP" "$VOCAL_1" "$VOCAL_2" "$VOCAL_3" "$VOCAL_4" "$VOCAL_5" "$VOCAL_CORRECTED" "$VOCAL_SOURCE_EQ" "$VOCAL_GROUP" "$VOCAL_GROUP_SIDE" "$ACCOMP_1" "$ACCOMP_SOURCE_EQ" "$ACCOMP_DUCKED" "$ACCOMP_BUS" "$MIX_TMP" "$MIX_TILTED" "$MASTER_1" "$MASTER_2"' EXIT
 
 VOCAL_RATE="$(audio_sample_rate "$VOCAL_IN")"
 ACCOMP_RATE="$(audio_sample_rate "$ACCOMP_IN")"
@@ -361,6 +383,26 @@ run_binary_stage "vocal_group_fx" "$VOCAL_GROUP_FX_BIN" "$VOCAL_CHAIN_OUT" "$VOC
 record_stage "vocal_group_fx" "$STAGE_START" \
     --input "vocal=$VOCAL_CHAIN_OUT" \
     --output "vocal=$VOCAL_GROUP"
+if [[ "$DIRECT_VOCAL_SIDE_LAYER" != "off" ]]; then
+    echo "[step 1d] Direct vocal side layer: $DIRECT_VOCAL_SIDE_LAYER"
+    STAGE_START="$(now_ts)"
+    DIRECT_SIDE_META="${FINAL_OUT%.*}.direct_vocal_side_layer.json"
+    "$PYTHON_BIN" "$SCRIPT_DIR/apply_direct_vocal_side_layer.py" \
+        "$VOCAL_CHAIN_OUT" \
+        "$VOCAL_GROUP" \
+        "$VOCAL_GROUP_SIDE" \
+        --mode "$DIRECT_VOCAL_SIDE_LAYER" \
+        --metadata "$DIRECT_SIDE_META"
+    record_stage "direct_vocal_side_layer" "$STAGE_START" \
+        --input "vocal=$VOCAL_CHAIN_OUT" \
+        --input "vocal_group=$VOCAL_GROUP" \
+        --output "vocal=$VOCAL_GROUP_SIDE"
+    cp "$VOCAL_GROUP_SIDE" "$VOCAL_GROUP"
+fi
+if [[ -n "$EXPORT_VOCAL_GROUP" ]]; then
+    cp "$VOCAL_GROUP" "$EXPORT_VOCAL_GROUP"
+    echo "[audit] Exported post-FX vocal group: $EXPORT_VOCAL_GROUP"
+fi
 
 echo "[step 2] Accompaniment insert chain: $TEMPLATE_ID"
 ACCOMP_CHAIN_IN="$ACCOMP_SOURCE"

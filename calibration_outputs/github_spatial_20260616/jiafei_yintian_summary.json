@@ -1,0 +1,916 @@
+{
+  "classification_label": "template_C",
+  "selected_template": "template_c",
+  "selected_template_name": "模版c",
+  "analysis_json": "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/jiafei_yintian_analysis.json",
+  "resolved_mix_plan": "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/jiafei_yintian_resolved_mix_plan.json",
+  "output_wav": "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_jiafei_yintian.wav",
+  "reference_used": {
+    "full_mix": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲/8bc4_莫文蔚阴天.mp3",
+    "vocal": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲人声/阴天-原曲人声.wav",
+    "accomp": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/伴奏/佳菲莫文蔚-阴天_伴奏.wav"
+  },
+  "reference_overrides": {
+    "loudness_target": {
+      "lufs_i": -11.8,
+      "true_peak_db": 1.11,
+      "lra": 12.2
+    },
+    "reverb_observation": {
+      "tail_to_onset_ratio_db": -0.55,
+      "est_rt60_ms": 18608.1,
+      "onset_count": 1136,
+      "valid_tail_count": 1136,
+      "tail_iqr_db": 6.03,
+      "confidence": 0.805
+    },
+    "spatial_fx": {
+      "enabled": true,
+      "applied_to_render": true,
+      "version": 1,
+      "confidence": 0.805,
+      "baseline": {
+        "rverb_send_pre_db": -12.5,
+        "rverb_time_s": 1.75,
+        "rverb_predelay_ms": 12.0,
+        "rverb_early_ref_db": -2.0,
+        "rverb_damp": 0.35,
+        "rverb_eq_hi_gain_db": -4.0,
+        "supertap_send_pre_db": -27.0,
+        "supertap_gain_db": -18.5,
+        "supertap_feedback": 0.1,
+        "supertap_width": 0.45,
+        "supertap_color_hz": 2400.0,
+        "shimmer_send_pre_db": -18.0,
+        "shimmer_gain_db": -18.0
+      },
+      "reverb": {
+        "send_pre_db": -9.428,
+        "time_s": 2.917,
+        "predelay_ms": 24.29,
+        "early_ref_db": -2.0,
+        "damp": 0.35,
+        "eq_hi_gain_db": -3.195,
+        "wet_delta_db": 3.072,
+        "confidence": 0.805
+      },
+      "delay": {
+        "send_pre_db": -26.64,
+        "gain_db": -18.14,
+        "feedback": 0.1,
+        "width": 0.45,
+        "color_hz": 2400.0,
+        "send_delta_db": 0.36,
+        "confidence": 0.45,
+        "policy": "low_confidence_light_send_only"
+      },
+      "shimmer": {
+        "send_pre_db": -18.0,
+        "gain_db": -18.0,
+        "enabled": false,
+        "confidence": 0.0,
+        "policy": "hidden_by_default_first_rollout"
+      },
+      "limits": {
+        "rverb_send_pre_db": [
+          -14.0,
+          -8.5
+        ],
+        "rverb_time_s": [
+          1.4,
+          3.8
+        ],
+        "rverb_predelay_ms": [
+          8.0,
+          35.0
+        ],
+        "rverb_eq_hi_gain_db": [
+          -5.0,
+          -2.0
+        ],
+        "supertap_send_pre_db": [
+          -30.0,
+          -18.0
+        ],
+        "supertap_gain_db": [
+          -20.0,
+          -8.0
+        ],
+        "supertap_feedback": [
+          0.06,
+          0.24
+        ],
+        "supertap_width": [
+          0.35,
+          0.65
+        ],
+        "shimmer_send_pre_db": [
+          -24.0,
+          -16.0
+        ],
+        "shimmer_gain_db": [
+          -24.0,
+          -16.0
+        ]
+      },
+      "evidence": {
+        "reverb_proxy": {
+          "tail_to_onset_ratio_db": -0.55,
+          "est_rt60_ms": 18608.1,
+          "onset_count": 1136,
+          "valid_tail_count": 1136,
+          "tail_iqr_db": 6.03,
+          "confidence": 0.805
+        },
+        "delay_proxy": {
+          "peak_corr": 0.803,
+          "peak_lag_ms": 80.0,
+          "confidence": 0.45,
+          "boundary_lag_guard": true
+        },
+        "vocal_stem_quality": {
+          "active_rms_db": -17.951,
+          "inactive_rms_db": -71.924,
+          "active_minus_inactive_db": 53.973,
+          "active_coverage": 0.6716,
+          "severe_leakage": false
+        }
+      },
+      "guards": [],
+      "policy": "bounded_reference_mapping_confidence_blend"
+    },
+    "reference_dynamics": {
+      "crest_db": 15.562,
+      "dr_db": 19.727
+    },
+    "master_tilt_eq": {
+      "enabled": true,
+      "actions": [
+        {
+          "band": "sub",
+          "type": "cut",
+          "freq_hz": 60.0,
+          "q": 0.7,
+          "gain_db": -3.67,
+          "source": "reference_tonal_delta",
+          "reason": "reference sub +14.2 dB vs input mix +17.8 dB (delta -3.7 dB)"
+        },
+        {
+          "band": "low",
+          "type": "cut",
+          "freq_hz": 130.0,
+          "q": 0.7,
+          "gain_db": -3.59,
+          "source": "reference_tonal_delta",
+          "reason": "reference low +7.5 dB vs input mix +11.1 dB (delta -3.6 dB)"
+        },
+        {
+          "band": "air",
+          "type": "cut",
+          "freq_hz": 14000.0,
+          "q": 0.7,
+          "gain_db": -2.02,
+          "source": "reference_tonal_delta",
+          "reason": "reference air -28.8 dB vs input mix -26.8 dB (delta -2.0 dB)"
+        },
+        {
+          "band": "lowmid",
+          "type": "cut",
+          "freq_hz": 320.0,
+          "q": 0.7,
+          "gain_db": -1.97,
+          "source": "reference_tonal_delta",
+          "reason": "reference lowmid +6.4 dB vs input mix +8.4 dB (delta -2.0 dB)"
+        }
+      ]
+    },
+    "bus_balance": {
+      "policy": "match_reference_stem_lufs_per_bus at render time",
+      "balance_basis": "active_vocal_regions_preferred",
+      "measurement_basis": "post_fx_vocal_group_active_regions",
+      "reference_active_vocal_rms_db": -17.951,
+      "reference_active_accomp_rms_db": -16.529,
+      "reference_vocal_minus_accomp_db": -1.42,
+      "dry_input_vocal_minus_accomp_db": -4.79,
+      "note": "Dry input balance is diagnostic only. Render-time bus gains align post-FX vocal/accomp active-region RMS to the reference stems."
+    },
+    "source_eq": {
+      "vocal_eq": {
+        "enabled": true,
+        "mode": "post_template_pre_group_fx",
+        "actions": [
+          {
+            "band": "low",
+            "type": "cut",
+            "freq_hz": 130.0,
+            "q": 0.8,
+            "gain_db": -2.05,
+            "source": "reference_vocal_tonal_delta",
+            "reason": "reference vocal low -15.7 dB vs input vocal -12.0 dB (delta -3.7 dB)",
+            "evidence": null
+          },
+          {
+            "band": "lowmid",
+            "type": "cut",
+            "freq_hz": 320.0,
+            "q": 0.9,
+            "gain_db": -1.54,
+            "source": "reference_vocal_tonal_delta",
+            "reason": "reference vocal lowmid +6.5 dB vs input vocal +9.3 dB (delta -2.8 dB)",
+            "evidence": null
+          }
+        ],
+        "skipped": [
+          {
+            "band": "upper",
+            "type": "boost",
+            "delta_db": 4.11,
+            "reason": "harsh/sibilance evidence is not safe enough for high-frequency boost",
+            "safety": {
+              "safe": false,
+              "harsh_safe": true,
+              "sib_safe": false,
+              "harsh_ratio": 0.0104,
+              "sib_ratio": 0.0013,
+              "peakiness_harsh": 0.0,
+              "peakiness_upper": 10.807,
+              "input_harsh_db": -21.24,
+              "input_sib_db": -29.67
+            }
+          },
+          {
+            "band": "air",
+            "type": "boost",
+            "delta_db": 31.22,
+            "reason": "harsh/sibilance evidence is not safe enough for high-frequency boost",
+            "safety": {
+              "safe": false,
+              "harsh_safe": true,
+              "sib_safe": false,
+              "harsh_ratio": 0.0104,
+              "sib_ratio": 0.0013,
+              "peakiness_harsh": 0.0,
+              "peakiness_upper": 10.807,
+              "input_harsh_db": -21.24,
+              "input_sib_db": -29.67
+            }
+          }
+        ],
+        "policy": "match current dry vocal tonal shape toward the reference, but gate upper/air boosts by template and harsh/sibilance safety evidence; 14k air is conservative"
+      },
+      "accomp_eq": {
+        "enabled": true,
+        "mode": "post_template_music_eq_pre_sum",
+        "actions": [
+          {
+            "band": "upper",
+            "region": "presence",
+            "type": "cut",
+            "freq_hz": 2800.0,
+            "q": 0.9,
+            "gain_db": -2.0,
+            "source": "reference_relative_masking_carve",
+            "reason": "input active vocal gap -4.8 dB trails reference -1.4 dB; current upper masking +5.0 dB vs reference -4.3 dB (excess +9.3 dB)",
+            "evidence": {
+              "current_masking_db": 5.03,
+              "reference_masking_db": -4.3,
+              "masking_excess_db": 9.33,
+              "vocal_deficit_db": 4.11,
+              "needed_relative_vocal_lift_db": 3.37
+            }
+          },
+          {
+            "band": "lowmid",
+            "region": "body",
+            "type": "cut",
+            "freq_hz": 320.0,
+            "q": 0.9,
+            "gain_db": -0.87,
+            "source": "reference_relative_masking_carve",
+            "reason": "input active vocal gap -4.8 dB trails reference -1.4 dB; current lowmid masking -3.1 dB vs reference -5.5 dB (excess +2.4 dB)",
+            "evidence": {
+              "current_masking_db": -3.06,
+              "reference_masking_db": -5.48,
+              "masking_excess_db": 2.41,
+              "vocal_deficit_db": 0.0,
+              "needed_relative_vocal_lift_db": 3.37
+            }
+          }
+        ],
+        "duck_coordination": {
+          "mode": "carve_reduces_duck",
+          "regions": {
+            "presence": 2.0,
+            "body": 0.87
+          },
+          "preserve_dynamic_duck": {
+            "presence": 0.777
+          },
+          "policy": "one static carve per spectral problem region; matching dynamic duck bands are reduced, but strong reference-relative masking preserves more dynamic duck so a small carve does not pretend the masking problem is solved"
+        },
+        "reference_active_gap_db": -1.42,
+        "input_active_gap_db": -4.79,
+        "needed_relative_vocal_lift_db": 3.37,
+        "policy": "cut only; one carve per problem region, coordinated with vocal-aware ducking"
+      }
+    },
+    "dry_vocal_strategy": {
+      "enabled": true,
+      "selected_template": "template_c",
+      "classification_label": "template_C",
+      "tags": [
+        "lowmid_body_heavy",
+        "presence_masked_by_body",
+        "dark_or_muffled_dry_vocal"
+      ],
+      "strong_rules": [
+        "mega_lowmid",
+        "extreme_body_to_presence"
+      ],
+      "ratios": {
+        "lowmid": 0.7621,
+        "body": 0.9612,
+        "presence": 0.0342,
+        "body_to_presence": 28.072
+      },
+      "duck_profile": {
+        "low_extra_db": 0.0,
+        "body_extra_db": 0.25,
+        "presence_extra_db": 0.8,
+        "air_extra_db": 0.2
+      },
+      "policy": "Use dry vocal spectral shape to decide where accompaniment yields; overall vocal/accomp gain still follows the reference active ratio conservatively."
+    }
+  },
+  "render": {
+    "ran": true,
+    "command": [
+      "bash",
+      "/Users/xy/Desktop/1/code/music/music_auto_mix1/scripts/render_template_mix.sh",
+      "template_c",
+      "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/干声/佳菲莫文蔚-阴天_干声.wav",
+      "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/伴奏/佳菲莫文蔚-阴天_伴奏.wav",
+      "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_jiafei_yintian.wav",
+      "--with-volume-automation",
+      "--reference-audio",
+      "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲/8bc4_莫文蔚阴天.mp3",
+      "--mix-plan",
+      "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/jiafei_yintian_resolved_mix_plan.json",
+      "--global-declick",
+      "auto",
+      "--spatial-fx",
+      "auto",
+      "--export-vocal-group",
+      "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_jiafei_yintian.vocal_group.wav",
+      "--stage-report"
+    ],
+    "returncode": 0,
+    "stdout": "[stage-report] enabled (lite, no loudness measurements): /Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_jiafei_yintian.stage_report.json\n[prep] Normalizing input format: vocal 24000 Hz -> 44100 Hz, mono, pcm_f32le\n[prep] Normalizing input format: accomp 44100 Hz -> 44100 Hz, stereo, pcm_f32le\n[stage-report] prep_normalize: 1.177s in [not measured] -> out [not measured]\n[step 0] Optional volume automation\nVoice segments: 22\nVocal paragraphs: 12\nParagraph ranges: 19.90-45.98s, 47.09-60.17s, 61.40-77.09s, 91.55-118.17s, 122.60-125.65s, 129.94-133.23s, 134.85-141.53s, 148.17-153.23s ...\nVocal gain range: -1.84 dB to 0.00 dB\nVocal rules hit: ENERGY_FOLLOW, KEEP, PEAK_TRIM, TARGET_BOOST\nVocal rule target: -18.00 dBFS (per-segment boost enabled, max +0.0 dB)\nVocal compressor ratio: 2.20\nAccompaniment base gain: 0.00 dB\nAccompaniment paragraph gain range: -3.00 dB to 0.00 dB\nAccompaniment paragraph rules hit: ENERGY_FOLLOW, KEEP, PEAK_TRIM, RATIO_DUCK\nAccompaniment compressor ratio: 1.70\nLead-in/out accompaniment gain: 0.00 dB\nRaw balance gap: median -2.29 dB, p90 -0.40 dB, max 15.56 dB\nBalance gap before trim: median -0.91 dB, p90 -0.01 dB, max 17.64 dB\nVocal balance trim: -0.00 dB\nAccompaniment balance trim: -0.00 dB\nFlagged vocal gain jumps: 0\nFlagged accompaniment gain jumps: 0\nPositive gain violation: False\nBalance gap after trim: median -0.91 dB, p90 -0.01 dB, max 17.64 dB\nBalance report: /Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_jiafei_yintian.balance.json\nVocal out: /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_auto_vocal.ys9M4M.wav\nAccompaniment out: /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_auto_accomp.LHpqWc.wav\n[stage-report] volume_automation: 4.920s in [not measured] -> out [not measured]\n[step 1] Vocal insert chain: template_c\n\n[run] template_c_vocal_proq3\n      in : /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_auto_vocal.ys9M4M.wav\n      out: /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_vocal_1.lVMFHW.wav\n\n[run] vocal_rider_mono\n      in : /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_vocal_1.lVMFHW.wav\n      out: /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_vocal_2.vY2TTS.wav\n\n[run] c1_comp\n      in : /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_vocal_2.vY2TTS.wav\n      out: /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_vocal_3.bO8TAO.wav\n\n[run] oneknob_brighter_mono\n      in : /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_vocal_3.bO8TAO.wav\n      out: /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_vocal_4.Y4MlyW.wav\n[stage-report] vocal_insert_chain: 11.039s in [not measured] -> out [not measured]\n[step 1b] Combined residual/source vocal EQ\n[vocal-plan-eq] applying:\n  - reference_vocal_tonal_delta low cut -2.05 dB @ 130.0 Hz\n  - reference_vocal_tonal_delta lowmid cut -1.54 dB @ 320.0 Hz\n[stage-report] vocal_plan_eq: 0.684s in [not measured] -> out [not measured]\n[step 1c] Reference spatial vocal group FX\n\n[run] vocal_group_fx\n      bin: /Users/xy/Desktop/1/code/music/music_auto_mix1/build/spatial/vocal_group_fx_0823c24e511397a0\n      in : /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_vocal_source_eq.mglpiA.wav\n      out: /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_vocal_group.MyB3w7.wav\n[stage-report] vocal_group_fx: 17.721s in [not measured] -> out [not measured]\n[audit] Exported post-FX vocal group: /Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_jiafei_yintian.vocal_group.wav\n[step 2] Accompaniment insert chain: template_c\n\n[run] template_music_proq3_c\n      in : /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_auto_accomp.LHpqWc.wav\n      out: /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_accomp_1.yB7WhJ.wav\n[stage-report] accomp_insert_chain: 3.199s in [not measured] -> out [not measured]\n[step 2b] Reference accompaniment carve EQ\n[source-eq:accomp_eq] applying:\n  - reference_relative_masking_carve upper cut -2.0 dB @ 2800.0 Hz\n  - reference_relative_masking_carve lowmid cut -0.87 dB @ 320.0 Hz\n[stage-report] accomp_plan_eq: 1.085s in [not measured] -> out [not measured]\n[step 2c] Vocal-aware accompaniment ducking\n[accomp-duck] template=template_c low p50 -0.632 dB, presence p50 -1.35 dB\n[stage-report] accomp_vocal_duck: 17.649s in [not measured] -> out [not measured]\n[step 3a] Bus balance from post-FX buses: vocal 2.880 dB, accomp -1.920 dB\n[stage-report] bus_balance_analysis: 3.998s in [not measured] -> out [not measured]\n[step 3] Stereo Out summing\n[stage-report] stereo_sum: 0.654s in [not measured] -> out [not measured]\n[step 3b] Master tilt EQ from reference features\n[master-tilt-eq] applying:\n  - sub cut -3.67 dB @ 60.0 Hz\n  - low cut -3.59 dB @ 130.0 Hz\n  - air cut -2.02 dB @ 14000.0 Hz\n  - lowmid cut -1.97 dB @ 320.0 Hz\n[stage-report] master_tilt_eq: 1.266s in [not measured] -> out [not measured]\n[step 4] Master bus chain: Pro-Q3 -> GW MixCentric -> L2 -> loudness finalizer\n\n[run] template_bus_proq3_c\n      in : /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_mix_tilted.OCkVHL.wav\n      out: /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_master_1.UsLncj.wav\n\n[run] gw_mixcentric_stereo\n      in : /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_master_1.UsLncj.wav\n      out: /var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T//template_master_2.tRFfHx.wav\n[stage-report] master_bus_chain: 7.322s in [not measured] -> out [not measured]\n[ref] Using cached reference loudness from mix plan: -12.5 LUFS\n[ref] Reference measured: -12.5 LUFS; render target -12.5 LUFS\n[target] Master pregain -> soft TP trim; window [-13.5, -12.5] LUFS -> -12.5 LUFS\n[master] Initial pregain: 3.76 dB (needed 13.64, input TP -4.06, safe ceiling 3.76); L2 handles only the safe pregain stage before soft TP makeup.\n[master] Pregain 3.76 dB; post-pregain TP -0.30 dBTP; post-L2 TP -1.75 dBTP; post-trim 0.45 dB (residual need 9.96, headroom 0.45); controlled makeup 8.00 dB (residual after 1.68); TP safety trim -0.61 dB; final TP -0.80 dBTP (ceiling -0.8)\n[master] Global de-click repaired 123 sample(s) in 102 isolated event(s)\n[master][warning] loudness under-compensated: needed 13.64 dB, available 12.21 dB, target error -2.30 dB\n{\n  \"enabled\": true,\n  \"mode\": \"master_safe_pregain_l2_controlled_makeup_soft_tp\",\n  \"reference_audio\": {\n    \"path\": \"/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲/8bc4_莫文蔚阴天.mp3\",\n    \"input_i_lufs\": -12.5,\n    \"input_lra\": 12.2,\n    \"derived_target_i\": -12.5,\n    \"derived_target_lra\": 12.2\n  },\n  \"final_loudness_window_lufs\": [\n    -13.5,\n    -12.5\n  ],\n  \"target_i_lufs\": -12.5,\n  \"target_tp_db\": -0.8,\n  \"target_lra\": 12.2,\n  \"max_gain_db\": 18.0,\n  \"max_attenuation_db\": 12.0,\n  \"controlled_limiter_makeup_max_db\": 8.0,\n  \"controlled_limiter_makeup_max_steps\": 2,\n  \"detailed_loudness_report\": false,\n  \"fast_loudness_steps\": [],\n  \"fast_loudness_comparisons\": {},\n  \"timings_sec\": {\n    \"load_mix_plan_loudness\": 0.003,\n    \"pre_master_loudnorm\": 22.834,\n    \"apply_pregain\": 0.369,\n    \"master_l2\": 2.887,\n    \"post_l2_loudnorm\": 23.065,\n    \"apply_post_trim\": 0.375,\n    \"controlled_makeup_1_gain\": 0.342,\n    \"controlled_makeup_1_soft_peak_limit\": 5.64,\n    \"controlled_makeup_1_loudnorm\": 23.13,\n    \"controlled_makeup_2_gain\": 0.335,\n    \"controlled_makeup_2_soft_peak_limit\": 5.436,\n    \"controlled_makeup_2_loudnorm\": 22.12,\n    \"copy_controlled_makeup_to_limited\": 0.019,\n    \"global_declick\": 3.359,\n    \"copy_declicked_to_output\": 0.018,\n    \"output_loudnorm\": 20.882,\n    \"true_peak_safety_trim_gain\": 0.237,\n    \"copy_true_peak_safe_to_output\": 0.012,\n    \"total\": 131.069\n  },\n  \"pregain_db\": 3.76,\n  \"desired_pregain_db\": 13.64,\n  \"needed_gain_db\": 13.64,\n  \"available_gain_db\": 12.21,\n  \"safe_pregain_ceiling_db\": 3.76,\n  \"pre_l2_gain_ceiling_db\": 3.76,\n  \"pre_trim_db\": 0.0,\n  \"post_trim_db\": 0.44999999999999996,\n  \"post_trim_headroom_db\": 0.45,\n  \"true_peak_safety_trim_db\": -0.61,\n  \"controlled_limiter_makeup\": {\n    \"enabled\": true,\n    \"applied_db\": 8.0,\n    \"residual_before_db\": 9.51,\n    \"residual_after_db\": 1.68,\n    \"steps\": [\n      {\n        \"gain_db\": 4.0,\n        \"input_i_before\": -22.01,\n        \"input_i_after\": -18.04,\n        \"input_tp_after\": -0.7\n      },\n      {\n        \"gain_db\": 4.0,\n        \"input_i_before\": -18.04,\n        \"input_i_after\": -14.18,\n        \"input_tp_after\": -0.65\n      }\n    ]\n  },\n  \"post_pregain\": {\n    \"input_i\": -22.38,\n    \"input_tp\": -0.3,\n    \"input_lra\": 10.5,\n    \"input_thresh\": -32.85,\n    \"output_i\": -8.38,\n    \"output_tp\": 2.96,\n    \"output_lra\": 4.9,\n    \"output_thresh\": -18.68,\n    \"normalization_type\": \"dynamic\",\n    \"target_offset\": -4.12,\n    \"estimated_after_linear_gain_db\": 3.76\n  },\n  \"post_l2\": {\n    \"input_i\": -22.46,\n    \"input_tp\": -1.75,\n    \"input_lra\": 10.5,\n    \"input_thresh\": -32.92,\n    \"output_i\": -12.03,\n    \"output_tp\": -0.8,\n    \"output_lra\": 5.1,\n    \"output_thresh\": -22.33,\n    \"normalization_type\": \"dynamic\",\n    \"target_offset\": -0.47\n  },\n  \"post_trim\": {\n    \"input_i\": -22.01,\n    \"input_tp\": -1.3,\n    \"input_lra\": 10.5,\n    \"input_thresh\": -32.47,\n    \"output_i\": -11.58,\n    \"output_tp\": -0.35,\n    \"output_lra\": 5.1,\n    \"output_thresh\": -21.88,\n    \"normalization_type\": \"dynamic\",\n    \"target_offset\": -0.92,\n    \"estimated_after_linear_gain_db\": 0.45\n  },\n  \"pre_master\": {\n    \"input_i\": -26.14,\n    \"input_tp\": -4.06,\n    \"input_lra\": 10.5,\n    \"input_thresh\": -36.61,\n    \"output_i\": -12.14,\n    \"output_tp\": -0.8,\n    \"output_lra\": 4.9,\n    \"output_thresh\": -22.44,\n    \"normalization_type\": \"dynamic\",\n    \"target_offset\": -0.36\n  },\n  \"pre_master_sections\": {},\n  \"post_limiter\": {\n    \"input_i\": -14.18,\n    \"input_tp\": -0.65,\n    \"input_lra\": 10.5,\n    \"input_thresh\": -24.65,\n    \"output_i\": -11.9,\n    \"output_tp\": -0.8,\n    \"output_lra\": 4.9,\n    \"output_thresh\": -22.2,\n    \"normalization_type\": \"dynamic\",\n    \"target_offset\": -0.6\n  },\n  \"global_declick\": {\n    \"enabled\": true,\n    \"engine\": \"numpy\",\n    \"threshold\": 0.6,\n    \"max_click_samples\": 4,\n    \"max_events\": 2000,\n    \"events\": 102,\n    \"samples_repaired\": 123,\n    \"per_channel_events\": [\n      62,\n      40\n    ],\n    \"examples\": [\n      {\n        \"time_sec\": 66.571111,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.964218,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 70.160454,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.807373,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 77.331701,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.675293,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 77.331882,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.667542,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 77.332018,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.620651,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 77.332132,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 1.042862,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 77.3322,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 1.009598,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 77.332245,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.925797,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 78.679433,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.797531,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 78.679501,\n        \"channel\": 0,\n        \"samples\": 3,\n        \"max_residual\": 0.698936,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 79.579093,\n        \"channel\": 0,\n        \"samples\": 2,\n        \"max_residual\": 0.559021,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 79.579206,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.752197,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 79.579252,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.629379,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 79.579388,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.777512,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 80.909955,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.648209,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 80.91,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.77829,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 82.250522,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 1.38266,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 82.25068,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.944061,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 84.48,\n        \"channel\": 0,\n        \"samples\": 2,\n        \"max_residual\": 0.629456,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 84.480113,\n        \"channel\": 0,\n        \"samples\": 2,\n        \"max_residual\": 0.668711,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 85.842426,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 1.070145,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 85.842472,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.642258,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 85.842517,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.728363,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 85.842653,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.811768,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 85.842698,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.808624,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 85.842744,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.662277,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 86.738912,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 1.319778,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 86.73898,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.784134,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 86.739161,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.760529,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 86.739206,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.98671,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 86.739365,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.786087,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 87.183605,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.604324,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 87.183673,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.928543,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 89.855238,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 1.358566,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 89.855329,\n        \"channel\": 0,\n        \"samples\": 2,\n        \"max_residual\": 0.664988,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 89.860431,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.730194,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 89.860635,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.647583,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 89.867959,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.801407,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 92.145737,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.765717,\n        \"type\": \"isolated_sample\"\n      },\n      {\n        \"time_sec\": 92.146032,\n        \"channel\": 0,\n        \"samples\": 1,\n        \"max_residual\": 0.664215,\n        \"type\": \"isolated_sample\"\n      }\n    ],\n    \"truncated\": false,\n    \"mode\": \"auto\",\n    \"triggered\": true\n  },\n  \"final\": {\n    \"input_i\": -14.8,\n    \"input_tp\": -0.8,\n    \"input_lra\": 10.5,\n    \"input_thresh\": -25.26,\n    \"output_i\": -12.49,\n    \"output_tp\": -1.41,\n    \"output_lra\": 5.0,\n    \"output_thresh\": -22.79,\n    \"normalization_type\": \"dynamic\",\n    \"target_offset\": -0.01,\n    \"estimated_after_linear_gain_db\": -0.61\n  },\n  \"actual_i_lufs\": -14.8,\n  \"actual_tp_db\": -0.8,\n  \"actual_lra\": 10.5,\n  \"in_target_window\": false,\n  \"target_error_db\": -2.3,\n  \"loudness_under_compensated\": true,\n  \"final_sections\": {},\n  \"final_focus_windows\": {}\n}\n[stage-report] master_loudness_finalize: 131.584s in [not measured] -> out [not measured]\n\n[done] Template render finished.\n       Template: template_c\n       Output: /Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_jiafei_yintian.wav\n",
+    "stderr": "[bus-balance] vocal +2.88 dB, accomp -1.92 dB\n[bus-balance] match reference active vocal/accomp ratio conservatively: render gap -6.3 dB -> predicted -1.5 dB; reference -1.4 dB; correction capped to +4.8 dB.\n"
+  },
+  "loudness_finalizer": true,
+  "global_declick": "auto",
+  "fast_loudness_steps": "",
+  "compare_fast_loudness": false,
+  "spatial_fx": "auto",
+  "direct_vocal_side_layer": "off",
+  "spatial_audit": {
+    "ran": true,
+    "command": [
+      "/opt/homebrew/opt/python@3.14/bin/python3.14",
+      "/Users/xy/Desktop/1/code/music/music_auto_mix1/scripts/audit_active_spatial_lift.py",
+      "--reference-vocal",
+      "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲人声/阴天-原曲人声.wav",
+      "--reference-target",
+      "vocal_stem",
+      "--candidate",
+      "vocal_group=/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_jiafei_yintian.vocal_group.wav",
+      "--output-json",
+      "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_jiafei_yintian.vocal_group_spatial_audit.json",
+      "--reference-audio",
+      "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲/8bc4_莫文蔚阴天.mp3"
+    ],
+    "returncode": 0,
+    "stdout": "{\n  \"reference_target\": \"/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲人声/阴天-原曲人声.wav\",\n  \"reference_target_kind\": \"vocal_stem\",\n  \"reference_audio\": \"/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲/8bc4_莫文蔚阴天.mp3\",\n  \"reference_vocal\": \"/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲人声/阴天-原曲人声.wav\",\n  \"active_regions\": {\n    \"count\": 19,\n    \"coverage_sec\": 162.77,\n    \"basis\": \"reference_vocal_active_regions\"\n  },\n  \"reference\": {\n    \"path\": \"/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲人声/阴天-原曲人声.wav\",\n    \"mid_active_db\": -14.941,\n    \"mid_inactive_db\": -68.914,\n    \"mid_lift_db\": 53.973,\n    \"side_active_db\": -41.437,\n    \"side_inactive_db\": -82.998,\n    \"side_lift_db\": 41.56,\n    \"active_side_minus_mid_db\": -26.497,\n    \"inactive_side_minus_mid_db\": -14.084,\n    \"lr_correlation_active\": 0.99673,\n    \"lr_correlation_inactive\": 0.92504,\n    \"mono_fold_down_loss_active_db\": -0.01,\n    \"mono_fold_down_loss_inactive_db\": -0.166\n  },\n  \"candidates\": [\n    {\n      \"label\": \"vocal_group\",\n      \"path\": \"/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_jiafei_yintian.vocal_group.wav\",\n      \"mid_active_db\": -22.018,\n      \"mid_inactive_db\": -54.46,\n      \"mid_lift_db\": 32.442,\n      \"side_active_db\": -40.658,\n      \"side_inactive_db\": -55.223,\n      \"side_lift_db\": 14.564,\n      \"active_side_minus_mid_db\": -18.64,\n      \"inactive_side_minus_mid_db\": -0.762,\n      \"lr_correlation_active\": 0.97302,\n      \"lr_correlation_inactive\": 0.08759,\n      \"mono_fold_down_loss_active_db\": -0.059,\n      \"mono_fold_down_loss_inactive_db\": -2.646,\n      \"reference_error\": {\n        \"mid_lift_db_error_db\": -21.531,\n        \"side_lift_db_error_db\": -26.996,\n        \"active_side_minus_mid_db_error_db\": 7.857,\n        \"inactive_side_minus_mid_db_error_db\": 13.322\n      },\n      \"recommendation\": {\n        \"action\": \"keep_current_vocal_group\",\n        \"reason\": \"current_active_side_is_close_to_reference\",\n        \"side_deficit_db\": -7.857\n      }\n    }\n  ],\n  \"policy_note\": \"Use reference-relative Mid/Side active lift; do not treat side_lift as a fixed global target across songs.\"\n}\n",
+    "stderr": "",
+    "output_json": "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_jiafei_yintian.vocal_group_spatial_audit.json",
+    "report": {
+      "reference_target": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲人声/阴天-原曲人声.wav",
+      "reference_target_kind": "vocal_stem",
+      "reference_audio": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲/8bc4_莫文蔚阴天.mp3",
+      "reference_vocal": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲人声/阴天-原曲人声.wav",
+      "active_regions": {
+        "count": 19,
+        "coverage_sec": 162.77,
+        "basis": "reference_vocal_active_regions"
+      },
+      "reference": {
+        "path": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲人声/阴天-原曲人声.wav",
+        "mid_active_db": -14.941,
+        "mid_inactive_db": -68.914,
+        "mid_lift_db": 53.973,
+        "side_active_db": -41.437,
+        "side_inactive_db": -82.998,
+        "side_lift_db": 41.56,
+        "active_side_minus_mid_db": -26.497,
+        "inactive_side_minus_mid_db": -14.084,
+        "lr_correlation_active": 0.99673,
+        "lr_correlation_inactive": 0.92504,
+        "mono_fold_down_loss_active_db": -0.01,
+        "mono_fold_down_loss_inactive_db": -0.166
+      },
+      "candidates": [
+        {
+          "label": "vocal_group",
+          "path": "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_jiafei_yintian.vocal_group.wav",
+          "mid_active_db": -22.018,
+          "mid_inactive_db": -54.46,
+          "mid_lift_db": 32.442,
+          "side_active_db": -40.658,
+          "side_inactive_db": -55.223,
+          "side_lift_db": 14.564,
+          "active_side_minus_mid_db": -18.64,
+          "inactive_side_minus_mid_db": -0.762,
+          "lr_correlation_active": 0.97302,
+          "lr_correlation_inactive": 0.08759,
+          "mono_fold_down_loss_active_db": -0.059,
+          "mono_fold_down_loss_inactive_db": -2.646,
+          "reference_error": {
+            "mid_lift_db_error_db": -21.531,
+            "side_lift_db_error_db": -26.996,
+            "active_side_minus_mid_db_error_db": 7.857,
+            "inactive_side_minus_mid_db_error_db": 13.322
+          },
+          "recommendation": {
+            "action": "keep_current_vocal_group",
+            "reason": "current_active_side_is_close_to_reference",
+            "side_deficit_db": -7.857
+          }
+        }
+      ],
+      "policy_note": "Use reference-relative Mid/Side active lift; do not treat side_lift as a fixed global target across songs."
+    }
+  },
+  "vocal_group_output": "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_jiafei_yintian.vocal_group.wav",
+  "loudness": {
+    "enabled": true,
+    "mode": "master_safe_pregain_l2_controlled_makeup_soft_tp",
+    "reference_audio": {
+      "path": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲/8bc4_莫文蔚阴天.mp3",
+      "input_i_lufs": -12.5,
+      "input_lra": 12.2,
+      "derived_target_i": -12.5,
+      "derived_target_lra": 12.2
+    },
+    "final_loudness_window_lufs": [
+      -13.5,
+      -12.5
+    ],
+    "target_i_lufs": -12.5,
+    "target_tp_db": -0.8,
+    "target_lra": 12.2,
+    "max_gain_db": 18.0,
+    "max_attenuation_db": 12.0,
+    "controlled_limiter_makeup_max_db": 8.0,
+    "controlled_limiter_makeup_max_steps": 2,
+    "detailed_loudness_report": false,
+    "fast_loudness_steps": [],
+    "fast_loudness_comparisons": {},
+    "timings_sec": {
+      "load_mix_plan_loudness": 0.003,
+      "pre_master_loudnorm": 22.834,
+      "apply_pregain": 0.369,
+      "master_l2": 2.887,
+      "post_l2_loudnorm": 23.065,
+      "apply_post_trim": 0.375,
+      "controlled_makeup_1_gain": 0.342,
+      "controlled_makeup_1_soft_peak_limit": 5.64,
+      "controlled_makeup_1_loudnorm": 23.13,
+      "controlled_makeup_2_gain": 0.335,
+      "controlled_makeup_2_soft_peak_limit": 5.436,
+      "controlled_makeup_2_loudnorm": 22.12,
+      "copy_controlled_makeup_to_limited": 0.019,
+      "global_declick": 3.359,
+      "copy_declicked_to_output": 0.018,
+      "output_loudnorm": 20.882,
+      "true_peak_safety_trim_gain": 0.237,
+      "copy_true_peak_safe_to_output": 0.012,
+      "total": 131.069
+    },
+    "pregain_db": 3.76,
+    "desired_pregain_db": 13.64,
+    "needed_gain_db": 13.64,
+    "available_gain_db": 12.21,
+    "safe_pregain_ceiling_db": 3.76,
+    "pre_l2_gain_ceiling_db": 3.76,
+    "pre_trim_db": 0.0,
+    "post_trim_db": 0.44999999999999996,
+    "post_trim_headroom_db": 0.45,
+    "true_peak_safety_trim_db": -0.61,
+    "controlled_limiter_makeup": {
+      "enabled": true,
+      "applied_db": 8.0,
+      "residual_before_db": 9.51,
+      "residual_after_db": 1.68,
+      "steps": [
+        {
+          "gain_db": 4.0,
+          "input_i_before": -22.01,
+          "input_i_after": -18.04,
+          "input_tp_after": -0.7
+        },
+        {
+          "gain_db": 4.0,
+          "input_i_before": -18.04,
+          "input_i_after": -14.18,
+          "input_tp_after": -0.65
+        }
+      ]
+    },
+    "post_pregain": {
+      "input_i": -22.38,
+      "input_tp": -0.3,
+      "input_lra": 10.5,
+      "input_thresh": -32.85,
+      "output_i": -8.38,
+      "output_tp": 2.96,
+      "output_lra": 4.9,
+      "output_thresh": -18.68,
+      "normalization_type": "dynamic",
+      "target_offset": -4.12,
+      "estimated_after_linear_gain_db": 3.76
+    },
+    "post_l2": {
+      "input_i": -22.46,
+      "input_tp": -1.75,
+      "input_lra": 10.5,
+      "input_thresh": -32.92,
+      "output_i": -12.03,
+      "output_tp": -0.8,
+      "output_lra": 5.1,
+      "output_thresh": -22.33,
+      "normalization_type": "dynamic",
+      "target_offset": -0.47
+    },
+    "post_trim": {
+      "input_i": -22.01,
+      "input_tp": -1.3,
+      "input_lra": 10.5,
+      "input_thresh": -32.47,
+      "output_i": -11.58,
+      "output_tp": -0.35,
+      "output_lra": 5.1,
+      "output_thresh": -21.88,
+      "normalization_type": "dynamic",
+      "target_offset": -0.92,
+      "estimated_after_linear_gain_db": 0.45
+    },
+    "pre_master": {
+      "input_i": -26.14,
+      "input_tp": -4.06,
+      "input_lra": 10.5,
+      "input_thresh": -36.61,
+      "output_i": -12.14,
+      "output_tp": -0.8,
+      "output_lra": 4.9,
+      "output_thresh": -22.44,
+      "normalization_type": "dynamic",
+      "target_offset": -0.36
+    },
+    "pre_master_sections": {},
+    "post_limiter": {
+      "input_i": -14.18,
+      "input_tp": -0.65,
+      "input_lra": 10.5,
+      "input_thresh": -24.65,
+      "output_i": -11.9,
+      "output_tp": -0.8,
+      "output_lra": 4.9,
+      "output_thresh": -22.2,
+      "normalization_type": "dynamic",
+      "target_offset": -0.6
+    },
+    "global_declick": {
+      "enabled": true,
+      "engine": "numpy",
+      "threshold": 0.6,
+      "max_click_samples": 4,
+      "max_events": 2000,
+      "events": 102,
+      "samples_repaired": 123,
+      "per_channel_events": [
+        62,
+        40
+      ],
+      "examples": [
+        {
+          "time_sec": 66.571111,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.964218,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 70.160454,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.807373,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 77.331701,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.675293,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 77.331882,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.667542,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 77.332018,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.620651,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 77.332132,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 1.042862,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 77.3322,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 1.009598,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 77.332245,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.925797,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 78.679433,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.797531,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 78.679501,
+          "channel": 0,
+          "samples": 3,
+          "max_residual": 0.698936,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 79.579093,
+          "channel": 0,
+          "samples": 2,
+          "max_residual": 0.559021,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 79.579206,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.752197,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 79.579252,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.629379,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 79.579388,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.777512,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 80.909955,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.648209,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 80.91,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.77829,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 82.250522,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 1.38266,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 82.25068,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.944061,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 84.48,
+          "channel": 0,
+          "samples": 2,
+          "max_residual": 0.629456,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 84.480113,
+          "channel": 0,
+          "samples": 2,
+          "max_residual": 0.668711,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 85.842426,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 1.070145,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 85.842472,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.642258,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 85.842517,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.728363,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 85.842653,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.811768,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 85.842698,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.808624,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 85.842744,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.662277,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 86.738912,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 1.319778,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 86.73898,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.784134,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 86.739161,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.760529,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 86.739206,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.98671,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 86.739365,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.786087,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 87.183605,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.604324,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 87.183673,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.928543,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 89.855238,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 1.358566,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 89.855329,
+          "channel": 0,
+          "samples": 2,
+          "max_residual": 0.664988,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 89.860431,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.730194,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 89.860635,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.647583,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 89.867959,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.801407,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 92.145737,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.765717,
+          "type": "isolated_sample"
+        },
+        {
+          "time_sec": 92.146032,
+          "channel": 0,
+          "samples": 1,
+          "max_residual": 0.664215,
+          "type": "isolated_sample"
+        }
+      ],
+      "truncated": false,
+      "mode": "auto",
+      "triggered": true
+    },
+    "final": {
+      "input_i": -14.8,
+      "input_tp": -0.8,
+      "input_lra": 10.5,
+      "input_thresh": -25.26,
+      "output_i": -12.49,
+      "output_tp": -1.41,
+      "output_lra": 5.0,
+      "output_thresh": -22.79,
+      "normalization_type": "dynamic",
+      "target_offset": -0.01,
+      "estimated_after_linear_gain_db": -0.61
+    },
+    "actual_i_lufs": -14.8,
+    "actual_tp_db": -0.8,
+    "actual_lra": 10.5,
+    "in_target_window": false,
+    "target_error_db": -2.3,
+    "loudness_under_compensated": true,
+    "final_sections": {},
+    "final_focus_windows": {}
+  },
+  "stage_report": "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_jiafei_yintian.stage_report.json",
+  "stage_report_loudness": false,
+  "important_note": "A/B/C now render through template-specific Faust approximation chains. Default backend is native Faust shell rendering. Use --render-backend wasm only for development smoke checks, or --legacy-current-renderer to force the older full_fx_mix.sh path."
+}

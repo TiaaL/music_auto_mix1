@@ -1,0 +1,204 @@
+{
+  "stages": [
+    {
+      "stage": "prep_normalize",
+      "elapsed_sec": 1.321,
+      "inputs": {
+        "vocal": {
+          "path": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/干声/乐园中文歌曲-黄昏_干声.wav"
+        },
+        "accomp": {
+          "path": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/伴奏/乐园中文歌曲-黄昏_伴奏.wav"
+        }
+      },
+      "outputs": {
+        "vocal": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_prepped_vocal.E48H1u.wav"
+        },
+        "accomp": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_prepped_accomp.67G6Z7.wav"
+        }
+      }
+    },
+    {
+      "stage": "volume_automation",
+      "elapsed_sec": 8.733,
+      "inputs": {
+        "vocal": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_prepped_vocal.E48H1u.wav"
+        },
+        "accomp": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_prepped_accomp.67G6Z7.wav"
+        }
+      },
+      "outputs": {
+        "vocal": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_auto_vocal.QFauvE.wav"
+        },
+        "accomp": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_auto_accomp.jQ5aOA.wav"
+        }
+      }
+    },
+    {
+      "stage": "vocal_insert_chain",
+      "elapsed_sec": 15.371,
+      "inputs": {
+        "vocal": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_auto_vocal.QFauvE.wav"
+        }
+      },
+      "outputs": {
+        "vocal": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_vocal_4.WN8NGa.wav"
+        }
+      }
+    },
+    {
+      "stage": "vocal_plan_eq",
+      "elapsed_sec": 0.989,
+      "inputs": {
+        "vocal": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_vocal_4.WN8NGa.wav"
+        }
+      },
+      "outputs": {
+        "vocal": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_vocal_source_eq.jqrC7V.wav"
+        }
+      }
+    },
+    {
+      "stage": "vocal_group_fx",
+      "elapsed_sec": 25.684,
+      "inputs": {
+        "vocal": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_vocal_source_eq.jqrC7V.wav"
+        }
+      },
+      "outputs": {
+        "vocal": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_vocal_group.AcJ1fJ.wav"
+        }
+      }
+    },
+    {
+      "stage": "accomp_insert_chain",
+      "elapsed_sec": 910.428,
+      "inputs": {
+        "accomp": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_auto_accomp.jQ5aOA.wav"
+        }
+      },
+      "outputs": {
+        "accomp": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_accomp_1.uvjjlO.wav"
+        }
+      }
+    },
+    {
+      "stage": "accomp_plan_eq",
+      "elapsed_sec": 1.942,
+      "inputs": {
+        "accomp": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_accomp_1.uvjjlO.wav"
+        }
+      },
+      "outputs": {
+        "accomp": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_accomp_source_eq.t2J0lm.wav"
+        }
+      }
+    },
+    {
+      "stage": "accomp_vocal_duck",
+      "elapsed_sec": 34.978,
+      "inputs": {
+        "accomp": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_accomp_source_eq.t2J0lm.wav"
+        },
+        "vocal": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_vocal_group.AcJ1fJ.wav"
+        }
+      },
+      "outputs": {
+        "accomp": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_accomp_bus.p9lxnc.wav"
+        }
+      }
+    },
+    {
+      "stage": "bus_balance_analysis",
+      "elapsed_sec": 7.198,
+      "inputs": {
+        "vocal": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_vocal_group.AcJ1fJ.wav"
+        },
+        "accomp": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_accomp_bus.p9lxnc.wav"
+        }
+      },
+      "outputs": {}
+    },
+    {
+      "stage": "stereo_sum",
+      "elapsed_sec": 1.018,
+      "inputs": {
+        "vocal": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_vocal_group.AcJ1fJ.wav"
+        },
+        "accomp": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_accomp_bus.p9lxnc.wav"
+        }
+      },
+      "outputs": {
+        "mix": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_mix.o3QHPS.wav"
+        }
+      }
+    },
+    {
+      "stage": "master_tilt_eq",
+      "elapsed_sec": 1.841,
+      "inputs": {
+        "mix": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_mix.o3QHPS.wav"
+        }
+      },
+      "outputs": {
+        "mix": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_mix_tilted.PI2U3L.wav"
+        }
+      }
+    },
+    {
+      "stage": "master_bus_chain",
+      "elapsed_sec": 1071.677,
+      "inputs": {
+        "mix": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_mix_tilted.PI2U3L.wav"
+        }
+      },
+      "outputs": {
+        "mix": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_master_2.ZIngE6.wav"
+        }
+      }
+    },
+    {
+      "stage": "master_loudness_finalize",
+      "elapsed_sec": 2986.397,
+      "inputs": {
+        "mix": {
+          "path": "/var/folders/7t/5z1cbwns4gldq3djgzshkgf40000gn/T/template_master_2.ZIngE6.wav"
+        }
+      },
+      "outputs": {
+        "mix": {
+          "path": "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_leyuan_huanghun.wav"
+        }
+      }
+    }
+  ],
+  "total_measured_stage_sec": 5067.577
+}

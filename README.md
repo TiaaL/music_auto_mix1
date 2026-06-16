@@ -389,7 +389,32 @@ Current rollout policy:
 2. Delay records evidence; low confidence applies only a very small send lift near baseline.
 3. Shimmer remains hidden by default (`policy: hidden_by_default_first_rollout`).
 4. The generated binary and applied parameters are recorded in `<output>.spatial_fx.json`.
-5. Validate on `炳超 - 黄昏` and `佳菲 - 阴天` with baseline vs. spatial-plan renders before widening limits.
+5. The post-FX vocal bus can be exported as `<output>.vocal_group.wav` and audited against the reference vocal stem before judging vocal width.
+6. Validate on multiple songs with baseline vs. spatial-plan renders before widening limits.
+
+Active vocal-width decisions use a two-stage workflow:
+
+1. **Measurement stage**: compare `reference vocal stem` against the current
+   post-FX `vocal_group` bus, using active regions detected from the reference
+   vocal. The audit reports Mid/Side active lift, active side/mid ratio, L/R
+   correlation, and mono fold-down loss. Full-mix Mid/Side is diagnostic only
+   because accompaniment, drums, guitars, and master width can dominate side
+   energy.
+2. **Processing stage**: only consider a light voice-correlated side layer when
+   the reference vocal stem has meaningful active side, the current `vocal_group`
+   is at least `3 dB` narrower, and correlation/mono guards pass. Near-mono
+   reference vocals keep the existing balance/duck/carve path; already-wide
+   current vocals are left alone.
+
+`auto_template_mix.py` runs this audit automatically when reference stems are
+available for A/B/C template renders. Disable it with `--spatial-audit off`, or
+keep only the exported bus with `--export-vocal-group`.
+
+The executable second-stage hook is intentionally opt-in:
+`--direct-vocal-side-layer light`. The first light preset adds a band-limited
+pure-side layer from the post-source-EQ vocal (`-20 dB`, `8 ms`, `180-6500 Hz`)
+before accompaniment ducking and bus-balance analysis. It should only be used
+for A/B after the audit recommends `consider_light_voice_correlated_side_layer`.
 
 Spatial work must not change:
 

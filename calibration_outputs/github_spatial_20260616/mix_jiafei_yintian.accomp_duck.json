@@ -1,0 +1,38 @@
+{
+  "enabled": true,
+  "template": "template_c",
+  "profile": {
+    "low_base_db": 0.6,
+    "low_extra_db": 1.2566,
+    "body_base_db": 0.5198,
+    "presence_base_db": 1.4919,
+    "presence_extra_db": 0.4652,
+    "air_base_db": 0.4811
+  },
+  "duck_coordination": {
+    "mode": "carve_reduces_duck",
+    "regions": {
+      "presence": 2.0,
+      "body": 0.87
+    },
+    "preserve_dynamic_duck": {
+      "presence": 0.777
+    },
+    "policy": "one static carve per spectral problem region; matching dynamic duck bands are reduced, but strong reference-relative masking preserves more dynamic duck so a small carve does not pretend the masking problem is solved"
+  },
+  "active_fraction": 0.5548,
+  "low_duck_db_active_p50": -0.632,
+  "low_duck_db_active_p90": -1.0,
+  "presence_duck_db_active_p50": -1.35,
+  "presence_duck_db_active_p90": -1.675,
+  "policy": "template-profiled multiband accompaniment ducking keyed from post-FX vocal activity",
+  "timings_sec": {
+    "prepare": 0.3317,
+    "split_bands_sosfiltfilt": 5.3863,
+    "envelopes_and_pressure": 2.299,
+    "smooth_gain_curves": 1.548,
+    "apply_gains_and_clip": 1.9362,
+    "read_audio": 0.524,
+    "write_wav": 0.4218
+  }
+}

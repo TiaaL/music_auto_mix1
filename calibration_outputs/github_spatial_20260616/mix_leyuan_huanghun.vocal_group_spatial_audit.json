@@ -1,0 +1,56 @@
+{
+  "reference_target": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲人声/黄昏-原曲人声.wav",
+  "reference_target_kind": "vocal_stem",
+  "reference_audio": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲/周传雄 - 黄昏.mp3",
+  "reference_vocal": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲人声/黄昏-原曲人声.wav",
+  "active_regions": {
+    "count": 18,
+    "coverage_sec": 200.115,
+    "basis": "reference_vocal_active_regions"
+  },
+  "reference": {
+    "path": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲人声/黄昏-原曲人声.wav",
+    "mid_active_db": -14.871,
+    "mid_inactive_db": -67.354,
+    "mid_lift_db": 52.483,
+    "side_active_db": -41.318,
+    "side_inactive_db": -80.757,
+    "side_lift_db": 39.439,
+    "active_side_minus_mid_db": -26.447,
+    "inactive_side_minus_mid_db": -13.403,
+    "lr_correlation_active": 0.99592,
+    "lr_correlation_inactive": 0.91311,
+    "mono_fold_down_loss_active_db": -0.01,
+    "mono_fold_down_loss_inactive_db": -0.194
+  },
+  "candidates": [
+    {
+      "label": "vocal_group",
+      "path": "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_leyuan_huanghun.vocal_group.wav",
+      "mid_active_db": -23.412,
+      "mid_inactive_db": -61.381,
+      "mid_lift_db": 37.97,
+      "side_active_db": -42.597,
+      "side_inactive_db": -61.156,
+      "side_lift_db": 18.559,
+      "active_side_minus_mid_db": -19.185,
+      "inactive_side_minus_mid_db": 0.226,
+      "lr_correlation_active": 0.97617,
+      "lr_correlation_inactive": -0.02598,
+      "mono_fold_down_loss_active_db": -0.052,
+      "mono_fold_down_loss_inactive_db": -3.125,
+      "reference_error": {
+        "mid_lift_db_error_db": -14.513,
+        "side_lift_db_error_db": -20.88,
+        "active_side_minus_mid_db_error_db": 7.262,
+        "inactive_side_minus_mid_db_error_db": 13.629
+      },
+      "recommendation": {
+        "action": "keep_current_vocal_group",
+        "reason": "current_active_side_is_close_to_reference",
+        "side_deficit_db": -7.262
+      }
+    }
+  ],
+  "policy_note": "Use reference-relative Mid/Side active lift; do not treat side_lift as a fixed global target across songs."
+}

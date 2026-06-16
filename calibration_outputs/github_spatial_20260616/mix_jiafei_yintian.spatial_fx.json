@@ -1,0 +1,138 @@
+{
+  "enabled": true,
+  "binary": "/Users/xy/Desktop/1/code/music/music_auto_mix1/build/spatial/vocal_group_fx_0823c24e511397a0",
+  "compiled": false,
+  "hash": "0823c24e511397a0",
+  "params": {
+    "RVERB_SEND_PRE_DB": -9.428,
+    "RVERB_PREDELAY_MS": 24.29,
+    "RVERB_TIME_S": 2.917,
+    "RVERB_EARLY_REF_DB": -2.0,
+    "RVERB_DAMP": 0.35,
+    "RVERB_EQ_HI_GAIN_DB": -3.195,
+    "SUPERTAP_SEND_PRE_DB": -26.64,
+    "SUPERTAP_GAIN_DB": -18.14,
+    "SUPERTAP_FEEDBACK": 0.1,
+    "SUPERTAP_WIDTH": 0.45,
+    "SUPERTAP_COLOR_HZ": 2400.0,
+    "SHIMMER_SEND_PRE_DB": -18.0,
+    "SHIMMER_GAIN_DB": -18.0
+  },
+  "spatial_fx": {
+    "enabled": true,
+    "applied_to_render": true,
+    "version": 1,
+    "confidence": 0.805,
+    "baseline": {
+      "rverb_send_pre_db": -12.5,
+      "rverb_time_s": 1.75,
+      "rverb_predelay_ms": 12.0,
+      "rverb_early_ref_db": -2.0,
+      "rverb_damp": 0.35,
+      "rverb_eq_hi_gain_db": -4.0,
+      "supertap_send_pre_db": -27.0,
+      "supertap_gain_db": -18.5,
+      "supertap_feedback": 0.1,
+      "supertap_width": 0.45,
+      "supertap_color_hz": 2400.0,
+      "shimmer_send_pre_db": -18.0,
+      "shimmer_gain_db": -18.0
+    },
+    "reverb": {
+      "send_pre_db": -9.428,
+      "time_s": 2.917,
+      "predelay_ms": 24.29,
+      "early_ref_db": -2.0,
+      "damp": 0.35,
+      "eq_hi_gain_db": -3.195,
+      "wet_delta_db": 3.072,
+      "confidence": 0.805
+    },
+    "delay": {
+      "send_pre_db": -26.64,
+      "gain_db": -18.14,
+      "feedback": 0.1,
+      "width": 0.45,
+      "color_hz": 2400.0,
+      "send_delta_db": 0.36,
+      "confidence": 0.45,
+      "policy": "low_confidence_light_send_only"
+    },
+    "shimmer": {
+      "send_pre_db": -18.0,
+      "gain_db": -18.0,
+      "enabled": false,
+      "confidence": 0.0,
+      "policy": "hidden_by_default_first_rollout"
+    },
+    "limits": {
+      "rverb_send_pre_db": [
+        -14.0,
+        -8.5
+      ],
+      "rverb_time_s": [
+        1.4,
+        3.8
+      ],
+      "rverb_predelay_ms": [
+        8.0,
+        35.0
+      ],
+      "rverb_eq_hi_gain_db": [
+        -5.0,
+        -2.0
+      ],
+      "supertap_send_pre_db": [
+        -30.0,
+        -18.0
+      ],
+      "supertap_gain_db": [
+        -20.0,
+        -8.0
+      ],
+      "supertap_feedback": [
+        0.06,
+        0.24
+      ],
+      "supertap_width": [
+        0.35,
+        0.65
+      ],
+      "shimmer_send_pre_db": [
+        -24.0,
+        -16.0
+      ],
+      "shimmer_gain_db": [
+        -24.0,
+        -16.0
+      ]
+    },
+    "evidence": {
+      "reverb_proxy": {
+        "tail_to_onset_ratio_db": -0.55,
+        "est_rt60_ms": 18608.1,
+        "onset_count": 1136,
+        "valid_tail_count": 1136,
+        "tail_iqr_db": 6.03,
+        "confidence": 0.805
+      },
+      "delay_proxy": {
+        "peak_corr": 0.803,
+        "peak_lag_ms": 80.0,
+        "confidence": 0.45,
+        "boundary_lag_guard": true
+      },
+      "vocal_stem_quality": {
+        "active_rms_db": -17.951,
+        "inactive_rms_db": -71.924,
+        "active_minus_inactive_db": 53.973,
+        "active_coverage": 0.6716,
+        "severe_leakage": false
+      }
+    },
+    "guards": [],
+    "policy": "bounded_reference_mapping_confidence_blend"
+  },
+  "plan": "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/jiafei_yintian_resolved_mix_plan.json",
+  "source_dsp": "/Users/xy/Desktop/1/code/music/music_auto_mix1/src/vocal_group_fx.dsp"
+}

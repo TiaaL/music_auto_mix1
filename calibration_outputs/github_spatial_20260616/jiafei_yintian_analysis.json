@@ -1,0 +1,101 @@
+{
+  "audio_path": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/干声/佳菲莫文蔚-阴天_干声.wav",
+  "sample_rate": 44100,
+  "native_sample_rate": 24000,
+  "effective_nyquist_hz": 12000.0,
+  "dropped_bands": [
+    "air"
+  ],
+  "n_fft": 4096,
+  "hop_length": 1024,
+  "trim_silence": true,
+  "top_db": 40.0,
+  "band_energies": {
+    "sub": 8869.54296875,
+    "low": 1026738.8125,
+    "lowmid": 244463600.0,
+    "mid": 63853660.0,
+    "upper": 7652883.0,
+    "harsh": 3330165.0,
+    "sib": 430606.65625,
+    "air": 0.0
+  },
+  "ratios": {
+    "sub": 2.7651086795070456e-05,
+    "low": 0.003200891423643014,
+    "lowmid": 0.7621231720339746,
+    "mid": 0.19906584827016752,
+    "upper": 0.023858110030143053,
+    "harsh": 0.010381896990785218,
+    "sib": 0.001342430164491537,
+    "air": 0.0
+  },
+  "group_ratios": {
+    "body": 0.9611890203041421,
+    "presence": 0.03424000702092827
+  },
+  "body_to_presence": 28.07210348165646,
+  "peakiness_upper": 10.806915283203125,
+  "peakiness_harsh": 0.0,
+  "peakiness_sib": 7.042388916015625,
+  "classification": {
+    "label": "template_C",
+    "label_name": "Imbalanced / Heavy Low-Mid",
+    "template_A": {
+      "name": "Muddy / Boxy Vocal",
+      "tags": [
+        "厚",
+        "闷",
+        "糊",
+        "鼻",
+        "箱感",
+        "主体偏暗"
+      ],
+      "hits": 0,
+      "hit_rules": [],
+      "strong_hits": 0,
+      "strong_rules": [],
+      "qualified": false
+    },
+    "template_B": {
+      "name": "Peaky / Harsh Vocal",
+      "tags": [
+        "炸",
+        "刺",
+        "硬",
+        "毛",
+        "金属感",
+        "某些字突然冲"
+      ],
+      "hits": 1,
+      "hit_rules": [
+        "upper_peak_spiky"
+      ],
+      "strong_hits": 0,
+      "strong_rules": [],
+      "qualified": false
+    },
+    "template_C": {
+      "name": "Imbalanced / Heavy Low-Mid",
+      "tags": [
+        "闷",
+        "糊",
+        "头重脚轻",
+        "缺高频",
+        "不通透"
+      ],
+      "hits": 3,
+      "hit_rules": [
+        "extreme_lowmid",
+        "very_high_body_to_presence",
+        "body_peak_spiky"
+      ],
+      "strong_hits": 2,
+      "strong_rules": [
+        "mega_lowmid",
+        "extreme_body_to_presence"
+      ],
+      "qualified": true
+    }
+  }
+}

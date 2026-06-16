@@ -1,0 +1,225 @@
+{
+  "enabled": true,
+  "mode": "master_safe_pregain_l2_controlled_makeup_soft_tp",
+  "reference_audio": {
+    "path": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲/周传雄 - 黄昏.mp3",
+    "input_i_lufs": -12.5,
+    "input_lra": 14.0,
+    "derived_target_i": -12.5,
+    "derived_target_lra": 14.0
+  },
+  "final_loudness_window_lufs": [
+    -13.5,
+    -12.5
+  ],
+  "target_i_lufs": -12.5,
+  "target_tp_db": -0.8,
+  "target_lra": 14.0,
+  "max_gain_db": 18.0,
+  "max_attenuation_db": 12.0,
+  "controlled_limiter_makeup_max_db": 8.0,
+  "controlled_limiter_makeup_max_steps": 2,
+  "detailed_loudness_report": false,
+  "fast_loudness_steps": [],
+  "fast_loudness_comparisons": {},
+  "timings_sec": {
+    "load_mix_plan_loudness": 0.003,
+    "pre_master_loudnorm": 37.194,
+    "apply_pregain": 0.498,
+    "master_l2": 5.96,
+    "post_l2_loudnorm": 37.806,
+    "apply_post_trim": 0.517,
+    "controlled_makeup_1_gain": 0.437,
+    "controlled_makeup_1_soft_peak_limit": 10.003,
+    "controlled_makeup_1_loudnorm": 37.468,
+    "copy_controlled_makeup_to_limited": 0.024,
+    "global_declick": 6.551,
+    "copy_declicked_to_output": 0.031,
+    "output_loudnorm": 37.621,
+    "true_peak_safety_trim_gain": 0.424,
+    "copy_true_peak_safe_to_output": 0.043,
+    "total": 174.597
+  },
+  "pregain_db": 14.209999999999999,
+  "desired_pregain_db": 16.86,
+  "needed_gain_db": 16.86,
+  "available_gain_db": 24.32,
+  "safe_pregain_ceiling_db": 14.21,
+  "pre_l2_gain_ceiling_db": 14.21,
+  "pre_trim_db": 0.0,
+  "post_trim_db": 2.1100000000000003,
+  "post_trim_headroom_db": 2.11,
+  "true_peak_safety_trim_db": -0.05,
+  "controlled_limiter_makeup": {
+    "enabled": true,
+    "applied_db": 0.87,
+    "residual_before_db": 0.87,
+    "residual_after_db": 0.01,
+    "steps": [
+      {
+        "gain_db": 0.87,
+        "input_i_before": -13.37,
+        "input_i_after": -12.51,
+        "input_tp_after": -0.75
+      }
+    ]
+  },
+  "post_pregain": {
+    "input_i": -15.15,
+    "input_tp": -0.3,
+    "input_lra": 15.8,
+    "input_thresh": -25.86,
+    "output_i": 3.18,
+    "output_tp": 13.41,
+    "output_lra": 7.6,
+    "output_thresh": -7.17,
+    "normalization_type": "dynamic",
+    "target_offset": -15.68,
+    "estimated_after_linear_gain_db": 14.21
+  },
+  "post_l2": {
+    "input_i": -15.48,
+    "input_tp": -3.41,
+    "input_lra": 15.4,
+    "input_thresh": -26.18,
+    "output_i": -10.53,
+    "output_tp": -0.8,
+    "output_lra": 8.8,
+    "output_thresh": -20.9,
+    "normalization_type": "dynamic",
+    "target_offset": -1.97
+  },
+  "post_trim": {
+    "input_i": -13.37,
+    "input_tp": -1.3,
+    "input_lra": 15.4,
+    "input_thresh": -24.07,
+    "output_i": -8.42,
+    "output_tp": 1.31,
+    "output_lra": 8.8,
+    "output_thresh": -18.79,
+    "normalization_type": "dynamic",
+    "target_offset": -4.08,
+    "estimated_after_linear_gain_db": 2.11
+  },
+  "pre_master": {
+    "input_i": -29.36,
+    "input_tp": -14.51,
+    "input_lra": 15.8,
+    "input_thresh": -40.07,
+    "output_i": -11.03,
+    "output_tp": -0.8,
+    "output_lra": 7.6,
+    "output_thresh": -21.38,
+    "normalization_type": "dynamic",
+    "target_offset": -1.47
+  },
+  "pre_master_sections": {},
+  "post_limiter": {
+    "input_i": -12.51,
+    "input_tp": -0.75,
+    "input_lra": 15.5,
+    "input_thresh": -23.21,
+    "output_i": -10.53,
+    "output_tp": -0.8,
+    "output_lra": 8.8,
+    "output_thresh": -20.89,
+    "normalization_type": "dynamic",
+    "target_offset": -1.97
+  },
+  "global_declick": {
+    "enabled": true,
+    "engine": "numpy",
+    "threshold": 0.6,
+    "max_click_samples": 4,
+    "max_events": 2000,
+    "events": 8,
+    "samples_repaired": 10,
+    "per_channel_events": [
+      0,
+      8
+    ],
+    "examples": [
+      {
+        "time_sec": 184.79839,
+        "channel": 1,
+        "samples": 1,
+        "max_residual": 0.783997,
+        "type": "isolated_sample"
+      },
+      {
+        "time_sec": 184.798435,
+        "channel": 1,
+        "samples": 1,
+        "max_residual": 0.830872,
+        "type": "isolated_sample"
+      },
+      {
+        "time_sec": 230.944603,
+        "channel": 1,
+        "samples": 1,
+        "max_residual": 0.793442,
+        "type": "isolated_sample"
+      },
+      {
+        "time_sec": 304.027052,
+        "channel": 1,
+        "samples": 1,
+        "max_residual": 0.643631,
+        "type": "isolated_sample"
+      },
+      {
+        "time_sec": 304.027098,
+        "channel": 1,
+        "samples": 1,
+        "max_residual": 0.655487,
+        "type": "isolated_sample"
+      },
+      {
+        "time_sec": 312.084286,
+        "channel": 1,
+        "samples": 1,
+        "max_residual": 0.713608,
+        "type": "isolated_sample"
+      },
+      {
+        "time_sec": 184.798322,
+        "channel": 1,
+        "samples": 2,
+        "max_residual": 0.417053,
+        "type": "short_jump_burst"
+      },
+      {
+        "time_sec": 312.084218,
+        "channel": 1,
+        "samples": 2,
+        "max_residual": 0.544708,
+        "type": "short_jump_burst"
+      }
+    ],
+    "truncated": false,
+    "mode": "auto",
+    "triggered": true
+  },
+  "final": {
+    "input_i": -12.56,
+    "input_tp": -0.8,
+    "input_lra": 15.5,
+    "input_thresh": -23.26,
+    "output_i": -10.58,
+    "output_tp": -0.85,
+    "output_lra": 8.8,
+    "output_thresh": -20.94,
+    "normalization_type": "dynamic",
+    "target_offset": -1.92,
+    "estimated_after_linear_gain_db": -0.05
+  },
+  "actual_i_lufs": -12.56,
+  "actual_tp_db": -0.8,
+  "actual_lra": 15.5,
+  "in_target_window": true,
+  "target_error_db": -0.06,
+  "loudness_under_compensated": false,
+  "final_sections": {},
+  "final_focus_windows": {}
+}

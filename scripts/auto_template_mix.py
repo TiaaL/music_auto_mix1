@@ -158,6 +158,8 @@ def run_renderer(
     fast_loudness_steps: str = "",
     compare_fast_loudness: bool = False,
     spatial_fx: str = "auto",
+    export_vocal_group: Path | None = None,
+    direct_vocal_side_layer: str = "off",
 ) -> dict:
     if legacy_current_renderer:
         script = ROOT / "scripts" / "full_fx_mix.sh"
@@ -196,6 +198,11 @@ def run_renderer(
         if compare_fast_loudness:
             cmd.append("--compare-fast-loudness")
         cmd += ["--spatial-fx", spatial_fx]
+        if export_vocal_group is not None:
+            export_arg = to_msys_path(export_vocal_group) if is_msys_bash(renderer) else str(export_vocal_group)
+            cmd += ["--export-vocal-group", export_arg]
+        if direct_vocal_side_layer != "off":
+            cmd += ["--direct-vocal-side-layer", direct_vocal_side_layer]
         if stage_report:
             cmd.append("--stage-report")
         if stage_report_loudness:
@@ -209,6 +216,41 @@ def run_renderer(
         "returncode": proc.returncode,
         "stdout": proc.stdout,
         "stderr": proc.stderr,
+    }
+
+
+def run_vocal_group_spatial_audit(
+    reference_vocal: Path,
+    vocal_group: Path,
+    output_json: Path,
+    reference_audio: Path | None = None,
+) -> dict:
+    cmd = [
+        sys.executable,
+        str(ROOT / "scripts" / "audit_active_spatial_lift.py"),
+        "--reference-vocal",
+        str(reference_vocal),
+        "--reference-target",
+        "vocal_stem",
+        "--candidate",
+        f"vocal_group={vocal_group}",
+        "--output-json",
+        str(output_json),
+    ]
+    if reference_audio is not None:
+        cmd += ["--reference-audio", str(reference_audio)]
+    proc = subprocess.run(cmd, text=True, encoding="utf-8", errors="replace", capture_output=True, check=False, cwd=ROOT)
+    report = None
+    if output_json.exists():
+        report = json.loads(output_json.read_text(encoding="utf-8-sig"))
+    return {
+        "ran": True,
+        "command": cmd,
+        "returncode": proc.returncode,
+        "stdout": proc.stdout,
+        "stderr": proc.stderr,
+        "output_json": str(output_json),
+        "report": report,
     }
 
 
@@ -260,6 +302,29 @@ def main() -> None:
         "--no-spatial-fx",
         action="store_true",
         help="Legacy alias for --spatial-fx off.",
+    )
+    parser.add_argument(
+        "--spatial-audit",
+        choices=("auto", "off"),
+        default="auto",
+        help="Export and audit the post-FX vocal_group bus against the reference vocal stem when references are available.",
+    )
+    parser.add_argument(
+        "--export-vocal-group",
+        action="store_true",
+        help="Keep a copy of the post-FX vocal_group bus. Implied by --spatial-audit auto when reference vocal is available.",
+    )
+    parser.add_argument(
+        "--vocal-group-output",
+        type=Path,
+        default=None,
+        help="Path for --export-vocal-group. Defaults to <output>.vocal_group.wav.",
+    )
+    parser.add_argument(
+        "--direct-vocal-side-layer",
+        choices=("off", "light"),
+        default="off",
+        help="Experimental second-stage direct side layer. Keep off unless the vocal_group spatial audit recommends it.",
     )
     parser.add_argument(
         "--legacy-current-renderer",
@@ -371,6 +436,15 @@ def main() -> None:
     write_json(plan_path, plan)
 
     template_id = str(plan.get("selected_template") or "template_d")
+    should_export_vocal_group = (
+        args.export_vocal_group
+        or (args.spatial_audit == "auto" and ref_vocal is not None and template_id != "template_d")
+    )
+    vocal_group_output = (
+        resolve_path(args.vocal_group_output)
+        if args.vocal_group_output
+        else output_wav.with_suffix(".vocal_group.wav")
+    ) if should_export_vocal_group else None
     render = run_renderer(
         template_id,
         vocal_wav,
@@ -390,7 +464,25 @@ def main() -> None:
         fast_loudness_steps=args.fast_loudness_steps,
         compare_fast_loudness=args.compare_fast_loudness,
         spatial_fx="off" if args.no_spatial_fx else args.spatial_fx,
+        export_vocal_group=vocal_group_output,
+        direct_vocal_side_layer=args.direct_vocal_side_layer,
     )
+    spatial_audit = None
+    if (
+        args.spatial_audit == "auto"
+        and ref_vocal is not None
+        and vocal_group_output is not None
+        and render.get("ran")
+        and render.get("returncode") == 0
+        and vocal_group_output.exists()
+    ):
+        spatial_audit_path = output_wav.with_suffix(".vocal_group_spatial_audit.json")
+        spatial_audit = run_vocal_group_spatial_audit(
+            ref_vocal,
+            vocal_group_output,
+            spatial_audit_path,
+            reference_audio=ref_full_mix,
+        )
     loudness_path = output_wav.with_suffix(".loudness.json")
     loudness = json.loads(loudness_path.read_text(encoding="utf-8-sig")) if loudness_path.exists() else None
     summary = {
@@ -408,6 +500,9 @@ def main() -> None:
         "fast_loudness_steps": args.fast_loudness_steps,
         "compare_fast_loudness": args.compare_fast_loudness,
         "spatial_fx": "off" if args.no_spatial_fx else args.spatial_fx,
+        "direct_vocal_side_layer": args.direct_vocal_side_layer,
+        "spatial_audit": spatial_audit,
+        "vocal_group_output": str(vocal_group_output) if vocal_group_output else None,
         "loudness": loudness,
         "stage_report": str(output_wav.with_suffix(".stage_report.json")) if (args.stage_report or args.stage_report_loudness) else None,
         "stage_report_loudness": args.stage_report_loudness,

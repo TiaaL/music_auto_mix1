@@ -1,0 +1,56 @@
+{
+  "reference_target": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲人声/阴天-原曲人声.wav",
+  "reference_target_kind": "vocal_stem",
+  "reference_audio": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲/8bc4_莫文蔚阴天.mp3",
+  "reference_vocal": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲人声/阴天-原曲人声.wav",
+  "active_regions": {
+    "count": 19,
+    "coverage_sec": 162.77,
+    "basis": "reference_vocal_active_regions"
+  },
+  "reference": {
+    "path": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/原曲人声/阴天-原曲人声.wav",
+    "mid_active_db": -14.941,
+    "mid_inactive_db": -68.914,
+    "mid_lift_db": 53.973,
+    "side_active_db": -41.437,
+    "side_inactive_db": -82.998,
+    "side_lift_db": 41.56,
+    "active_side_minus_mid_db": -26.497,
+    "inactive_side_minus_mid_db": -14.084,
+    "lr_correlation_active": 0.99673,
+    "lr_correlation_inactive": 0.92504,
+    "mono_fold_down_loss_active_db": -0.01,
+    "mono_fold_down_loss_inactive_db": -0.166
+  },
+  "candidates": [
+    {
+      "label": "vocal_group",
+      "path": "/Users/xy/Desktop/1/code/music/music_auto_mix1/calibration_outputs/github_spatial_20260616/mix_jiafei_yintian.vocal_group.wav",
+      "mid_active_db": -22.018,
+      "mid_inactive_db": -54.46,
+      "mid_lift_db": 32.442,
+      "side_active_db": -40.658,
+      "side_inactive_db": -55.223,
+      "side_lift_db": 14.564,
+      "active_side_minus_mid_db": -18.64,
+      "inactive_side_minus_mid_db": -0.762,
+      "lr_correlation_active": 0.97302,
+      "lr_correlation_inactive": 0.08759,
+      "mono_fold_down_loss_active_db": -0.059,
+      "mono_fold_down_loss_inactive_db": -2.646,
+      "reference_error": {
+        "mid_lift_db_error_db": -21.531,
+        "side_lift_db_error_db": -26.996,
+        "active_side_minus_mid_db_error_db": 7.857,
+        "inactive_side_minus_mid_db_error_db": 13.322
+      },
+      "recommendation": {
+        "action": "keep_current_vocal_group",
+        "reason": "current_active_side_is_close_to_reference",
+        "side_deficit_db": -7.857
+      }
+    }
+  ],
+  "policy_note": "Use reference-relative Mid/Side active lift; do not treat side_lift as a fixed global target across songs."
+}

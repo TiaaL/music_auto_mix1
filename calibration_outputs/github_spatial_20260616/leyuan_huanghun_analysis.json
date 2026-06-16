@@ -1,0 +1,98 @@
+{
+  "audio_path": "/Users/xy/Desktop/1/code/music/feishu_long_audio_screened/干声/乐园中文歌曲-黄昏_干声.wav",
+  "sample_rate": 44100,
+  "native_sample_rate": 24000,
+  "effective_nyquist_hz": 12000.0,
+  "dropped_bands": [
+    "air"
+  ],
+  "n_fft": 4096,
+  "hop_length": 1024,
+  "trim_silence": true,
+  "top_db": 40.0,
+  "band_energies": {
+    "sub": 1027228.5625,
+    "low": 192204672.0,
+    "lowmid": 121826360.0,
+    "mid": 4024305.0,
+    "upper": 1050542.75,
+    "harsh": 3350040.0,
+    "sib": 1797450.0,
+    "air": 0.0
+  },
+  "ratios": {
+    "sub": 0.003157976737097404,
+    "low": 0.5908888295125037,
+    "lowmid": 0.3745269795739871,
+    "mid": 0.012371795369528354,
+    "upper": 0.0032296508167103596,
+    "harsh": 0.010298923505980478,
+    "sib": 0.00552584448419261,
+    "air": 0.0
+  },
+  "group_ratios": {
+    "body": 0.3868987749435155,
+    "presence": 0.013528574322690837
+  },
+  "body_to_presence": 28.598636169266445,
+  "peakiness_upper": 8.00938606262207,
+  "peakiness_harsh": 7.787528991699219,
+  "peakiness_sib": 8.233253479003906,
+  "classification": {
+    "label": "template_A",
+    "label_name": "Muddy / Boxy Vocal",
+    "template_A": {
+      "name": "Muddy / Boxy Vocal",
+      "tags": [
+        "厚",
+        "闷",
+        "糊",
+        "鼻",
+        "箱感",
+        "主体偏暗"
+      ],
+      "hits": 2,
+      "hit_rules": [
+        "lowmid_ratio_high",
+        "body_to_presence_high"
+      ],
+      "strong_hits": 2,
+      "strong_rules": [
+        "very_high_lowmid",
+        "strong_body_to_presence"
+      ],
+      "qualified": true
+    },
+    "template_B": {
+      "name": "Peaky / Harsh Vocal",
+      "tags": [
+        "炸",
+        "刺",
+        "硬",
+        "毛",
+        "金属感",
+        "某些字突然冲"
+      ],
+      "hits": 0,
+      "hit_rules": [],
+      "strong_hits": 0,
+      "strong_rules": [],
+      "qualified": false
+    },
+    "template_C": {
+      "name": "Imbalanced / Heavy Low-Mid",
+      "tags": [
+        "闷",
+        "糊",
+        "头重脚轻",
+        "缺高频",
+        "不通透"
+      ],
+      "hits": 0,
+      "hit_rules": [],
+      "strong_hits": 0,
+      "strong_rules": [],
+      "qualified": false
+    }
+  }
+}
