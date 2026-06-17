@@ -29,6 +29,7 @@ FAST_LOUDNESS_STEPS=""
 COMPARE_FAST_LOUDNESS=0
 SPATIAL_FX="auto"
 EXPORT_VOCAL_GROUP=""
+EXPORT_ACCOMP_BUS=""
 DIRECT_VOCAL_SIDE_LAYER="off"
 
 shift 4 || true
@@ -106,6 +107,14 @@ while [[ $# -gt 0 ]]; do
             EXPORT_VOCAL_GROUP="${1:-}"
             if [[ -z "$EXPORT_VOCAL_GROUP" ]]; then
                 echo "Error: --export-vocal-group requires a path" >&2
+                exit 1
+            fi
+            ;;
+        --export-accomp-bus)
+            shift
+            EXPORT_ACCOMP_BUS="${1:-}"
+            if [[ -z "$EXPORT_ACCOMP_BUS" ]]; then
+                echo "Error: --export-accomp-bus requires a path" >&2
                 exit 1
             fi
             ;;
@@ -236,12 +245,15 @@ ACCOMP_1="$(make_temp_wav template_accomp_1)"
 ACCOMP_SOURCE_EQ="$(make_temp_wav template_accomp_source_eq)"
 ACCOMP_DUCKED="$(make_temp_wav template_accomp_ducked)"
 ACCOMP_BUS="$(make_temp_wav template_accomp_bus)"
+VOCAL_BALANCED="$(make_temp_wav template_vocal_section_balanced)"
+ACCOMP_BALANCED="$(make_temp_wav template_accomp_section_balanced)"
 MIX_TMP="$(make_temp_wav template_mix)"
 MIX_TILTED="$(make_temp_wav template_mix_tilted)"
 MASTER_1="$(make_temp_wav template_master_1)"
 MASTER_2="$(make_temp_wav template_master_2)"
+FINAL_GUARDED="$(make_temp_wav template_final_guarded)"
 
-trap 'rm -f "$RESAMPLED_VOCAL" "$RESAMPLED_ACCOMP" "$AUTO_VOCAL" "$AUTO_ACCOMP" "$VOCAL_1" "$VOCAL_2" "$VOCAL_3" "$VOCAL_4" "$VOCAL_5" "$VOCAL_CORRECTED" "$VOCAL_SOURCE_EQ" "$VOCAL_GROUP" "$VOCAL_GROUP_SIDE" "$ACCOMP_1" "$ACCOMP_SOURCE_EQ" "$ACCOMP_DUCKED" "$ACCOMP_BUS" "$MIX_TMP" "$MIX_TILTED" "$MASTER_1" "$MASTER_2"' EXIT
+trap 'rm -f "$RESAMPLED_VOCAL" "$RESAMPLED_ACCOMP" "$AUTO_VOCAL" "$AUTO_ACCOMP" "$VOCAL_1" "$VOCAL_2" "$VOCAL_3" "$VOCAL_4" "$VOCAL_5" "$VOCAL_CORRECTED" "$VOCAL_SOURCE_EQ" "$VOCAL_GROUP" "$VOCAL_GROUP_SIDE" "$ACCOMP_1" "$ACCOMP_SOURCE_EQ" "$ACCOMP_DUCKED" "$ACCOMP_BUS" "$VOCAL_BALANCED" "$ACCOMP_BALANCED" "$MIX_TMP" "$MIX_TILTED" "$MASTER_1" "$MASTER_2" "$FINAL_GUARDED"' EXIT
 
 VOCAL_RATE="$(audio_sample_rate "$VOCAL_IN")"
 ACCOMP_RATE="$(audio_sample_rate "$ACCOMP_IN")"
@@ -449,6 +461,11 @@ if [[ -n "$MIX_PLAN" ]]; then
 fi
 "${DUCK_CMD[@]}"
 cp "$ACCOMP_DUCKED" "$ACCOMP_BUS"
+if [[ -n "$EXPORT_ACCOMP_BUS" ]]; then
+    mkdir -p "$(dirname "$EXPORT_ACCOMP_BUS")"
+    cp "$ACCOMP_BUS" "$EXPORT_ACCOMP_BUS"
+    echo "[audit] Exported post-FX accompaniment bus: $EXPORT_ACCOMP_BUS"
+fi
 record_stage "accomp_vocal_duck" "$STAGE_START" \
     --input "accomp=$ACCOMP_CHAIN_OUT" \
     --input "vocal=$VOCAL_GROUP" \
@@ -474,21 +491,49 @@ if [[ -n "$MIX_PLAN" ]]; then
         --input "accomp=$ACCOMP_BUS"
 fi
 
+VOCAL_SUM_INPUT="$VOCAL_GROUP"
+ACCOMP_SUM_INPUT="$ACCOMP_BUS"
+VOCAL_SUM_GAIN_DB="$VOCAL_BUS_GAIN_DB"
+ACCOMP_SUM_GAIN_DB="$ACCOMP_BUS_GAIN_DB"
+if [[ -n "$MIX_PLAN" ]]; then
+    echo "[step 3b] Reference-window section balance guard"
+    STAGE_START="$(now_ts)"
+    SECTION_BALANCE_META="${FINAL_OUT%.*}.section_balance_guard.json"
+    "$PYTHON_BIN" "$SCRIPT_DIR/apply_section_balance_guard.py" \
+        "$VOCAL_GROUP" \
+        "$ACCOMP_BUS" \
+        "$VOCAL_BALANCED" \
+        "$ACCOMP_BALANCED" \
+        --plan "$MIX_PLAN" \
+        --vocal-gain-db "$VOCAL_BUS_GAIN_DB" \
+        --accomp-gain-db "$ACCOMP_BUS_GAIN_DB" \
+        --metadata "$SECTION_BALANCE_META"
+    VOCAL_SUM_INPUT="$VOCAL_BALANCED"
+    ACCOMP_SUM_INPUT="$ACCOMP_BALANCED"
+    VOCAL_SUM_GAIN_DB="0.0"
+    ACCOMP_SUM_GAIN_DB="0.0"
+    record_stage "section_balance_guard" "$STAGE_START" \
+        --input "vocal=$VOCAL_GROUP" \
+        --input "accomp=$ACCOMP_BUS" \
+        --output "vocal=$VOCAL_BALANCED" \
+        --output "accomp=$ACCOMP_BALANCED"
+fi
+
 echo "[step 3] Stereo Out summing"
 STAGE_START="$(now_ts)"
 ffmpeg -y -hide_banner \
-    -i "$VOCAL_GROUP" \
-    -i "$ACCOMP_BUS" \
-    -filter_complex "[0:a]volume=${VOCAL_BUS_GAIN_DB}dB[v];[1:a]volume=${ACCOMP_BUS_GAIN_DB}dB[a];[v][a]amix=inputs=2:dropout_transition=0[m]" \
+    -i "$VOCAL_SUM_INPUT" \
+    -i "$ACCOMP_SUM_INPUT" \
+    -filter_complex "[0:a]volume=${VOCAL_SUM_GAIN_DB}dB[v];[1:a]volume=${ACCOMP_SUM_GAIN_DB}dB[a];[v][a]amix=inputs=2:dropout_transition=0[m]" \
     -map "[m]" \
     "$MIX_TMP" >/dev/null 2>&1
 record_stage "stereo_sum" "$STAGE_START" \
-    --input "vocal=$VOCAL_GROUP" \
-    --input "accomp=$ACCOMP_BUS" \
+    --input "vocal=$VOCAL_SUM_INPUT" \
+    --input "accomp=$ACCOMP_SUM_INPUT" \
     --output "mix=$MIX_TMP"
 
 if [[ -n "$MIX_PLAN" ]]; then
-    echo "[step 3b] Master tilt EQ from reference features"
+    echo "[step 3c] Master tilt EQ from reference features"
     STAGE_START="$(now_ts)"
     "$PYTHON_BIN" "$SCRIPT_DIR/apply_master_tilt_eq.py" \
         "$MIX_TMP" \
@@ -540,6 +585,17 @@ if [[ "$WITH_LOUDNESS_FINALIZER" == "1" ]]; then
     "${LOUDNESS_CMD[@]}"
     record_stage "master_loudness_finalize" "$STAGE_START" \
         --input "mix=$MASTER_2" \
+        --output "mix=$FINAL_OUT"
+    echo "[step 4b] Final transient safety guard"
+    STAGE_START="$(now_ts)"
+    FINAL_GUARD_META="${FINAL_OUT%.*}.final_transient_guard.json"
+    "$PYTHON_BIN" "$SCRIPT_DIR/apply_final_transient_guard.py" \
+        "$FINAL_OUT" \
+        "$FINAL_GUARDED" \
+        --metadata "$FINAL_GUARD_META"
+    cp "$FINAL_GUARDED" "$FINAL_OUT"
+    record_stage "final_transient_guard" "$STAGE_START" \
+        --input "mix=$FINAL_OUT" \
         --output "mix=$FINAL_OUT"
 else
     STAGE_START="$(now_ts)"

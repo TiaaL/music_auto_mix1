@@ -452,9 +452,42 @@ ACCOMP_CARVE_BANDS = {
 }
 
 VOCAL_SOURCE_EQ_DEAD_BAND_DB = 1.2
-VOCAL_SOURCE_EQ_MAX_CUT_DB = 2.5
+VOCAL_SOURCE_EQ_MAX_CUT_DB = 3.2
 VOCAL_SOURCE_EQ_MAX_BOOST_DB = 1.5
-VOCAL_SOURCE_EQ_MAX_ACTIONS = 4
+VOCAL_SOURCE_EQ_MAX_ACTIONS = 5
+VOCAL_SOURCE_EQ_SEVERE_CUT_CAP_DB = {
+    "low": 5.5,
+    "lowmid": 5.2,
+    "upper": 4.0,
+    "harsh": 5.2,
+    "sib": 4.8,
+}
+VOCAL_SOURCE_EQ_SEVERE_DELTA_DB = 8.0
+# --- Absolute, reference-anchored vocal EQ ---
+# The dry vocal's mid is often deeply deficient (-13..-20 dB) vs the reference, so
+# mid-normalized tonal balance falsely flags harsh/sib as "excessive" and cuts them
+# into a hollow / 公鸭嗓 (nasal-honk) tone. Driving from ABSOLUTE active band levels
+# (input minus reference per band) reflects the real texture: only cut a band when the
+# input genuinely has more energy there than the reference; if it is deficient, leave
+# it (or gently restore). Anchors each dry vocal to the original's own vocal character.
+VOCAL_ABS_EQ_DEAD_BAND_DB = 1.5          # ignore |input-ref| below this
+VOCAL_ABS_EQ_CUT_FRACTION = 0.50         # cut this fraction of the excess
+VOCAL_ABS_EQ_BOOST_FRACTION = 0.35       # restore this fraction of a deficit
+# Per-band cut ceilings (absolute-driven). High bands kept gentle to avoid honkiness.
+VOCAL_ABS_EQ_MAX_CUT_DB = {
+    "low": 5.5,
+    "lowmid": 4.5,
+    "mid": 2.5,
+    "upper": 2.0,
+    "harsh": 2.5,
+    "sib": 2.5,
+}
+# Bands we are willing to gently restore when the input is deficient vs reference.
+VOCAL_ABS_EQ_BOOST_BANDS = ("upper", "harsh")
+VOCAL_ABS_EQ_MAX_BOOST_DB = {
+    "upper": 1.5,
+    "harsh": 1.0,
+}
 VOCAL_AIR_BOOST_MAX_DB = 0.8
 VOCAL_UPPER_BOOST_MAX_BY_TEMPLATE = {
     "template_a": 1.0,
@@ -472,12 +505,43 @@ VOCAL_HIGH_SAFE_PEAK_LIMITS = {
 }
 ACCOMP_CARVE_MAX_CUT_DB = 2.0
 ACCOMP_CARVE_MAX_ACTIONS = 2
+ACCOMP_MASKING_EXCESS_DEAD_BAND_DB = 1.2
+ACCOMP_MASKING_EXCESS_STRONG_DB = 6.0
 ACCOMP_CARVE_REGION_BY_BAND = {
     "lowmid": "body",
     "mid": "presence",
     "upper": "presence",
     "harsh": "presence",
 }
+
+# --- Vocal high-frequency guard (resampling grain / separation "electric" noise) ---
+# Dry vocals sourced at <= 24 kHz native have a hard nyquist wall; everything above
+# ~10.5 kHz is resampling/codec grain rather than real air. We low-pass it out and,
+# when the upper spectrum is uniformly peaky (the AI-separation "musical noise" /
+# 电音 signature), tame the worst resonant bands with narrow dynamic-style cuts.
+HF_GUARD_LOWPASS_BY_NYQUIST = (
+    # (native_nyquist_hz_at_or_below, lowpass_freq_hz)
+    (12000.0, 10500.0),
+    (16000.0, 15000.0),
+)
+HF_GUARD_LOWPASS_Q = 0.7
+# Peakiness thresholds that mark the "electric / metallic separation noise" profile.
+# 8.5 dB lets 耀武 (upper 9.7 / sib 8.6 / harsh 8.0) trigger the full electric tame
+# while leyuan/tanggang (upper ~8.0) stay out and only get the nyquist lowpass.
+HF_GUARD_PEAK_HARD_DB = 8.5   # any single band this peaky -> tame it
+HF_GUARD_ELECTRIC_BANDS = ("upper", "harsh", "sib")
+HF_GUARD_ELECTRIC_MIN_HITS = 2  # >=2 of upper/harsh/sib peaky -> electric profile
+HF_GUARD_TAME_FREQ_HZ = {
+    "upper": 3200.0,
+    "harsh": 6200.0,
+    "sib": 9000.0,
+}
+# Kept gentle: the metallic/电音 ring is targeted with a narrow notch, but this is a
+# light polish on top of the (now reference-anchored) corrective EQ, NOT another big cut.
+# Earlier larger values stacked onto the harsh/sib cuts and over-thinned the voice.
+HF_GUARD_TAME_Q = 3.2          # narrower notch, hits only the resonant ring
+HF_GUARD_TAME_MAX_CUT_DB = 1.5
+HF_GUARD_TAME_PER_PEAK_DB = 0.35  # cut scales with how far peakiness exceeds threshold
 
 SPATIAL_BASELINE = {
     "rverb_send_pre_db": -12.5,
@@ -496,14 +560,14 @@ SPATIAL_BASELINE = {
 }
 
 SPATIAL_LIMITS = {
-    "rverb_send_pre_db": (-14.0, -8.5),
+    "rverb_send_pre_db": (-16.0, -8.5),
     "rverb_time_s": (1.4, 3.8),
     "rverb_predelay_ms": (8.0, 35.0),
     "rverb_eq_hi_gain_db": (-5.0, -2.0),
-    "supertap_send_pre_db": (-30.0, -18.0),
-    "supertap_gain_db": (-20.0, -8.0),
+    "supertap_send_pre_db": (-34.0, -18.0),
+    "supertap_gain_db": (-24.0, -8.0),
     "supertap_feedback": (0.06, 0.24),
-    "supertap_width": (0.35, 0.65),
+    "supertap_width": (0.20, 0.65),
     "shimmer_send_pre_db": (-24.0, -16.0),
     "shimmer_gain_db": (-24.0, -16.0),
 }
@@ -660,63 +724,92 @@ def build_reference_vocal_eq(
 ) -> dict[str, Any]:
     ref_vocal = ref_features.get("vocal_tonal_balance") or {}
     input_vocal = (input_features or {}).get("vocal_tonal_balance") or {}
-    if not ref_vocal or not input_vocal:
+    ref_active = (ref_features.get("active_band_levels") or {}).get("vocal") or {}
+    input_active = ((input_features or {}).get("active_band_levels") or {}).get("vocal") or {}
+    if not ref_active or not input_active:
         return {
             "enabled": False,
             "actions": [],
-            "reason": "missing reference/input vocal tonal features",
+            "reason": "missing reference/input active vocal band levels",
+        }
+
+    # Anchor to the reference vocal's own band levels (texture), normalised so the mid
+    # band lines up — this removes the overall level offset (loudness/distance) and
+    # leaves only the spectral-shape difference. excess>0 => input has MORE energy than
+    # the reference here (candidate to cut); excess<0 => input is deficient (leave / restore).
+    def norm(levels: dict[str, Any]) -> dict[str, float] | None:
+        mid = levels.get("mid")
+        if not isinstance(mid, (int, float)):
+            return None
+        return {b: float(v) - float(mid) for b, v in levels.items() if isinstance(v, (int, float))}
+
+    ref_n = norm(ref_active)
+    input_n = norm(input_active)
+    if ref_n is None or input_n is None:
+        return {
+            "enabled": False,
+            "actions": [],
+            "reason": "active vocal band levels missing mid reference",
         }
 
     ranked: list[tuple[float, dict[str, Any]]] = []
     skipped: list[dict[str, Any]] = []
     high_safety = high_frequency_safety(analysis, input_vocal)
     for band, rule in SOURCE_VOCAL_EQ_BANDS.items():
-        if band not in ref_vocal or band not in input_vocal:
+        if band not in ref_n or band not in input_n:
             continue
-        delta = float(ref_vocal[band]) - float(input_vocal[band])
-        if abs(delta) < VOCAL_SOURCE_EQ_DEAD_BAND_DB:
+        excess = input_n[band] - ref_n[band]  # +ve: input louder than reference here
+        if abs(excess) < VOCAL_ABS_EQ_DEAD_BAND_DB:
             continue
-        if delta > 0:
-            if "boost" not in rule["actions"]:
-                continue
-            cap, skip_reason = vocal_high_boost_cap(
-                band, template_id, delta, ref_vocal, input_vocal, analysis, high_safety
-            )
-            if cap <= 0.0:
-                skipped.append({
-                    "band": band,
-                    "type": "boost",
-                    "delta_db": round(delta, 2),
-                    "reason": skip_reason or "boost cap is zero",
-                    "safety": high_safety if band in {"upper", "air"} else None,
-                })
-                continue
-            amount = clamp(delta * 0.45, 0.5, cap)
-            action_type = "boost"
-            gain = round(amount, 2)
-        else:
+        if excess > 0:
+            # Input has more energy here than the reference -> cut toward reference.
             if "cut" not in rule["actions"]:
                 continue
-            amount = clamp(abs(delta) * 0.55, 0.5, VOCAL_SOURCE_EQ_MAX_CUT_DB)
+            cut_cap = VOCAL_ABS_EQ_MAX_CUT_DB.get(band, VOCAL_SOURCE_EQ_MAX_CUT_DB)
+            amount = clamp(excess * VOCAL_ABS_EQ_CUT_FRACTION, 0.5, cut_cap)
             action_type = "cut"
             gain = -round(amount, 2)
+        else:
+            # Input is deficient vs the reference. Only restore a few bands, and only
+            # when harsh/sibilance safety allows (never re-introduce grain).
+            if band not in VOCAL_ABS_EQ_BOOST_BANDS:
+                skipped.append({
+                    "band": band,
+                    "type": "boost_skipped",
+                    "excess_db": round(excess, 2),
+                    "reason": f"{band} below reference but not a restore band",
+                })
+                continue
+            if not high_safety.get("safe"):
+                skipped.append({
+                    "band": band,
+                    "type": "boost_skipped",
+                    "excess_db": round(excess, 2),
+                    "reason": "harsh/sibilance evidence not safe enough to restore highs",
+                    "safety": high_safety,
+                })
+                continue
+            boost_cap = VOCAL_ABS_EQ_MAX_BOOST_DB.get(band, 1.0)
+            amount = clamp(-excess * VOCAL_ABS_EQ_BOOST_FRACTION, 0.5, boost_cap)
+            action_type = "boost"
+            gain = round(amount, 2)
         ranked.append(
             (
-                abs(delta),
+                abs(excess),
                 {
                     "band": band,
                     "type": action_type,
                     "freq_hz": rule["freq_hz"],
                     "q": rule["q"],
                     "gain_db": gain,
-                    "source": "reference_vocal_tonal_delta",
+                    "source": "reference_vocal_active_level",
                     "reason": (
-                        f"reference vocal {band} {ref_vocal[band]:+.1f} dB vs input vocal "
-                        f"{input_vocal[band]:+.1f} dB (delta {delta:+.1f} dB)"
+                        f"input active {band} sits {excess:+.1f} dB vs reference "
+                        f"(mid-anchored); {action_type} toward reference texture"
                     ),
                     "evidence": (
                         {"high_frequency_safety": high_safety}
-                        if band in {"upper", "air"} and action_type == "boost"
+                        if action_type == "boost"
                         else None
                     ),
                 },
@@ -724,6 +817,35 @@ def build_reference_vocal_eq(
         )
     ranked.sort(key=lambda pair: pair[0], reverse=True)
     actions = [action for _, action in ranked[:VOCAL_SOURCE_EQ_MAX_ACTIONS]]
+    ref_gap = active_balance_value(ref_features)
+    input_gap = active_balance_value(input_features)
+    needed_lift = max(0.0, float(ref_gap) - float(input_gap)) if ref_gap is not None and input_gap is not None else 0.0
+    # "Cleanup" now means we actually applied low/lowmid cuts that thinned the body, so a
+    # touch of center/core support restores presence without broad makeup gain.
+    body_cut_db = sum(
+        -float(a["gain_db"]) for a in actions
+        if a["type"] == "cut" and a["band"] in ("low", "lowmid")
+    )
+    has_body_cleanup = body_cut_db >= 3.0
+    if needed_lift >= 2.5 and has_body_cleanup:
+        support_cap = 1.25 if body_cut_db >= 7.0 else 0.95
+        support_gain = round(clamp((needed_lift - 1.8) * 0.24, 0.45, support_cap), 2)
+        actions.append({
+            "band": "core",
+            "type": "boost",
+            "freq_hz": 1250.0,
+            "q": 0.85,
+            "gain_db": support_gain,
+            "source": "weak_vocal_core_support",
+            "reason": (
+                f"input active vocal gap trails reference by {needed_lift:.1f} dB and "
+                f"{body_cut_db:.1f} dB of low/lowmid was cut; add small center/core support"
+            ),
+            "evidence": {
+                "needed_relative_vocal_lift_db": round(needed_lift, 2),
+                "body_cut_db": round(body_cut_db, 2),
+            },
+        })
     return {
         "enabled": bool(actions),
         "mode": "post_template_pre_group_fx",
@@ -758,6 +880,9 @@ def build_accomp_carve_eq(
     active_levels = input_features.get("active_band_levels") or {}
     vocal_levels = active_levels.get("vocal") or {}
     accomp_levels = active_levels.get("accomp") or {}
+    ref_active_levels = ref_features.get("active_band_levels") or {}
+    ref_vocal_levels = ref_active_levels.get("vocal") or {}
+    ref_accomp_levels = ref_active_levels.get("accomp") or {}
     ref_vocal = ref_features.get("vocal_tonal_balance") or {}
     input_vocal = input_features.get("vocal_tonal_balance") or {}
     needed_lift = max(0.0, float(ref_gap) - float(input_gap))
@@ -775,16 +900,31 @@ def build_accomp_carve_eq(
         if band not in vocal_levels or band not in accomp_levels:
             continue
         masking_db = float(accomp_levels[band]) - float(vocal_levels[band])
-        if masking_db < -8.0 and needed_lift < 2.0:
-            continue
+        ref_masking_db = None
+        masking_excess = 0.0
+        if band in ref_vocal_levels and band in ref_accomp_levels:
+            ref_masking_db = float(ref_accomp_levels[band]) - float(ref_vocal_levels[band])
+            masking_excess = masking_db - ref_masking_db
+        elif masking_db > 0.0:
+            # Fallback for older cached feature payloads: treat only clearly positive masking as excess.
+            masking_excess = masking_db
         vocal_deficit = 0.0
         if band in ref_vocal and band in input_vocal:
             vocal_deficit = max(0.0, float(ref_vocal[band]) - float(input_vocal[band]))
-        pressure = (masking_db + 8.0) * 0.18 + needed_lift * 0.30 + vocal_deficit * 0.15
+
+        excess_over_deadband = max(0.0, masking_excess - ACCOMP_MASKING_EXCESS_DEAD_BAND_DB)
+        if excess_over_deadband <= 0.0 and vocal_deficit < 1.5:
+            continue
+        pressure = (
+            excess_over_deadband * 0.36
+            + needed_lift * 0.24
+            + vocal_deficit * 0.12
+            + max(0.0, masking_db) * 0.04
+        )
         amount = clamp(pressure * float(rule["weight"]), 0.5, ACCOMP_CARVE_MAX_CUT_DB)
         if amount < 0.5:
             continue
-        priority = masking_db + needed_lift + vocal_deficit
+        priority = excess_over_deadband * 1.7 + needed_lift * 0.45 + vocal_deficit
         ranked.append(
             (
                 priority,
@@ -795,11 +935,24 @@ def build_accomp_carve_eq(
                     "freq_hz": rule["freq_hz"],
                     "q": rule["q"],
                     "gain_db": -round(amount, 2),
-                    "source": "active_vocal_masking_carve",
+                    "source": "reference_relative_masking_carve",
                     "reason": (
                         f"input active vocal gap {input_gap:+.1f} dB trails reference {ref_gap:+.1f} dB; "
-                        f"accomp-vocal masking in {band} is {masking_db:+.1f} dB"
+                        f"current {band} masking {masking_db:+.1f} dB"
+                        + (
+                            f" vs reference {ref_masking_db:+.1f} dB"
+                            if ref_masking_db is not None
+                            else " without reference band masking"
+                        )
+                        + f" (excess {masking_excess:+.1f} dB)"
                     ),
+                    "evidence": {
+                        "current_masking_db": round(masking_db, 2),
+                        "reference_masking_db": round(ref_masking_db, 2) if ref_masking_db is not None else None,
+                        "masking_excess_db": round(masking_excess, 2),
+                        "vocal_deficit_db": round(vocal_deficit, 2),
+                        "needed_relative_vocal_lift_db": round(float(needed_lift), 2),
+                    },
                 },
             )
         )
@@ -815,10 +968,15 @@ def build_accomp_carve_eq(
         if len(actions) >= ACCOMP_CARVE_MAX_ACTIONS:
             break
     duck_reduction: dict[str, float] = {}
+    duck_preserve: dict[str, float] = {}
     for action in actions:
         region = str(action.get("region") or action.get("band"))
         amount = abs(float(action.get("gain_db") or 0.0))
         duck_reduction[region] = round(max(duck_reduction.get(region, 0.0), amount), 2)
+        evidence = action.get("evidence") or {}
+        excess = float(evidence.get("masking_excess_db") or 0.0)
+        if excess >= ACCOMP_MASKING_EXCESS_STRONG_DB:
+            duck_preserve[region] = round(max(duck_preserve.get(region, 0.0), min(1.0, excess / 12.0)), 3)
     return {
         "enabled": bool(actions),
         "mode": "post_template_music_eq_pre_sum",
@@ -826,9 +984,11 @@ def build_accomp_carve_eq(
         "duck_coordination": {
             "mode": "carve_reduces_duck",
             "regions": duck_reduction,
+            "preserve_dynamic_duck": duck_preserve,
             "policy": (
-                "one static carve per spectral problem region; matching dynamic duck bands are reduced "
-                "so accompaniment is not carved and ducked hard for the same issue"
+                "one static carve per spectral problem region; matching dynamic duck bands are reduced, "
+                "but strong reference-relative masking preserves more dynamic duck so a small carve does not "
+                "pretend the masking problem is solved"
             ),
         },
         "reference_active_gap_db": round(float(ref_gap), 2),
@@ -863,7 +1023,9 @@ def build_spatial_fx_plan(ref_features: dict[str, Any] | None) -> dict[str, Any]
     reverb = ref_features.get("reverb_proxy") or {}
     delay = ref_features.get("delay_proxy") or {}
     stem_quality = ref_features.get("vocal_stem_quality") or {}
+    stem_spatial = ref_features.get("vocal_spatial_profile") or {}
     reasons: list[str] = []
+    center_led_reference = bool(stem_spatial.get("near_mono_center_led"))
 
     if bool(stem_quality.get("severe_leakage")):
         reasons.append("reference_vocal_stem_leakage_guard")
@@ -896,6 +1058,7 @@ def build_spatial_fx_plan(ref_features: dict[str, Any] | None) -> dict[str, Any]
         "reverb_proxy": reverb,
         "delay_proxy": delay,
         "vocal_stem_quality": stem_quality,
+        "vocal_spatial_profile": stem_spatial,
     }
     if not enabled:
         return {
@@ -912,6 +1075,17 @@ def build_spatial_fx_plan(ref_features: dict[str, Any] | None) -> dict[str, Any]
     wet_delta = wet_delta_target * reverb_conf
     time_target = reverb_time_target(rt60_ms)
     predelay_target = clamp(12.0 + wet_delta_target * 4.0, 8.0, 28.0)
+    if center_led_reference:
+        # A center-led reference vocal should stay centered (narrow SIDE), but it can
+        # still be deep/reverberant. The previous logic forced wet down ~2 dB, which
+        # flattened the depth the reference clearly has (黄昏/阴天 have long tails) and
+        # made every mix sound drier and smaller than the original. Keep the
+        # reference-driven wet DEPTH; only the stereo width is constrained later via
+        # the supertap width floor. Slightly raise predelay to keep the dry vocal
+        # forward in front of the (preserved) tail.
+        wet_delta = wet_delta * 0.85
+        predelay_target = clamp(predelay_target + 4.0, 16.0, 32.0)
+        reasons.append("center_led_reference_keep_depth_narrow_side")
 
     rverb = {
         "send_pre_db": round(clamp(
@@ -926,7 +1100,7 @@ def build_spatial_fx_plan(ref_features: dict[str, Any] | None) -> dict[str, Any]
             baseline["rverb_predelay_ms"] + reverb_conf * (predelay_target - baseline["rverb_predelay_ms"]),
             *SPATIAL_LIMITS["rverb_predelay_ms"],
         ), 3),
-        "early_ref_db": round(baseline["rverb_early_ref_db"], 3),
+        "early_ref_db": round(baseline["rverb_early_ref_db"] - (1.5 if center_led_reference else 0.0), 3),
         "damp": round(baseline["rverb_damp"], 3),
         "eq_hi_gain_db": round(clamp(
             baseline["rverb_eq_hi_gain_db"] + reverb_conf * 1.0,
@@ -937,13 +1111,20 @@ def build_spatial_fx_plan(ref_features: dict[str, Any] | None) -> dict[str, Any]
     }
 
     delay_conf = float(delay.get("confidence") or 0.0)
-    if delay_conf < 0.60:
+    if center_led_reference:
+        delay_send_delta = -5.0
+        feedback = baseline["supertap_feedback"] * 0.60
+        delay_width = 0.28
+        delay_policy = "center_led_reference_delay_side_guard"
+    elif delay_conf < 0.60:
         delay_send_delta = min(0.5, max(0.0, delay_conf * 0.8))
         feedback = baseline["supertap_feedback"]
+        delay_width = baseline["supertap_width"]
         delay_policy = "low_confidence_light_send_only"
     else:
         delay_send_delta = min(2.5, delay_conf * 2.5)
         feedback = baseline["supertap_feedback"] + delay_conf * 0.05
+        delay_width = baseline["supertap_width"]
         delay_policy = "bounded_reference_delay"
     supertap = {
         "send_pre_db": round(clamp(
@@ -955,7 +1136,7 @@ def build_spatial_fx_plan(ref_features: dict[str, Any] | None) -> dict[str, Any]
             *SPATIAL_LIMITS["supertap_gain_db"],
         ), 3),
         "feedback": round(clamp(feedback, *SPATIAL_LIMITS["supertap_feedback"]), 3),
-        "width": round(baseline["supertap_width"], 3),
+        "width": round(clamp(delay_width, *SPATIAL_LIMITS["supertap_width"]), 3),
         "color_hz": round(baseline["supertap_color_hz"], 1),
         "send_delta_db": round(delay_send_delta, 3),
         "confidence": round(delay_conf, 3),
@@ -982,7 +1163,7 @@ def build_spatial_fx_plan(ref_features: dict[str, Any] | None) -> dict[str, Any]
         "limits": SPATIAL_LIMITS,
         "evidence": evidence,
         "guards": reasons,
-        "policy": "bounded_reference_mapping_confidence_blend",
+        "policy": "bounded_reference_mapping_confidence_blend_center_led_guard",
     }
 
 
@@ -1075,9 +1256,100 @@ def build_reference_overrides(
         "vocal_eq": build_reference_vocal_eq(ref_features, input_features, analysis, template_id),
         "accomp_eq": build_accomp_carve_eq(ref_features, input_features),
     }
+    overrides["vocal_hf_guard"] = build_vocal_hf_guard(analysis, input_features)
     overrides["dry_vocal_strategy"] = build_dry_vocal_strategy(analysis, input_features, template_id)
 
     return overrides
+
+
+def build_vocal_hf_guard(
+    analysis: dict[str, Any],
+    input_features: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Low-pass resampling grain and tame separation-induced "electric" resonances.
+
+    Driven by the dry vocal's native sample rate (nyquist wall) and per-band
+    peakiness. Output actions are consumed by scripts/apply_vocal_plan_eq.py as
+    ordinary EQ filters (a high lowpass + narrow resonance cuts), so no new DSP
+    stage is required. Conservative by design — these are cuts only.
+    """
+    native_sr = analysis.get("native_sample_rate")
+    nyquist = analysis.get("effective_nyquist_hz")
+    if isinstance(native_sr, (int, float)) and native_sr > 0:
+        native_nyquist = float(nyquist) if isinstance(nyquist, (int, float)) else float(native_sr) / 2.0
+    else:
+        native_nyquist = None
+
+    actions: list[dict[str, Any]] = []
+    tags: list[str] = []
+
+    # 1) Low-pass the codec/resampling grain above the real nyquist wall.
+    lowpass_hz: float | None = None
+    if native_nyquist is not None:
+        for limit_hz, lp_hz in HF_GUARD_LOWPASS_BY_NYQUIST:
+            if native_nyquist <= limit_hz + 1.0:
+                lowpass_hz = lp_hz
+                break
+    if lowpass_hz is not None:
+        tags.append("nyquist_grain_lowpass")
+        actions.append({
+            "band": "air",
+            "type": "lowpass",
+            "freq_hz": round(lowpass_hz, 1),
+            "q": HF_GUARD_LOWPASS_Q,
+            "source": "vocal_hf_guard",
+            "reason": (
+                f"native nyquist {native_nyquist:.0f} Hz -> low-pass resampling grain "
+                f"above {lowpass_hz:.0f} Hz"
+            ),
+        })
+
+    # 2) Tame the "electric / metallic" separation noise: uniformly peaky upper spectrum.
+    peakiness = {
+        "upper": float(analysis.get("peakiness_upper") or 0.0),
+        "harsh": float(analysis.get("peakiness_harsh") or 0.0),
+        "sib": float(analysis.get("peakiness_sib") or 0.0),
+    }
+    hits = [b for b in HF_GUARD_ELECTRIC_BANDS if peakiness[b] >= HF_GUARD_PEAK_HARD_DB]
+    electric = len(hits) >= HF_GUARD_ELECTRIC_MIN_HITS
+    if electric:
+        tags.append("electric_separation_noise")
+    for band in HF_GUARD_ELECTRIC_BANDS:
+        peak = peakiness[band]
+        if peak < HF_GUARD_PEAK_HARD_DB:
+            continue
+        # Only tame standalone hard peaks unless the whole profile is electric.
+        if not electric and band != "upper":
+            continue
+        excess = peak - HF_GUARD_PEAK_HARD_DB
+        cut = clamp(HF_GUARD_TAME_PER_PEAK_DB * (1.0 + excess), 0.5, HF_GUARD_TAME_MAX_CUT_DB)
+        actions.append({
+            "band": band,
+            "type": "cut",
+            "freq_hz": HF_GUARD_TAME_FREQ_HZ[band],
+            "q": HF_GUARD_TAME_Q,
+            "gain_db": -round(cut, 2),
+            "source": "vocal_hf_guard",
+            "reason": (
+                f"{band} peakiness {peak:.1f} dB (>= {HF_GUARD_PEAK_HARD_DB:.0f}) "
+                f"resonance tamed by {cut:.1f} dB"
+            ),
+        })
+
+    return {
+        "enabled": bool(actions),
+        "actions": actions,
+        "tags": tags,
+        "native_sample_rate": native_sr,
+        "effective_nyquist_hz": nyquist,
+        "lowpass_hz": lowpass_hz,
+        "electric_profile": electric,
+        "peakiness": {k: round(v, 2) for k, v in peakiness.items()},
+        "policy": (
+            "Low-pass resampling grain above the native nyquist wall and tame "
+            "uniformly-peaky upper bands (AI-separation/metallic noise). Cuts only."
+        ),
+    }
 
 
 def build_vocal_sibilance_profile(
@@ -1112,14 +1384,29 @@ def build_vocal_sibilance_profile(
     if isinstance(crest_db, (int, float)) and float(crest_db) < 10.0:
         range_db = 8.0
 
+    # Deepen de-essing when the harsh/sib bands are strongly peaky: the prior fixed
+    # thresholds left visibly harsh sources (e.g. 汤刚) under-treated. Lower threshold
+    # = engages on more of the harsh content; wider range = more reduction depth.
+    sib_peak = float((analysis or {}).get("peakiness_sib") or 0.0)
+    harsh_peak = float((analysis or {}).get("peakiness_harsh") or 0.0)
+    peak_max = max(sib_peak, harsh_peak)
+    peak_adapt_tag: str | None = None
+    if peak_max >= 8.0:
+        peak_adapt_tag = "peaky_hf_deepened"
+        thresh_db = clamp(thresh_db - min(3.0, peak_max - 8.0 + 1.0), -30.0, -12.0)
+        range_db = clamp(range_db + min(4.0, peak_max - 8.0 + 1.0), 8.0, 16.0)
+
     return {
         "ess_freq_hz": round(float(ess_freq), 1),
         "thresh_db": round(float(thresh_db), 2),
         "range_db": round(float(range_db), 2),
+        "peak_adapt": peak_adapt_tag,
         "source": {
             "vocal_sib_db": sib_db,
             "vocal_harsh_db": harsh_db,
             "crest_db": crest_db,
+            "peakiness_sib": round(sib_peak, 2),
+            "peakiness_harsh": round(harsh_peak, 2),
         },
     }
 

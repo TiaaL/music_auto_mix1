@@ -17,6 +17,17 @@ def load_json(path: Path) -> Any:
 
 
 def eq_filter(action: dict[str, Any]) -> str | None:
+    # A lowpass action carries no gain; it removes content above freq_hz
+    # (used by the vocal HF guard to strip resampling grain above the nyquist wall).
+    if action.get("type") == "lowpass":
+        try:
+            freq = float(action["freq_hz"])
+            q = float(action.get("q", 0.707))
+        except (TypeError, ValueError):
+            return None
+        if freq <= 0.0 or q <= 0.0:
+            return None
+        return f"lowpass=f={freq:.3f}:width_type=q:width={q:.3f}"
     try:
         freq = float(action["freq_hz"])
         q = float(action["q"])
@@ -45,7 +56,11 @@ def main() -> None:
     vocal_eq = source_eq.get("vocal_eq") or {}
     source_actions = vocal_eq.get("actions", []) if vocal_eq.get("enabled") else []
 
-    ordered_actions = [*residual_actions, *source_actions]
+    hf_guard = overrides.get("vocal_hf_guard") or {}
+    hf_actions = hf_guard.get("actions", []) if hf_guard.get("enabled") else []
+
+    # HF guard last: tame resonances / strip grain after corrective EQ has run.
+    ordered_actions = [*residual_actions, *source_actions, *hf_actions]
     filters = [value for action in ordered_actions if (value := eq_filter(action))]
 
     args.output_wav.parent.mkdir(parents=True, exist_ok=True)

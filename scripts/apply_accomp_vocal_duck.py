@@ -151,8 +151,8 @@ VOCAL_LIFT_DEFICIT_DEAD_BAND_DB = 1.5
 VOCAL_LIFT_DEFICIT_FULL_DB = 3.0
 VOCAL_LIFT_DUCK_GAIN = {
     "low_extra_db": 1.0,
-    "body_base_db": 0.3,
-    "presence_base_db": 0.5,
+    "body_base_db": 0.45,
+    "presence_base_db": 0.75,
     "air_base_db": 0.1,
 }
 
@@ -174,15 +174,20 @@ def profile_from_plan(template: str, plan: dict[str, Any]) -> dict[str, float]:
     profile["air_base_db"] += float(dry_duck.get("air_extra_db") or 0.0)
     coordination = accomp_eq.get("duck_coordination") or {}
     regions = coordination.get("regions") or {}
+    preserve_duck = coordination.get("preserve_dynamic_duck") or {}
     presence_carve = float(regions.get("presence") or 0.0)
     body_carve = float(regions.get("body") or 0.0)
     if presence_carve > 0.0:
         reduction = min(presence_carve / 2.6, 1.0)
+        preserve = min(max(float(preserve_duck.get("presence") or 0.0), 0.0), 1.0)
+        reduction *= 1.0 - 0.75 * preserve
         profile["presence_base_db"] *= 1.0 - 0.55 * reduction
         profile["presence_extra_db"] *= 1.0 - 0.70 * reduction
         profile["air_base_db"] *= 1.0 - 0.45 * reduction
     if body_carve > 0.0:
         reduction = min(body_carve / 2.6, 1.0)
+        preserve = min(max(float(preserve_duck.get("body") or 0.0), 0.0), 1.0)
+        reduction *= 1.0 - 0.60 * preserve
         profile["low_extra_db"] *= 1.0 - 0.35 * reduction
         profile["body_base_db"] *= 1.0 - 0.55 * reduction
     for key, value in list(profile.items()):

@@ -122,12 +122,19 @@ def recommendation(candidate: dict[str, Any], reference: dict[str, Any]) -> dict
     mid_error = float(candidate["mid_lift_db"]) - float(reference["mid_lift_db"])
     lr_active = float(candidate["lr_correlation_active"])
     mono_loss = float(candidate["mono_fold_down_loss_active_db"])
+    side_excess = cand_side_mid - ref_side_mid
 
     if ref_side_mid <= NEAR_MONO_SIDE_MINUS_MID_DB:
         return {
             "action": "do_not_add_direct_side",
             "reason": "reference_vocal_stem_is_near_mono",
             "side_deficit_db": round(side_deficit, 3),
+        }
+    if side_excess >= SIDE_DEFICIT_DB:
+        return {
+            "action": "reduce_vocal_group_side_or_wet",
+            "reason": "candidate_active_side_is_wider_than_reference",
+            "side_excess_db": round(side_excess, 3),
         }
     if lr_active < MIN_SAFE_LR_CORR or mono_loss < MIN_SAFE_MONO_LOSS_DB:
         return {

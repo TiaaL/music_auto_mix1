@@ -23,9 +23,17 @@ from analyze_reference import (  # noqa: E402
 BUS_MAX_GAIN_DB = 12.0
 BUS_MAX_ATTEN_DB = 12.0
 BUS_DEAD_BAND_DB = 0.4
-BUS_RATIO_MAX_VOCAL_GAIN_DB = 3.0
-BUS_RATIO_MAX_ACCOMP_ATTEN_DB = 2.0
-BUS_RATIO_MAX_CORRECTION_DB = 4.8
+# Distance-driven correction headroom: when the post-FX render gap is close to the
+# reference target, stay conservative (small cap); when the vocal is buried far below
+# the reference (the 听不清 case), allow more correction so it can actually reach the
+# target instead of being clipped 3-4 dB short. Per-bus limits scale with the cap.
+BUS_RATIO_MIN_CORRECTION_DB = 6.0
+BUS_RATIO_MAX_CORRECTION_DB = 10.0
+# Gap (|reference - render|) at/above which the full max correction is unlocked.
+BUS_RATIO_FULL_UNLOCK_GAP_DB = 12.0
+# Per-bus split of the correction (vocal up 60% / accomp down 40%), scaled to the cap.
+BUS_RATIO_VOCAL_GAIN_FRACTION = 0.60
+BUS_RATIO_ACCOMP_ATTEN_FRACTION = 0.40
 
 
 def clamp(value: float, low: float, high: float) -> float:
@@ -106,18 +114,29 @@ def compute_bus_gains(ref_balance: dict[str, Any], measured: dict[str, float | i
 
     if ref_gap_value is not None:
         ref_gap = float(ref_gap_value)
-        correction = clamp(ref_gap - render_gap, -BUS_RATIO_MAX_CORRECTION_DB, BUS_RATIO_MAX_CORRECTION_DB)
+        raw_correction = ref_gap - render_gap
+        # Scale the cap with how far the render sits from the reference target:
+        # close -> conservative MIN cap; buried far below -> up to MAX cap.
+        gap_distance = abs(raw_correction)
+        unlock = clamp(gap_distance / BUS_RATIO_FULL_UNLOCK_GAP_DB, 0.0, 1.0)
+        dyn_cap = BUS_RATIO_MIN_CORRECTION_DB + unlock * (
+            BUS_RATIO_MAX_CORRECTION_DB - BUS_RATIO_MIN_CORRECTION_DB
+        )
+        correction = clamp(raw_correction, -dyn_cap, dyn_cap)
+        vocal_cap = dyn_cap * BUS_RATIO_VOCAL_GAIN_FRACTION
+        accomp_cap = dyn_cap * BUS_RATIO_ACCOMP_ATTEN_FRACTION
         if correction > 0.0:
-            vocal_gain = apply_dead_band(clamp(correction * 0.60, 0.0, BUS_RATIO_MAX_VOCAL_GAIN_DB))
-            accomp_gain = apply_dead_band(clamp(-correction * 0.40, -BUS_RATIO_MAX_ACCOMP_ATTEN_DB, 0.0))
+            vocal_gain = apply_dead_band(clamp(correction * BUS_RATIO_VOCAL_GAIN_FRACTION, 0.0, vocal_cap))
+            accomp_gain = apply_dead_band(clamp(-correction * BUS_RATIO_ACCOMP_ATTEN_FRACTION, -accomp_cap, 0.0))
         else:
-            vocal_gain = apply_dead_band(clamp(correction * 0.60, -BUS_MAX_ATTEN_DB, 0.0))
+            vocal_gain = apply_dead_band(clamp(correction * BUS_RATIO_VOCAL_GAIN_FRACTION, -BUS_MAX_ATTEN_DB, 0.0))
             accomp_gain = 0.0
         predicted_gap = round(render_gap + vocal_gain - accomp_gain, 2)
         reason = (
-            f"match reference active vocal/accomp ratio conservatively: "
+            f"match reference active vocal/accomp ratio (distance-driven cap): "
             f"render gap {render_gap:+.1f} dB -> predicted {predicted_gap:+.1f} dB; "
-            f"reference {ref_gap:+.1f} dB; correction capped to {correction:+.1f} dB."
+            f"reference {ref_gap:+.1f} dB; cap {dyn_cap:.1f} dB (distance {gap_distance:.1f} dB); "
+            f"correction applied {correction:+.1f} dB."
         )
 
     return {
@@ -127,7 +146,7 @@ def compute_bus_gains(ref_balance: dict[str, Any], measured: dict[str, float | i
         "reference_accomp_lufs_i": ref_balance.get("accomp_lufs"),
         "reference_vocal_minus_accomp_lufs_db": ref_balance.get("vocal_minus_accomp_db"),
         "reference_active_vocal_minus_accomp_db": ref_gap_value,
-        "policy": "match_reference_active_vocal_accomp_ratio_conservative",
+        "policy": "match_reference_active_vocal_accomp_ratio_conservative_weak_vocal_guard",
         "measurement_basis": "post_fx_vocal_group_and_accomp_bus_active_vocal_regions",
         "reason": reason,
     }

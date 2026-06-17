@@ -483,6 +483,61 @@ def vocal_stem_quality(data: np.ndarray, sr: int, intervals: list[tuple[float, f
     }
 
 
+def lr_corr(left: np.ndarray, right: np.ndarray) -> float:
+    if left.size < 2 or right.size < 2:
+        return 1.0
+    left_centered = left - float(np.mean(left))
+    right_centered = right - float(np.mean(right))
+    denom = float(np.sqrt(np.dot(left_centered, left_centered) * np.dot(right_centered, right_centered)))
+    if denom <= 1e-12:
+        return 1.0
+    return float(np.dot(left_centered, right_centered) / denom)
+
+
+def mono_fold_down_loss_db(left: np.ndarray, right: np.ndarray) -> float:
+    if left.size == 0 or right.size == 0:
+        return 0.0
+    stereo_rms = float(np.sqrt(np.mean((np.square(left) + np.square(right)) * 0.5)))
+    mono_rms = float(np.sqrt(np.mean(np.square((left + right) * 0.5))))
+    return db(mono_rms) - db(stereo_rms)
+
+
+def vocal_spatial_profile(data: np.ndarray, sr: int, intervals: list[tuple[float, float]]) -> dict[str, float | bool]:
+    """Reference vocal-stem Mid/Side profile for deciding whether space should stay center-led."""
+    if data.ndim == 1:
+        stereo = np.column_stack([data, data])
+    elif data.shape[1] == 1:
+        stereo = np.repeat(data, 2, axis=1)
+    else:
+        stereo = data[:, :2]
+    mask = interval_mask(stereo.shape[0], sr, intervals)
+    left = stereo[:, 0]
+    right = stereo[:, 1]
+    mid = (left + right) / math.sqrt(2.0)
+    side = (left - right) / math.sqrt(2.0)
+    active_mid = mid[mask]
+    active_side = side[mask]
+    inactive_mid = mid[~mask]
+    inactive_side = side[~mask]
+    mid_active_db = db(float(np.sqrt(np.mean(np.square(active_mid)))) if active_mid.size else 0.0)
+    side_active_db = db(float(np.sqrt(np.mean(np.square(active_side)))) if active_side.size else 0.0)
+    mid_inactive_db = db(float(np.sqrt(np.mean(np.square(inactive_mid)))) if inactive_mid.size else 0.0)
+    side_inactive_db = db(float(np.sqrt(np.mean(np.square(inactive_side)))) if inactive_side.size else 0.0)
+    active_side_minus_mid = side_active_db - mid_active_db
+    inactive_side_minus_mid = side_inactive_db - mid_inactive_db
+    corr = lr_corr(left[mask], right[mask])
+    mono_loss = mono_fold_down_loss_db(left[mask], right[mask])
+    return {
+        "mid_active_db": round(mid_active_db, 3),
+        "side_active_db": round(side_active_db, 3),
+        "active_side_minus_mid_db": round(active_side_minus_mid, 3),
+        "inactive_side_minus_mid_db": round(inactive_side_minus_mid, 3),
+        "lr_correlation_active": round(corr, 5),
+        "mono_fold_down_loss_active_db": round(mono_loss, 3),
+        "near_mono_center_led": bool(active_side_minus_mid <= -24.0 and corr >= 0.99 and mono_loss >= -0.25),
+    }
+
+
 def lufs_only(path: Path) -> float:
     return measure_loudness(path)["lufs_i"]
 
@@ -609,6 +664,7 @@ def analyse(full_mix: Path, vocal: Path, accomp: Path) -> dict[str, Any]:
             "regions": intervals_to_rows(active_regions),
         },
         "vocal_stem_quality": vocal_stem_quality(vocal_audio, full_sr, active_regions),
+        "vocal_spatial_profile": vocal_spatial_profile(vocal_audio, full_sr, active_regions),
         "reverb_proxy": reverb_proxy(vocal_audio, full_sr),
         "delay_proxy": delay_proxy(vocal_audio, full_sr),
     }
