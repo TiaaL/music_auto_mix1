@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run external spectrum analyzer, resolve template, then call the mix renderer."""
+"""调用外部频谱分析器、生成混音 plan，再启动实际渲染器。"""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ CACHE_VERSION = "auto_template_mix_features_v4"
 
 
 def default_analyzer() -> Path:
+    """按常见本地目录寻找外部频谱分类器。"""
     candidates = [
         ROOT.parent / "spectral-mix-template-selector" / "spectrum_template_analyzer.py",
         ROOT.parent.parent / "spectral-mix-template-selector" / "spectrum_template_analyzer.py",
@@ -31,6 +32,7 @@ def default_analyzer() -> Path:
 
 
 def default_analyzer_python(analyzer_script: Path) -> str:
+    """优先使用分析器项目自己的 Python，避免依赖装在错的环境里。"""
     analyzer_root = analyzer_script.resolve(strict=False).parent
     candidates = [
         analyzer_root / "python" / "python.exe",
@@ -47,6 +49,7 @@ def resolve_path(path: Path) -> Path:
 
 
 def default_renderer() -> str:
+    """Windows/MSYS2 环境优先走仓库内 bash；其他平台使用系统 bash。"""
     local_bash = ROOT / ".tools" / "msys64" / "usr" / "bin" / "bash.exe"
     if local_bash.exists():
         return str(local_bash)
@@ -69,6 +72,8 @@ def to_msys_path(path: Path) -> str:
 
 def build_bash_command(renderer: str, script: Path, script_args: list[str | Path]) -> list[str]:
     if is_msys_bash(renderer):
+        # MSYS2 需要先切到项目根目录并注入本仓库 toolchain 环境；
+        # 同时把 Windows 路径转换成 /c/... 形式，避免 bash 找不到文件。
         return [
             renderer,
             "-lc",
@@ -96,6 +101,7 @@ def file_signature(path: Path) -> dict[str, object]:
 
 
 def cache_key(kind: str, paths: list[Path]) -> str:
+    """缓存 key 同时绑定输入文件和特征提取代码，代码改动后自动失效。"""
     code_paths = [
         ROOT / "scripts" / "analyze_reference.py",
         ROOT / "scripts" / "auto_template_mix.py",
@@ -111,6 +117,7 @@ def cache_key(kind: str, paths: list[Path]) -> str:
 
 
 def cached_feature(kind: str, paths: list[Path], compute) -> dict:
+    """按文件签名缓存重型音频特征，批量渲染时可复用同一首歌的分析结果。"""
     cache_dir = ROOT / "calibration_outputs" / "cache" / "features"
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_path = cache_dir / f"{kind}_{cache_key(kind, paths)}.json"
@@ -335,25 +342,25 @@ def main() -> None:
         "--reference-audio",
         type=Path,
         default=None,
-        help="Reference full-mix override; otherwise auto-resolved by song name from a feishu_long_audio_screened/原曲 folder.",
+        help="服务端/调用方显式传入的参考原曲。",
     )
     parser.add_argument(
         "--reference-vocal",
         type=Path,
         default=None,
-        help="Reference vocal stem override; otherwise auto-resolved from 原曲人声/.",
+        help="服务端/调用方显式传入的参考人声 stem。",
     )
     parser.add_argument(
         "--reference-accomp",
         type=Path,
         default=None,
-        help="Reference accompaniment override; otherwise auto-resolved from 伴奏/.",
+        help="服务端/调用方显式传入的参考伴奏 stem。",
     )
     parser.add_argument(
         "--reference-root",
         type=Path,
         default=None,
-        help="Root containing 原曲/, 原曲人声/, and 伴奏/. Defaults to local downloads or a sibling feishu_long_audio_screened folder.",
+        help="仅本地测试使用：包含 原曲/、原曲人声/、伴奏/ 的目录，用于按歌名自动匹配参考。",
     )
     parser.add_argument(
         "--no-reference",
@@ -392,20 +399,39 @@ def main() -> None:
     ref_accomp: Path | None = None
     ref_features: dict | None = None
     input_features: dict | None = None
+    reference_status: dict[str, object] = {
+        "requested": not args.no_reference,
+        "used": False,
+        "mode": "disabled_by_flag" if args.no_reference else "pending",
+        "fallback_policy": (
+            "无参考时使用 source_cleanup 自驱动问题频段清理、通用 active 人声/伴奏比例目标、"
+            "默认最终响度；不使用原曲音色塑形"
+        ),
+    }
     if not args.no_reference:
         ref_full_mix = resolve_path(args.reference_audio) if args.reference_audio else None
         ref_vocal = resolve_path(args.reference_vocal) if args.reference_vocal else None
         ref_accomp = resolve_path(args.reference_accomp) if args.reference_accomp else None
-        if ref_full_mix is None or ref_vocal is None or ref_accomp is None:
-            reference_root = resolve_path(args.reference_root) if args.reference_root else None
+        if (ref_full_mix is None or ref_vocal is None or ref_accomp is None) and args.reference_root:
+            # 只有显式传 --reference-root 时才按本地歌名自动找参考。
+            # 线上服务应由服务端直接传 reference-audio/vocal/accomp，避免扫到本机旧文件。
+            reference_root = resolve_path(args.reference_root)
             resolved_refs = resolve_reference_files(vocal_wav, downloads_root=reference_root, accomp_input=accomp_wav)
             ref_full_mix = ref_full_mix or resolved_refs["full_mix"]
             ref_vocal = ref_vocal or resolved_refs["vocal"]
             ref_accomp = ref_accomp or resolved_refs["accomp"]
-        if ref_full_mix and ref_vocal and ref_accomp:
+        refs_ready = all(path is not None and path.exists() for path in (ref_full_mix, ref_vocal, ref_accomp))
+        if refs_ready:
             print(f"[ref] full_mix:   {ref_full_mix}")
             print(f"[ref] ref_vocal:  {ref_vocal}")
             print(f"[ref] ref_accomp: {ref_accomp}")
+            reference_status.update({
+                "used": True,
+                "mode": "resolved",
+                "full_mix": str(ref_full_mix),
+                "vocal": str(ref_vocal),
+                "accomp": str(ref_accomp),
+            })
             ref_features = cached_feature(
                 "reference",
                 [ref_full_mix, ref_vocal, ref_accomp],
@@ -417,6 +443,25 @@ def main() -> None:
                 lambda: analyse_input_pair(vocal_wav, accomp_wav),
             )
         else:
+            # 缺任意一个参考 stem 都不启用参考塑形，避免“半套参考”把比例或音色带偏。
+            missing = [
+                name for name, value in (
+                    ("full_mix", ref_full_mix),
+                    ("vocal", ref_vocal),
+                    ("accomp", ref_accomp),
+                )
+                if value is None or not value.exists()
+            ]
+            reference_status.update({
+                "used": False,
+                "mode": "missing_reference_fallback",
+                "missing": missing,
+                "resolved_candidates": {
+                    "full_mix": str(ref_full_mix) if ref_full_mix else None,
+                    "vocal": str(ref_vocal) if ref_vocal else None,
+                    "accomp": str(ref_accomp) if ref_accomp else None,
+                },
+            })
             print(
                 "[ref] Reference files not all resolved; rendering without reference overrides. "
                 f"(full_mix={ref_full_mix}, vocal={ref_vocal}, accomp={ref_accomp})"
@@ -424,6 +469,14 @@ def main() -> None:
             ref_full_mix = None
             ref_vocal = None
             ref_accomp = None
+    if input_features is None:
+        # 通用清理块只依赖用户提交的干声和伴奏。
+        # 即使 --no-reference 也要计算它，这样快速通用清理仍然生效。
+        input_features = cached_feature(
+            "input_pair",
+            [vocal_wav, accomp_wav],
+            lambda: analyse_input_pair(vocal_wav, accomp_wav),
+        )
 
     plan = build_plan(analysis, ref_features=ref_features, input_features=input_features)
 
@@ -440,6 +493,7 @@ def main() -> None:
         args.export_vocal_group
         or (args.spatial_audit == "auto" and ref_vocal is not None and template_id != "template_d")
     )
+    # 空间审计需要 post-FX vocal_group；只有有参考人声且不是 legacy 模板时才默认导出。
     vocal_group_output = (
         resolve_path(args.vocal_group_output)
         if args.vocal_group_output
@@ -492,6 +546,7 @@ def main() -> None:
         "analysis_json": str(analysis_path),
         "resolved_mix_plan": str(plan_path),
         "output_wav": str(output_wav),
+        "reference_status": reference_status,
         "reference_used": (plan.get("reference") or {}).get("features", {}).get("sources") if plan.get("reference") else None,
         "reference_overrides": (plan.get("reference") or {}).get("overrides"),
         "render": render,

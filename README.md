@@ -2,6 +2,35 @@
 
 Faust DSP approximations of classic Waves/FabFilter plugins, wired into a Python rule engine and shell workflow for automated vocal/accompaniment mixing.
 
+## 中文快速说明
+
+这是一个“干声 + 伴奏 → 自动混音成品”的实验型工程。核心思路是：
+
+1. 分析干声频谱，自动选择接近 Cubase 模板 A/B/C 的处理链。
+2. 生成 `resolved_mix_plan.json`，把残余 EQ、素材清理、人声/伴奏比例、参考曲覆盖项写成可审计参数。
+3. 用 Faust 近似插件链和 FFmpeg 后处理渲染最终 WAV。
+4. 可选接入飞书表格批量下载、批量渲染、上传结果链接。
+
+最常用命令：
+
+```bash
+.venv/bin/python scripts/auto_template_mix.py vocal.wav accomp.wav final_mix.wav \
+  --with-volume-automation \
+  --report-dir reports/
+```
+
+带参考原曲/参考 stem 时：
+
+```bash
+.venv/bin/python scripts/auto_template_mix.py vocal.wav accomp.wav final_mix.wav \
+  --reference-audio ref/full_mix.wav \
+  --reference-vocal ref/vocal.wav \
+  --reference-accomp ref/accomp.wav \
+  --with-volume-automation
+```
+
+没有参考文件也可以跑。此时系统会使用通用人声清理、通用 active 人声/伴奏比例目标和默认响度策略，不会按某首参考歌塑形。
+
 The system has two entry points:
 
 | Entry point | What it does |
@@ -166,6 +195,43 @@ Optional flags:
 The analyzer script location defaults to
 `D:\code\spectral-mix-template-selector\spectrum_template_analyzer.py`.
 Override with `--analyzer <path>`.
+
+---
+
+### 1b — 飞书表格批量渲染
+
+适合按飞书表格行顺序批量生成对比混音。典型流程是：
+
+1. 用下载脚本把表格里的音频附件落到本地目录。
+2. 用批量脚本逐行调用 `auto_template_mix.py`。
+3. 检查 `batch_manifest.json` / `batch_summary.json`。
+4. 用上传脚本把 WAV 上传飞书云盘，并把链接写回表格 G 列。
+
+批量渲染：
+
+```bash
+.venv/bin/python scripts/render_feishu_mix_compare_batch.py \
+  --audio-root ../feishu_long_audio_screened \
+  --records-json ../feishu_long_audio_screened/sheet_records.json \
+  --out-dir calibration_outputs/feishu_mix_compare_C0LiHq_20260617 \
+  --resume
+```
+
+默认参考策略是 `sheet-only`：只信表格记录里明确下载到的 D/G/H 列参考素材。缺参考时走通用兜底，不按本地歌名乱猜。仅本地排查时才使用：
+
+```bash
+.venv/bin/python scripts/render_feishu_mix_compare_batch.py \
+  --reference-policy local-auto
+```
+
+上传并写回表格：
+
+```bash
+.venv/bin/python scripts/upload_feishu_mix_compare_results.py \
+  --out-dir calibration_outputs/feishu_mix_compare_C0LiHq_20260617
+```
+
+上传脚本会维护 `feishu_uploads.json` 缓存，重复执行时优先复用已有 file token 和 URL。
 
 ---
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply reference-driven master tilt EQ stored in a resolved mix plan."""
+"""应用 resolved mix plan 里的 master tilt EQ。"""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ def load_json(path: Path) -> Any:
 
 
 def eq_filter(action: dict[str, Any]) -> str | None:
+    """把 plan 里的 master tilt 动作转换成 FFmpeg equalizer filter。"""
     try:
         freq = float(action["freq_hz"])
         q = float(action["q"])
@@ -37,6 +38,7 @@ def main() -> None:
     args = parser.parse_args()
 
     plan = load_json(args.plan)
+    # master_tilt_eq 只作用在 stereo sum 之后、master bus 插件之前，用来贴近参考曲整体明暗。
     overrides = (plan.get("reference") or {}).get("overrides") or {}
     tilt = overrides.get("master_tilt_eq") or {}
     actions = tilt.get("actions", []) if tilt.get("enabled") else []

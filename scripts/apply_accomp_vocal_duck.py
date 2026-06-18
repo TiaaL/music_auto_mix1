@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply vocal-aware accompaniment ducking before the stereo sum."""
+"""在 stereo sum 前做人声触发的伴奏动态避让。"""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from scipy import signal
 
 try:
     from numba import njit
-except ImportError:  # pragma: no cover - optional speed path
+except ImportError:  # pragma: no cover - 可选加速路径，缺 scipy 时走 numpy 兜底
     njit = None
 
 
@@ -128,6 +128,7 @@ def db(values: np.ndarray) -> np.ndarray:
 
 
 def strength_from_vocal(vocal: np.ndarray, sr: int, n: int) -> np.ndarray:
+    """把人声 RMS 包络归一成 0..1 的 sidechain 强度。"""
     times, rms = rms_frames(vocal, sr)
     rms_db = db(rms)
     active_floor = max(float(np.percentile(rms_db, 65) - 12.0), -46.0)
@@ -136,6 +137,7 @@ def strength_from_vocal(vocal: np.ndarray, sr: int, n: int) -> np.ndarray:
 
 
 def pressure_curve(band: np.ndarray, sr: int, n: int) -> np.ndarray:
+    """估计伴奏当前频段是否拥挤；越拥挤，人声触发避让越明显。"""
     times, rms = rms_frames(mono(band), sr)
     rms_db = db(rms)
     base = float(np.percentile(rms_db, 55))
@@ -159,7 +161,9 @@ VOCAL_LIFT_DUCK_GAIN = {
 
 def profile_from_plan(template: str, plan: dict[str, Any]) -> dict[str, float]:
     profile = dict(TEMPLATE_PROFILES.get(template, TEMPLATE_PROFILES["template_a"]))
-    overrides = (plan.get("reference") or {}).get("overrides", {})
+    source_cleanup = plan.get("source_cleanup") or {}
+    # 新 plan 的通用干声策略放在 source_cleanup；旧 reference overrides 只做兼容 fallback。
+    overrides = source_cleanup or (plan.get("reference") or {}).get("overrides", {})
     accomp_eq = (overrides.get("source_eq") or {}).get("accomp_eq", {})
     needed_lift = float(accomp_eq.get("needed_relative_vocal_lift_db") or 0.0)
     deficit = max(0.0, needed_lift - VOCAL_LIFT_DEFICIT_DEAD_BAND_DB)
@@ -219,6 +223,7 @@ def process(
     section_start = mark("prepare", section_start)
 
     low = butter_filter(accomp, sr, "lowpass", 180.0)
+    # 分成低频、主体、存在感、空气感四层，分别做轻量动态避让。
     body = butter_filter(accomp, sr, "bandpass", (180.0, 1200.0))
     presence = butter_filter(accomp, sr, "bandpass", (1200.0, 5000.0))
     air = butter_filter(accomp, sr, "highpass", 5000.0)
@@ -255,14 +260,15 @@ def process(
     section_start = mark("apply_gains_and_clip", section_start)
 
     active = vocal_strength > 0.2
+    source_cleanup = plan.get("source_cleanup") or {}
+    # 报告也优先记录新通用清理块里的避让协调信息。
+    report_overrides = source_cleanup or (plan.get("reference") or {}).get("overrides", {})
+    report_accomp_eq = (report_overrides.get("source_eq") or {}).get("accomp_eq", {})
     report = {
         "enabled": True,
         "template": template,
         "profile": profile,
-        "duck_coordination": (
-            ((plan.get("reference") or {}).get("overrides", {}).get("source_eq", {}).get("accomp_eq", {}))
-            .get("duck_coordination")
-        ),
+        "duck_coordination": report_accomp_eq.get("duck_coordination"),
         "active_fraction": round(float(np.mean(active)), 4),
         "low_duck_db_active_p50": round(float(np.median(low_gain_db[active])) if np.any(active) else 0.0, 3),
         "low_duck_db_active_p90": round(float(np.percentile(low_gain_db[active], 10)) if np.any(active) else 0.0, 3),

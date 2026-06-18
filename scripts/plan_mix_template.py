@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a resolved mix plan from spectral template analyzer JSON."""
+"""根据频谱分析 JSON 生成最终混音 plan。"""
 
 from __future__ import annotations
 
@@ -58,6 +58,7 @@ def preset_json_name(link: Any) -> str | None:
 
 
 def enrich_chain(chain: list[dict[str, Any]], section_links: Any) -> list[dict[str, Any]]:
+    """把 Cubase 模板里的插件链和已导出的 preset JSON 关联起来。"""
     resolved = []
     for item in chain:
         name = item.get("plugin_name") or item.get("processor")
@@ -79,6 +80,7 @@ def enrich_chain(chain: list[dict[str, Any]], section_links: Any) -> list[dict[s
 
 
 def select_template(analysis: dict[str, Any], fallback: str = "template_d") -> tuple[str, str]:
+    """根据外部分类器标签选择 A/B/C；识别失败时回落到 legacy template_d。"""
     label = analysis.get("classification", {}).get("label")
     template_id = LABEL_TO_TEMPLATE.get(label or "", fallback)
     return template_id, label or ""
@@ -102,7 +104,7 @@ def residual_action_gain(rule: dict[str, Any], deviation: dict[str, Any]) -> flo
 
 
 def append_residual_action(actions: list[dict[str, Any]], action: dict[str, Any]) -> None:
-    """Keep one corrective move per band/type, using the stronger absolute gain."""
+    """同一 band/type 只保留一个动作，保留幅度更大的那个。"""
     for index, existing in enumerate(actions):
         if existing.get("band") == action.get("band") and existing.get("type") == action.get("type"):
             if abs(float(action.get("gain_db", 0.0))) > abs(float(existing.get("gain_db", 0.0))):
@@ -112,6 +114,7 @@ def append_residual_action(actions: list[dict[str, Any]], action: dict[str, Any]
 
 
 def classification_hits(analysis: dict[str, Any]) -> list[dict[str, Any]]:
+    """展开分类器命中的规则，并标记它们是否属于最终选中的模板。"""
     classification = analysis.get("classification", {})
     selected_label = str(classification.get("label") or "")
     out: list[dict[str, Any]] = []
@@ -167,7 +170,7 @@ def spectral_deviation_residual_actions(
     coverage: set[str],
     config: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """EQ actions from spectral target-curve deviations not covered by the selected template."""
+    """把模板未覆盖的频谱目标偏差转成 residual EQ 动作。"""
     band_rules: dict[str, Any] = config.get("band_rules", {})
     threshold_db = float(config.get("deviation_threshold_db", 1.5))
     actions: list[dict[str, Any]] = []
@@ -212,7 +215,7 @@ def ratio_excess_residual_actions(
     coverage: set[str],
     config: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """EQ actions from ratio bands outside neutral range that are not covered by the template."""
+    """把模板未覆盖、超出中性范围的 ratio 频段转成 residual EQ 动作。"""
     band_rules: dict[str, Any] = config.get("band_rules", {})
     excess_threshold = float(config.get("ratio_excess_threshold", 0.04))
     if not FEATURE_TARGETS.exists():
@@ -271,6 +274,27 @@ def ratio_excess_residual_actions(
     return actions
 
 
+def filter_residual_tone_shaping_boosts(
+    actions: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """禁止 residual 阶段做 boost，保证这里只移除已检测到的问题。"""
+    kept: list[dict[str, Any]] = []
+    suppressed: list[dict[str, Any]] = []
+    for action in actions:
+        # 提升属于“重塑音色”：可能把歌手变得比原干声更亮或更厚。
+        # 清理阶段只做减法，避免改掉干声本来的特点。
+        if str(action.get("type") or "") == "boost":
+            suppressed.append({
+                **action,
+                "reason": (
+                    f"{action.get('reason', '')}; 已按保留素材特点策略禁用 boost"
+                ).strip("; "),
+            })
+        else:
+            kept.append(action)
+    return kept, suppressed
+
+
 def filter_residual_high_boosts(
     actions: list[dict[str, Any]],
     ref_features: dict[str, Any] | None,
@@ -278,6 +302,7 @@ def filter_residual_high_boosts(
     analysis: dict[str, Any],
     template_id: str,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """高频 boost 需要二次保护，避免把分离噪声/齿音继续推亮。"""
     ref_vocal = (ref_features or {}).get("vocal_tonal_balance") or {}
     input_vocal = (input_features or {}).get("vocal_tonal_balance") or {}
     safety = high_frequency_safety(analysis, input_vocal)
@@ -316,6 +341,7 @@ def build_residual_vocal_eq(
     ref_features: dict[str, Any] | None = None,
     input_features: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """生成模板后置 residual EQ，只补模板没覆盖或强命中的问题。"""
     if not RESIDUAL_EQ_CONFIG.exists() or template_id == "template_d":
         return {"enabled": False, "actions": [], "reason": "no residual EQ config or fallback template"}
 
@@ -383,16 +409,17 @@ def build_residual_vocal_eq(
             ),
         )
 
-    # Source 2: spectral deviation from target curve (uncovered bands only)
+    # 来源 2：目标曲线偏差，只处理模板没覆盖的频段。
     for action in spectral_deviation_residual_actions(analysis, coverage, config):
         append_residual_action(actions, action)
 
-    # Source 3: ratio bands outside neutral range (uncovered bands only)
+    # 来源 3：ratio 超出中性范围，也只处理模板没覆盖的频段。
     for action in ratio_excess_residual_actions(analysis, coverage, config):
         append_residual_action(actions, action)
 
     max_actions = int(config.get("max_actions", 4))
     actions = (actions + covered_strong_actions)[:max_actions]
+    actions, suppressed_tone_boosts = filter_residual_tone_shaping_boosts(actions)
     actions, suppressed_high_boosts = filter_residual_high_boosts(
         actions, ref_features, input_features, analysis, template_id
     )
@@ -410,6 +437,7 @@ def build_residual_vocal_eq(
         "actions": actions,
         "ignored": ignored,
         "suppressed_high_boosts": suppressed_high_boosts,
+        "suppressed_tone_shaping_boosts": suppressed_tone_boosts,
         "diagnostic_only_sources": config.get("diagnostic_only_sources", []),
     }
 
@@ -463,17 +491,13 @@ VOCAL_SOURCE_EQ_SEVERE_CUT_CAP_DB = {
     "sib": 4.8,
 }
 VOCAL_SOURCE_EQ_SEVERE_DELTA_DB = 8.0
-# --- Absolute, reference-anchored vocal EQ ---
-# The dry vocal's mid is often deeply deficient (-13..-20 dB) vs the reference, so
-# mid-normalized tonal balance falsely flags harsh/sib as "excessive" and cuts them
-# into a hollow / 公鸭嗓 (nasal-honk) tone. Driving from ABSOLUTE active band levels
-# (input minus reference per band) reflects the real texture: only cut a band when the
-# input genuinely has more energy there than the reference; if it is deficient, leave
-# it (or gently restore). Anchors each dry vocal to the original's own vocal character.
-VOCAL_ABS_EQ_DEAD_BAND_DB = 1.5          # ignore |input-ref| below this
-VOCAL_ABS_EQ_CUT_FRACTION = 0.50         # cut this fraction of the excess
-VOCAL_ABS_EQ_BOOST_FRACTION = 0.35       # restore this fraction of a deficit
-# Per-band cut ceilings (absolute-driven). High bands kept gentle to avoid honkiness.
+# --- 历史兼容：绝对电平参考锚定人声 EQ ---
+# 旧逻辑曾用“输入人声 - 参考人声”的绝对 active band 电平来判断 cut/boost。
+# 这段常量保留给旧 plan 兼容；新的 source_cleanup 不再用参考曲塑形。
+VOCAL_ABS_EQ_DEAD_BAND_DB = 1.5          # |input-ref| 小于这个值时忽略
+VOCAL_ABS_EQ_CUT_FRACTION = 0.50         # 旧逻辑：削掉 excess 的比例
+VOCAL_ABS_EQ_BOOST_FRACTION = 0.35       # 旧逻辑：补回 deficit 的比例
+# 旧逻辑的分频段 cut 上限；高频保持轻量，避免削出鼻/空心感。
 VOCAL_ABS_EQ_MAX_CUT_DB = {
     "low": 5.5,
     "lowmid": 4.5,
@@ -482,12 +506,34 @@ VOCAL_ABS_EQ_MAX_CUT_DB = {
     "harsh": 2.5,
     "sib": 2.5,
 }
-# Bands we are willing to gently restore when the input is deficient vs reference.
+# 历史兼容常量：旧参考驱动逻辑里允许轻微补回的频段；新 source_cleanup 不再使用。
 VOCAL_ABS_EQ_BOOST_BANDS = ("upper", "harsh")
 VOCAL_ABS_EQ_MAX_BOOST_DB = {
     "upper": 1.5,
     "harsh": 1.0,
 }
+# --- 自驱动人声清理 EQ（不匹配参考曲音色） ---
+# 不把干声往参考人声的音色塑形，只处理干声自身的问题：
+# 低频/低中频堆积，以及刺耳/齿音频段的异常突出。
+# 判断方式是把每个频段都锚定到干声自己的 mid，再和通用干净人声阈值比较。
+# 过量值 = (band - mid) - 中性基准[band]；
+# 只有真的超过预期形状时才 cut，整个过程不查询参考曲。
+VOCAL_SELF_EQ_NEUTRAL_OFFSET_DB = {
+    # 干净人声里各频段相对 mid 的预期值；超过它才算素材自身的过量。
+    "low": -6.0,     # 低频应明显低于 mid；太接近会有低频轰/闷
+    "lowmid": -2.0,  # 轻微箱感正常；再高就是低中频堆积
+    "harsh": -3.0,   # 存在感共振超过这里容易刺
+    "sib": -8.0,     # 齿音应明显低于 mid
+}
+VOCAL_SELF_EQ_DEAD_BAND_DB = 1.5        # 小于这个幅度不处理，避免过度修
+VOCAL_SELF_EQ_CUT_FRACTION = 0.50       # 只削掉自身 excess 的一部分，保留原特点
+VOCAL_SELF_EQ_MAX_CUT_DB = {
+    "low": 5.5,
+    "lowmid": 4.0,
+    "harsh": 2.5,
+    "sib": 2.5,
+}
+
 VOCAL_AIR_BOOST_MAX_DB = 0.8
 VOCAL_UPPER_BOOST_MAX_BY_TEMPLATE = {
     "template_a": 1.0,
@@ -514,34 +560,31 @@ ACCOMP_CARVE_REGION_BY_BAND = {
     "harsh": "presence",
 }
 
-# --- Vocal high-frequency guard (resampling grain / separation "electric" noise) ---
-# Dry vocals sourced at <= 24 kHz native have a hard nyquist wall; everything above
-# ~10.5 kHz is resampling/codec grain rather than real air. We low-pass it out and,
-# when the upper spectrum is uniformly peaky (the AI-separation "musical noise" /
-# 电音 signature), tame the worst resonant bands with narrow dynamic-style cuts.
+# --- 人声高频保护（重采样颗粒 / 分离导致的电音感） ---
+# 原生采样率 <= 24 kHz 的干声有硬 Nyquist 墙；~10.5 kHz 以上更像重采样/编码颗粒，
+# 不是真正空气感。这里先 lowpass；如果 upper/harsh/sib 整体很尖，再用窄带轻削共振。
 HF_GUARD_LOWPASS_BY_NYQUIST = (
-    # (native_nyquist_hz_at_or_below, lowpass_freq_hz)
+    # (原生 Nyquist 小于等于这个值, lowpass 频率)
     (12000.0, 10500.0),
     (16000.0, 15000.0),
 )
 HF_GUARD_LOWPASS_Q = 0.7
-# Peakiness thresholds that mark the "electric / metallic separation noise" profile.
-# 8.5 dB lets 耀武 (upper 9.7 / sib 8.6 / harsh 8.0) trigger the full electric tame
-# while leyuan/tanggang (upper ~8.0) stay out and only get the nyquist lowpass.
-HF_GUARD_PEAK_HARD_DB = 8.5   # any single band this peaky -> tame it
+# 标记“电/金属感分离噪声”的 peakiness 阈值。
+# 耀武这类 upper/harsh/sib 同时发尖时，8.5 dB 太保守，会漏掉明显毛刺；
+# 降到 8.0 dB 后仍要求多个高频段同时命中，避免健康声音被单点误伤。
+HF_GUARD_PEAK_HARD_DB = 8.0   # 单个高频段到这个尖度就轻削
 HF_GUARD_ELECTRIC_BANDS = ("upper", "harsh", "sib")
-HF_GUARD_ELECTRIC_MIN_HITS = 2  # >=2 of upper/harsh/sib peaky -> electric profile
+HF_GUARD_ELECTRIC_MIN_HITS = 2  # 高频/刺耳/齿音至少 2 个很尖，才算整体电音感
 HF_GUARD_TAME_FREQ_HZ = {
     "upper": 3200.0,
     "harsh": 6200.0,
     "sib": 9000.0,
 }
-# Kept gentle: the metallic/电音 ring is targeted with a narrow notch, but this is a
-# light polish on top of the (now reference-anchored) corrective EQ, NOT another big cut.
-# Earlier larger values stacked onto the harsh/sib cuts and over-thinned the voice.
-HF_GUARD_TAME_Q = 3.2          # narrower notch, hits only the resonant ring
-HF_GUARD_TAME_MAX_CUT_DB = 1.5
-HF_GUARD_TAME_PER_PEAK_DB = 0.35  # cut scales with how far peakiness exceeds threshold
+# 保持轻量：金属/电音感只用窄 notch 点一下，不再叠大刀。
+# 之前更大的值会和 harsh/sib cut 叠加，把人声削薄。
+HF_GUARD_TAME_Q = 3.2          # 窄 notch，只打共振环
+HF_GUARD_TAME_MAX_CUT_DB = 1.8
+HF_GUARD_TAME_PER_PEAK_DB = 0.45  # 尖峰超阈值越多，削得越多
 
 SPATIAL_BASELINE = {
     "rverb_send_pre_db": -12.5,
@@ -578,6 +621,7 @@ def build_dry_vocal_strategy(
     input_features: dict[str, Any] | None,
     template_id: str,
 ) -> dict[str, Any]:
+    """识别偏干/偏薄的人声素材，并把对应避让强度写进 plan。"""
     ratios = analysis.get("ratios") or {}
     group_ratios = analysis.get("group_ratios") or {}
     body_to_presence = float(analysis.get("body_to_presence") or 0.0)
@@ -603,6 +647,12 @@ def build_dry_vocal_strategy(
     if lowmid_ratio >= 0.70 or body_to_presence >= 12.0:
         tags.append("presence_masked_by_body")
         duck_profile["presence_extra_db"] += 0.35
+    if presence_ratio <= 0.03 and body_to_presence >= 16.0:
+        tags.append("extreme_presence_starvation")
+        # 乐园这类干声不是缺“亮度 EQ”，而是有效咬字频段太少；
+        # 不给干声加亮，只让伴奏在 presence/air 稍微多退一点。
+        duck_profile["presence_extra_db"] += 0.50
+        duck_profile["air_extra_db"] += 0.15
     if body_ratio >= 0.85 and presence_ratio <= 0.08:
         tags.append("dark_or_muffled_dry_vocal")
         duck_profile["air_extra_db"] += 0.20
@@ -632,8 +682,8 @@ def build_dry_vocal_strategy(
         },
         "duck_profile": {key: round(value, 3) for key, value in duck_profile.items()},
         "policy": (
-            "Use dry vocal spectral shape to decide where accompaniment yields; "
-            "overall vocal/accomp gain still follows the reference active ratio conservatively."
+            "按干声自身频谱决定伴奏哪些频段需要避让；"
+            "整体人声/伴奏比例仍保守跟随参考曲 active 比例或通用兜底比例。"
         ),
     }
 
@@ -648,7 +698,7 @@ def active_balance_value(features: dict[str, Any] | None) -> float | None:
 
 
 def high_frequency_safety(analysis: dict[str, Any], input_vocal: dict[str, Any]) -> dict[str, Any]:
-    """Return conservative evidence for whether upper/air boosts are safe."""
+    """判断高频 boost 是否安全；目前主要给旧逻辑兼容。"""
     ratios = analysis.get("ratios") or {}
     harsh_ratio = float(ratios.get("harsh") or 0.0)
     sib_ratio = float(ratios.get("sib") or 0.0)
@@ -689,7 +739,7 @@ def vocal_high_boost_cap(
     analysis: dict[str, Any],
     safety: dict[str, Any],
 ) -> tuple[float, str | None]:
-    """Template/evidence-gated caps for rendered upper/air boosts."""
+    """按模板和证据限制 upper/air boost；目前主要给旧逻辑兼容。"""
     if band not in {"upper", "air"}:
         return VOCAL_SOURCE_EQ_MAX_BOOST_DB, None
     if not safety.get("safe"):
@@ -716,146 +766,107 @@ def vocal_high_boost_cap(
     return cap, None
 
 
-def build_reference_vocal_eq(
-    ref_features: dict[str, Any],
+def build_source_vocal_cleanup_eq(
     input_features: dict[str, Any] | None,
     analysis: dict[str, Any],
     template_id: str,
 ) -> dict[str, Any]:
-    ref_vocal = ref_features.get("vocal_tonal_balance") or {}
+    """基于干声自身特征的清理 EQ。
+
+    只削掉干声自己超出的部分（闷、刺、齿音），判断基准是它自己的 mid。
+    不使用原曲/参考人声的音色或响度比例。
+    """
     input_vocal = (input_features or {}).get("vocal_tonal_balance") or {}
-    ref_active = (ref_features.get("active_band_levels") or {}).get("vocal") or {}
     input_active = ((input_features or {}).get("active_band_levels") or {}).get("vocal") or {}
-    if not ref_active or not input_active:
+    if not input_active:
         return {
             "enabled": False,
             "actions": [],
-            "reason": "missing reference/input active vocal band levels",
+            "reason": "missing input active vocal band levels",
         }
 
-    # Anchor to the reference vocal's own band levels (texture), normalised so the mid
-    # band lines up — this removes the overall level offset (loudness/distance) and
-    # leaves only the spectral-shape difference. excess>0 => input has MORE energy than
-    # the reference here (candidate to cut); excess<0 => input is deficient (leave / restore).
+    # 只看干声自身：不和参考人声音色比较，也不把干声往参考人声塑形。
+    # 先用干声自己的 mid 做锚点，再只削掉明显超过“干净人声”预期形状的频段，
+    # 也就是它自身的闷、刺、齿音问题。
     def norm(levels: dict[str, Any]) -> dict[str, float] | None:
         mid = levels.get("mid")
         if not isinstance(mid, (int, float)):
             return None
         return {b: float(v) - float(mid) for b, v in levels.items() if isinstance(v, (int, float))}
 
-    ref_n = norm(ref_active)
     input_n = norm(input_active)
-    if ref_n is None or input_n is None:
+    if input_n is None:
         return {
             "enabled": False,
             "actions": [],
             "reason": "active vocal band levels missing mid reference",
         }
+    group_ratios = analysis.get("group_ratios") or {}
+    ratios = analysis.get("ratios") or {}
+    presence_ratio = float(group_ratios.get("presence") or 0.0)
+    body_to_presence = float(analysis.get("body_to_presence") or 0.0)
+    preserve_missing_presence = presence_ratio <= 0.03 and body_to_presence >= 16.0
 
     ranked: list[tuple[float, dict[str, Any]]] = []
     skipped: list[dict[str, Any]] = []
-    high_safety = high_frequency_safety(analysis, input_vocal)
     for band, rule in SOURCE_VOCAL_EQ_BANDS.items():
-        if band not in ref_n or band not in input_n:
+        if band not in input_n or band not in VOCAL_SELF_EQ_NEUTRAL_OFFSET_DB:
             continue
-        excess = input_n[band] - ref_n[band]  # +ve: input louder than reference here
-        if abs(excess) < VOCAL_ABS_EQ_DEAD_BAND_DB:
+        if "cut" not in rule["actions"]:
             continue
-        if excess > 0:
-            # Input has more energy here than the reference -> cut toward reference.
-            if "cut" not in rule["actions"]:
-                continue
-            cut_cap = VOCAL_ABS_EQ_MAX_CUT_DB.get(band, VOCAL_SOURCE_EQ_MAX_CUT_DB)
-            amount = clamp(excess * VOCAL_ABS_EQ_CUT_FRACTION, 0.5, cut_cap)
-            action_type = "cut"
-            gain = -round(amount, 2)
-        else:
-            # Input is deficient vs the reference. Only restore a few bands, and only
-            # when harsh/sibilance safety allows (never re-introduce grain).
-            if band not in VOCAL_ABS_EQ_BOOST_BANDS:
-                skipped.append({
-                    "band": band,
-                    "type": "boost_skipped",
-                    "excess_db": round(excess, 2),
-                    "reason": f"{band} below reference but not a restore band",
-                })
-                continue
-            if not high_safety.get("safe"):
-                skipped.append({
-                    "band": band,
-                    "type": "boost_skipped",
-                    "excess_db": round(excess, 2),
-                    "reason": "harsh/sibilance evidence not safe enough to restore highs",
-                    "safety": high_safety,
-                })
-                continue
-            boost_cap = VOCAL_ABS_EQ_MAX_BOOST_DB.get(band, 1.0)
-            amount = clamp(-excess * VOCAL_ABS_EQ_BOOST_FRACTION, 0.5, boost_cap)
-            action_type = "boost"
-            gain = round(amount, 2)
+        # 过量值表示该频段相对自身 mid 超过“干净人声预期值”多少 dB。
+        excess = input_n[band] - VOCAL_SELF_EQ_NEUTRAL_OFFSET_DB[band]
+        if excess < VOCAL_SELF_EQ_DEAD_BAND_DB:
+            continue
+        cut_cap = VOCAL_SELF_EQ_MAX_CUT_DB.get(band, VOCAL_SOURCE_EQ_MAX_CUT_DB)
+        if preserve_missing_presence and band == "low" and float(ratios.get("low") or 0.0) >= 0.45:
+            # 乐园类：高频/咬字少，听不清的主要原因是低频脏和伴奏遮挡；
+            # 这里只加大低频清理，不碰本来就缺的高频。
+            cut_cap = 7.0
+        if preserve_missing_presence and band == "lowmid" and float(ratios.get("lowmid") or 0.0) >= 0.32:
+            cut_cap = 5.5
+        amount = clamp(excess * VOCAL_SELF_EQ_CUT_FRACTION, 0.5, cut_cap)
         ranked.append(
             (
                 abs(excess),
                 {
                     "band": band,
-                    "type": action_type,
+                    "type": "cut",
                     "freq_hz": rule["freq_hz"],
                     "q": rule["q"],
-                    "gain_db": gain,
-                    "source": "reference_vocal_active_level",
+                    "gain_db": -round(amount, 2),
+                    "source": "self_vocal_excess",
                     "reason": (
-                        f"input active {band} sits {excess:+.1f} dB vs reference "
-                        f"(mid-anchored); {action_type} toward reference texture"
+                        f"干声 {band} 相对自身 mid 超过干净人声基准 {excess:+.1f} dB；"
+                        f"只削掉素材自身过量部分（不参考原曲音色）"
                     ),
-                    "evidence": (
-                        {"high_frequency_safety": high_safety}
-                        if action_type == "boost"
-                        else None
-                    ),
+                    "evidence": None,
                 },
             )
         )
     ranked.sort(key=lambda pair: pair[0], reverse=True)
     actions = [action for _, action in ranked[:VOCAL_SOURCE_EQ_MAX_ACTIONS]]
-    ref_gap = active_balance_value(ref_features)
-    input_gap = active_balance_value(input_features)
-    needed_lift = max(0.0, float(ref_gap) - float(input_gap)) if ref_gap is not None and input_gap is not None else 0.0
-    # "Cleanup" now means we actually applied low/lowmid cuts that thinned the body, so a
-    # touch of center/core support restores presence without broad makeup gain.
-    body_cut_db = sum(
-        -float(a["gain_db"]) for a in actions
-        if a["type"] == "cut" and a["band"] in ("low", "lowmid")
-    )
-    has_body_cleanup = body_cut_db >= 3.0
-    if needed_lift >= 2.5 and has_body_cleanup:
-        support_cap = 1.25 if body_cut_db >= 7.0 else 0.95
-        support_gain = round(clamp((needed_lift - 1.8) * 0.24, 0.45, support_cap), 2)
-        actions.append({
-            "band": "core",
-            "type": "boost",
-            "freq_hz": 1250.0,
-            "q": 0.85,
-            "gain_db": support_gain,
-            "source": "weak_vocal_core_support",
-            "reason": (
-                f"input active vocal gap trails reference by {needed_lift:.1f} dB and "
-                f"{body_cut_db:.1f} dB of low/lowmid was cut; add small center/core support"
-            ),
-            "evidence": {
-                "needed_relative_vocal_lift_db": round(needed_lift, 2),
-                "body_cut_db": round(body_cut_db, 2),
-            },
-        })
     return {
         "enabled": bool(actions),
         "mode": "post_template_pre_group_fx",
         "actions": actions,
         "skipped": skipped,
         "policy": (
-            "match current dry vocal tonal shape toward the reference, but gate upper/air boosts by "
-            "template and harsh/sibilance safety evidence; 14k air is conservative"
+            "仅做自驱动清理：按干声自身 mid 基准削掉闷、刺、齿音过量；"
+            "不使用参考人声音色/响度比例塑形，只 cut，不做补偿性 boost"
         ),
     }
+
+
+def build_reference_vocal_eq(
+    ref_features: dict[str, Any],
+    input_features: dict[str, Any] | None,
+    analysis: dict[str, Any],
+    template_id: str,
+) -> dict[str, Any]:
+    """兼容旧 plan 读取逻辑：实际仍走自驱动干声清理。"""
+    _ = ref_features
+    return build_source_vocal_cleanup_eq(input_features, analysis, template_id)
 
 
 def build_accomp_carve_eq(
@@ -906,7 +917,7 @@ def build_accomp_carve_eq(
             ref_masking_db = float(ref_accomp_levels[band]) - float(ref_vocal_levels[band])
             masking_excess = masking_db - ref_masking_db
         elif masking_db > 0.0:
-            # Fallback for older cached feature payloads: treat only clearly positive masking as excess.
+            # 兼容旧缓存：没有参考 masking 时，只把明显正 masking 当成过量。
             masking_excess = masking_db
         vocal_deficit = 0.0
         if band in ref_vocal and band in input_vocal:
@@ -1010,8 +1021,11 @@ def reverb_time_target(rt60_ms: float) -> float:
     return 3.20
 
 
-def build_spatial_fx_plan(ref_features: dict[str, Any] | None) -> dict[str, Any]:
-    """Build bounded reference-driven vocal-group space parameters."""
+def build_spatial_fx_plan(
+    ref_features: dict[str, Any] | None,
+    analysis: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """根据参考曲构建有上限的 vocal group 空间参数。"""
     if not ref_features:
         return {
             "enabled": False,
@@ -1026,6 +1040,10 @@ def build_spatial_fx_plan(ref_features: dict[str, Any] | None) -> dict[str, Any]
     stem_spatial = ref_features.get("vocal_spatial_profile") or {}
     reasons: list[str] = []
     center_led_reference = bool(stem_spatial.get("near_mono_center_led"))
+    group_ratios = (analysis or {}).get("group_ratios") or {}
+    presence_ratio = float(group_ratios.get("presence") or 0.0)
+    body_to_presence = float((analysis or {}).get("body_to_presence") or 0.0)
+    preserve_missing_presence = presence_ratio <= 0.03 and body_to_presence >= 16.0
 
     if bool(stem_quality.get("severe_leakage")):
         reasons.append("reference_vocal_stem_leakage_guard")
@@ -1076,16 +1094,20 @@ def build_spatial_fx_plan(ref_features: dict[str, Any] | None) -> dict[str, Any]
     time_target = reverb_time_target(rt60_ms)
     predelay_target = clamp(12.0 + wet_delta_target * 4.0, 8.0, 28.0)
     if center_led_reference:
-        # A center-led reference vocal should stay centered (narrow SIDE), but it can
-        # still be deep/reverberant. The previous logic forced wet down ~2 dB, which
-        # flattened the depth the reference clearly has (黄昏/阴天 have long tails) and
-        # made every mix sound drier and smaller than the original. Keep the
-        # reference-driven wet DEPTH; only the stereo width is constrained later via
-        # the supertap width floor. Slightly raise predelay to keep the dry vocal
-        # forward in front of the (preserved) tail.
+        # 居中型参考人声应该保持居中（侧向窄），但仍然可以有深度和混响。
+        # 旧逻辑把 wet 强压低约 2 dB，会把黄昏/阴天这类长尾参考的空间削平。
+        # 这里保留参考驱动的深度，只在后面限制 stereo width；predelay 稍抬，
+        # 让干声站在保留的尾音前面。
         wet_delta = wet_delta * 0.85
         predelay_target = clamp(predelay_target + 4.0, 16.0, 32.0)
         reasons.append("center_led_reference_keep_depth_narrow_side")
+    if preserve_missing_presence:
+        # 乐园类：干声咬字/高频本来少，宽空间和长尾会进一步糊掉可懂度。
+        # 仍参考原曲居中/深度倾向，但把 wet 和时间收窄，让人声站稳。
+        wet_delta = wet_delta * 0.45
+        time_target = min(time_target, 1.9)
+        predelay_target = clamp(predelay_target + 2.0, 18.0, 32.0)
+        reasons.append("missing_presence_keep_vocal_narrow_and_dry")
 
     rverb = {
         "send_pre_db": round(clamp(
@@ -1111,7 +1133,12 @@ def build_spatial_fx_plan(ref_features: dict[str, Any] | None) -> dict[str, Any]
     }
 
     delay_conf = float(delay.get("confidence") or 0.0)
-    if center_led_reference:
+    if preserve_missing_presence:
+        delay_send_delta = -7.0
+        feedback = baseline["supertap_feedback"] * 0.45
+        delay_width = 0.20
+        delay_policy = "missing_presence_min_side_guard"
+    elif center_led_reference:
         delay_send_delta = -5.0
         feedback = baseline["supertap_feedback"] * 0.60
         delay_width = 0.28
@@ -1173,62 +1200,19 @@ def build_reference_overrides(
     analysis: dict[str, Any],
     template_id: str,
 ) -> dict[str, Any]:
-    """Translate reference + input features into renderer parameter overrides.
-
-    Memory-rule clamps applied here:
-      - bus gain <= 0 (no positive gain on vocals or accompaniment)
-      - spatial FX changes are bounded and confidence-gated
-    """
+    """把参考/输入特征转成渲染器 overrides。"""
     overrides: dict[str, Any] = {
         "loudness_target": ref_features.get("loudness", {}),
         "reverb_observation": ref_features.get("reverb_proxy", {}),
-        "spatial_fx": build_spatial_fx_plan(ref_features),
+        "spatial_fx": build_spatial_fx_plan(ref_features, analysis),
         "reference_dynamics": ref_features.get("dynamics", {}),
     }
 
-    actions: list[dict[str, Any]] = []
-    ref_tonal = ref_features.get("tonal_balance") or {}
-    input_tonal = (input_features or {}).get("tonal_balance") or {}
-    if ref_tonal and input_tonal:
-        ranked: list[tuple[float, dict[str, Any]]] = []
-        for band, rule in MASTER_TILT_BANDS.items():
-            if band not in ref_tonal or band not in input_tonal:
-                continue
-            delta = float(ref_tonal[band]) - float(input_tonal[band])
-            if abs(delta) < MASTER_TILT_DEAD_BAND_DB:
-                continue
-            if delta > 0:
-                if "boost" not in rule["actions"]:
-                    continue
-                gain = round(min(delta, MASTER_TILT_MAX_BOOST_DB), 2)
-                action_type = "boost"
-            else:
-                if "cut" not in rule["actions"]:
-                    continue
-                gain = round(-min(-delta, MASTER_TILT_MAX_CUT_DB), 2)
-                action_type = "cut"
-            ranked.append(
-                (
-                    abs(delta),
-                    {
-                        "band": band,
-                        "type": action_type,
-                        "freq_hz": rule["freq_hz"],
-                        "q": rule["q"],
-                        "gain_db": gain,
-                        "source": "reference_tonal_delta",
-                        "reason": (
-                            f"reference {band} {ref_tonal[band]:+.1f} dB vs input mix {input_tonal[band]:+.1f} dB "
-                            f"(delta {delta:+.1f} dB)"
-                        ),
-                    },
-                )
-            )
-        ranked.sort(key=lambda pair: pair[0], reverse=True)
-        actions = [action for _, action in ranked[:MASTER_TILT_MAX_ACTIONS]]
+    # 参考曲仍可用于响度、空间等非音色决策，但不能把成品拉向原曲 EQ 曲线。
     overrides["master_tilt_eq"] = {
-        "enabled": bool(actions),
-        "actions": actions,
+        "enabled": False,
+        "actions": [],
+        "policy": "已禁用：不匹配原曲整体音色曲线，保留输入素材自身特点",
     }
 
     ref_balance = active_balance_value(ref_features)
@@ -1253,8 +1237,12 @@ def build_reference_overrides(
         )
     overrides["bus_balance"] = bus
     overrides["source_eq"] = {
-        "vocal_eq": build_reference_vocal_eq(ref_features, input_features, analysis, template_id),
-        "accomp_eq": build_accomp_carve_eq(ref_features, input_features),
+        "vocal_eq": build_source_vocal_cleanup_eq(input_features, analysis, template_id),
+        "accomp_eq": {
+            "enabled": False,
+            "actions": [],
+            "policy": "已禁用：基于参考曲的伴奏 carve 不属于保留素材特点的通用清理",
+        },
     }
     overrides["vocal_hf_guard"] = build_vocal_hf_guard(analysis, input_features)
     overrides["dry_vocal_strategy"] = build_dry_vocal_strategy(analysis, input_features, template_id)
@@ -1262,16 +1250,147 @@ def build_reference_overrides(
     return overrides
 
 
+def build_source_cleanup_overrides(
+    analysis: dict[str, Any],
+    input_features: dict[str, Any] | None,
+    template_id: str,
+) -> dict[str, Any]:
+    """构建通用清理块：即使没有加载参考曲也会使用。"""
+    return {
+        "source_eq": {
+            "vocal_eq": build_source_vocal_cleanup_eq(input_features, analysis, template_id),
+            "accomp_eq": {
+                "enabled": False,
+                "actions": [],
+                # 伴奏 carve 有时能提升人声可懂度，但如果按参考曲目标去挖，
+                # 会改变伴奏/编曲原本的音色，所以通用清理阶段不做。
+                "policy": "已禁用：通用素材清理不重新塑造伴奏音色",
+            },
+        },
+        "vocal_hf_guard": build_vocal_hf_guard(analysis, input_features),
+        "vocal_artifact_repair": build_vocal_artifact_repair(analysis, input_features),
+        "dry_vocal_strategy": build_dry_vocal_strategy(analysis, input_features, template_id),
+        "policy": (
+            "通用且保留素材特点的清理：自驱动人声问题频段削减 + "
+            "原生 Nyquist/高频保护；不匹配原曲音色"
+        ),
+    }
+
+
+def build_vocal_artifact_repair(
+    analysis: dict[str, Any],
+    input_features: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """判断是否需要轻量修复生成/分离带来的毛刺和金属感。
+
+    这里只做“修瑕疵”，不是换音色：触发条件来自干声自身的 peakiness 和
+    原生采样率/Nyquist 墙；处理动作是 FFmpeg 自带的轻量去点击和轻度频谱降噪。
+    """
+    _ = input_features
+    native_sr = analysis.get("native_sample_rate")
+    peakiness = {
+        "upper": float(analysis.get("peakiness_upper") or 0.0),
+        "harsh": float(analysis.get("peakiness_harsh") or 0.0),
+        "sib": float(analysis.get("peakiness_sib") or 0.0),
+    }
+    high_hits = [band for band, peak in peakiness.items() if peak >= HF_GUARD_PEAK_HARD_DB]
+    max_peak = max(peakiness.values())
+    low_native_sr = isinstance(native_sr, (int, float)) and float(native_sr) <= 24000.0
+    electric_profile = len(high_hits) >= HF_GUARD_ELECTRIC_MIN_HITS
+    group_ratios = analysis.get("group_ratios") or {}
+    presence_ratio = float(group_ratios.get("presence") or 0.0)
+    body_to_presence = float(analysis.get("body_to_presence") or 0.0)
+    # 乐园类：不是高频层太多，而是高频/咬字本来就少。
+    # 这种声音不能继续收高频，只能靠伴奏让位和比例补偿来提升可懂度。
+    preserve_missing_presence = presence_ratio <= 0.03 and body_to_presence >= 16.0
+
+    actions: list[dict[str, Any]] = []
+    reasons: list[str] = []
+    severe_artifact = False
+    if preserve_missing_presence:
+        reasons.append("presence 极低且 body_to_presence 很高；跳过高频 repair，避免越修越不清楚")
+    elif electric_profile and max_peak >= 9.0:
+        reasons.append(f"高频多个频段同时尖峰，最高 peakiness={max_peak:.1f} dB")
+        severe_artifact = max_peak >= 9.5 and len(high_hits) >= 3
+        actions.append({
+            "type": "adeclick",
+            "window": 40,
+            "overlap": 75,
+            "arorder": 4,
+            "threshold": 2.0 if severe_artifact else 2.5,
+            "burst": 2,
+            "reason": "去掉短促毛刺/点击感，不改变持续音色",
+        })
+        actions.append({
+            "type": "afftdn",
+            "noise_reduction": 6.0 if severe_artifact else 3.5,
+            "noise_floor": -58 if severe_artifact else -56,
+            "residual_floor": -45 if severe_artifact else -42,
+            "adaptivity": 0.25 if severe_artifact else 0.35,
+            "gain_smooth": 14 if severe_artifact else 10,
+            "reason": "轻度平滑生成/分离的高频沙粒感",
+        })
+        if severe_artifact:
+            reasons.append("判定为严重受损：upper/harsh/sib 三段同时尖且最高超过 9.5 dB")
+            actions.append({
+                "type": "afwtdn",
+                "sigma": 0.018,
+                "levels": 8,
+                "percent": 35,
+                "softness": 3.0,
+                "samples": 8192,
+                "reason": "严重受损时只在高频层加一点 wavelet 平滑，减少发毛/颗粒感",
+            })
+            actions.append({
+                "type": "deesser",
+                "intensity": 0.22,
+                "max_deessing": 0.38,
+                "frequency": 0.55,
+                "reason": "严重受损时额外压齿音/金属边缘，强度保持保守",
+            })
+    elif electric_profile and low_native_sr:
+        reasons.append("低原生采样率且高频多个频段同时偏尖")
+        actions.append({
+            "type": "adeclick",
+            "window": 40,
+            "overlap": 75,
+            "arorder": 4,
+            "threshold": 3.0,
+            "burst": 2,
+            "reason": "只做保守去点击，避免过度降噪吃掉人声细节",
+        })
+
+    return {
+        "enabled": bool(actions),
+        "mode": "split_high_repair" if severe_artifact else "inline_repair",
+        "crossover_hz": 2600.0 if severe_artifact else None,
+        "high_layer_gain_db": -1.2 if severe_artifact else 0.0,
+        "actions": actions,
+        "trigger": {
+            "native_sample_rate": native_sr,
+            "low_native_sample_rate": bool(low_native_sr),
+            "electric_profile": electric_profile,
+            "preserve_missing_presence": preserve_missing_presence,
+            "high_peak_hits": high_hits,
+            "peakiness": {key: round(value, 2) for key, value in peakiness.items()},
+            "presence": round(presence_ratio, 4),
+            "body_to_presence": round(body_to_presence, 3),
+        },
+        "reasons": reasons,
+        "policy": "按干声瑕疵特征触发的轻量 repair；只修毛刺/沙粒/点击感，不按歌名或参考曲音色处理。",
+    }
+
+
 def build_vocal_hf_guard(
     analysis: dict[str, Any],
     input_features: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    """Low-pass resampling grain and tame separation-induced "electric" resonances.
+    """低通重采样颗粒，并轻削分离/生成导致的“电”“金属”共振。
 
-    Driven by the dry vocal's native sample rate (nyquist wall) and per-band
-    peakiness. Output actions are consumed by scripts/apply_vocal_plan_eq.py as
-    ordinary EQ filters (a high lowpass + narrow resonance cuts), so no new DSP
-    stage is required. Conservative by design — these are cuts only.
+    依据干声原生采样率（Nyquist 墙）和各频段 peakiness 触发。
+    输出动作会被 scripts/apply_vocal_plan_eq.py 当普通 EQ 滤波处理：
+    一个高位 lowpass + 若干窄带 resonance cut，不新增 DSP 阶段。
+    设计上保持保守：只 cut / lowpass，不 boost。
     """
     native_sr = analysis.get("native_sample_rate")
     nyquist = analysis.get("effective_nyquist_hz")
@@ -1283,7 +1402,7 @@ def build_vocal_hf_guard(
     actions: list[dict[str, Any]] = []
     tags: list[str] = []
 
-    # 1) Low-pass the codec/resampling grain above the real nyquist wall.
+    # 1) 低通真实 Nyquist 墙以上的编码/重采样颗粒。
     lowpass_hz: float | None = None
     if native_nyquist is not None:
         for limit_hz, lp_hz in HF_GUARD_LOWPASS_BY_NYQUIST:
@@ -1304,21 +1423,28 @@ def build_vocal_hf_guard(
             ),
         })
 
-    # 2) Tame the "electric / metallic" separation noise: uniformly peaky upper spectrum.
+    # 2) 处理“电/金属感”分离噪声：upper/harsh/sib 整体都尖时，轻削窄带共振。
     peakiness = {
         "upper": float(analysis.get("peakiness_upper") or 0.0),
         "harsh": float(analysis.get("peakiness_harsh") or 0.0),
         "sib": float(analysis.get("peakiness_sib") or 0.0),
     }
+    group_ratios = analysis.get("group_ratios") or {}
+    presence_ratio = float(group_ratios.get("presence") or 0.0)
+    body_to_presence = float(analysis.get("body_to_presence") or 0.0)
+    preserve_missing_presence = presence_ratio <= 0.03 and body_to_presence >= 16.0
     hits = [b for b in HF_GUARD_ELECTRIC_BANDS if peakiness[b] >= HF_GUARD_PEAK_HARD_DB]
     electric = len(hits) >= HF_GUARD_ELECTRIC_MIN_HITS
-    if electric:
+    if electric and not preserve_missing_presence:
         tags.append("electric_separation_noise")
     for band in HF_GUARD_ELECTRIC_BANDS:
+        # 乐园类本来就缺高频/咬字，不能再因为局部 peakiness 去削 upper/sib。
+        if preserve_missing_presence:
+            continue
         peak = peakiness[band]
         if peak < HF_GUARD_PEAK_HARD_DB:
             continue
-        # Only tame standalone hard peaks unless the whole profile is electric.
+        # 非整体电/金属感时，只轻削独立的 upper 硬峰。
         if not electric and band != "upper":
             continue
         excess = peak - HF_GUARD_PEAK_HARD_DB
@@ -1331,8 +1457,8 @@ def build_vocal_hf_guard(
             "gain_db": -round(cut, 2),
             "source": "vocal_hf_guard",
             "reason": (
-                f"{band} peakiness {peak:.1f} dB (>= {HF_GUARD_PEAK_HARD_DB:.0f}) "
-                f"resonance tamed by {cut:.1f} dB"
+                f"{band} peakiness {peak:.1f} dB 已超过 {HF_GUARD_PEAK_HARD_DB:.0f} dB；"
+                f"轻削 {cut:.1f} dB 控制窄带共振"
             ),
         })
 
@@ -1344,10 +1470,11 @@ def build_vocal_hf_guard(
         "effective_nyquist_hz": nyquist,
         "lowpass_hz": lowpass_hz,
         "electric_profile": electric,
+        "preserve_missing_presence": preserve_missing_presence,
         "peakiness": {k: round(v, 2) for k, v in peakiness.items()},
         "policy": (
-            "Low-pass resampling grain above the native nyquist wall and tame "
-            "uniformly-peaky upper bands (AI-separation/metallic noise). Cuts only."
+            "低通原生 Nyquist 墙以上的重采样颗粒，并轻削整体偏尖的高频段"
+            "（AI 分离/生成的金属感噪声）。只 cut / lowpass。"
         ),
     }
 
@@ -1356,12 +1483,7 @@ def build_vocal_sibilance_profile(
     analysis: dict[str, Any],
     input_features: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    """Derive per-song de-esser params from vocal harsh/sib band energy + crest.
-
-    Output is consumed by scripts/build_rdeesser_dyn.sh to compile a song-specific
-    rdeesser_dyn binary. Heuristic only — kept conservative to avoid changing
-    perceived volume balance.
-    """
+    """按单首干声 harsh/sib 能量和 crest 估计 de-esser 配置。"""
     bands = ((input_features or {}).get("active_band_levels") or {}).get("vocal") or {}
     sib_db = bands.get("sib")
     harsh_db = bands.get("harsh")
@@ -1384,9 +1506,8 @@ def build_vocal_sibilance_profile(
     if isinstance(crest_db, (int, float)) and float(crest_db) < 10.0:
         range_db = 8.0
 
-    # Deepen de-essing when the harsh/sib bands are strongly peaky: the prior fixed
-    # thresholds left visibly harsh sources (e.g. 汤刚) under-treated. Lower threshold
-    # = engages on more of the harsh content; wider range = more reduction depth.
+    # 刺耳/齿音明显尖时加深 de-essing：旧固定阈值会让汤刚这类刺耳源处理不足。
+    # 阈值越低，触发越多；range 越宽，削减深度越大。
     sib_peak = float((analysis or {}).get("peakiness_sib") or 0.0)
     harsh_peak = float((analysis or {}).get("peakiness_harsh") or 0.0)
     peak_max = max(sib_peak, harsh_peak)
@@ -1441,6 +1562,9 @@ def build_plan(
             "selected_template_name": template.get("display_name"),
             "render_mode": "current_faust_default",
             "template": template,
+            # 顶层 source_cleanup 会优先于旧 reference overrides 被读取，
+            # 因此 --no-reference 渲染也能得到同样的问题频段保护。
+            "source_cleanup": build_source_cleanup_overrides(analysis, input_features, template_id),
             "vocal_sibilance_profile": vocal_sibilance_profile,
             "notes": [
                 "Template D uses the older current project chain.",
@@ -1457,6 +1581,9 @@ def build_plan(
         "selected_template": template_id,
         "selected_template_name": template.get("display_name"),
         "render_mode": "template_dsp_approximation_chain",
+        # 把“保留素材特点的清理”独立放在 reference overrides 外面。
+        # 渲染器会优先读取这里，避免以后新增参考曲特征时误改人声音色。
+        "source_cleanup": build_source_cleanup_overrides(analysis, input_features, template_id),
         "vocal_sibilance_profile": vocal_sibilance_profile,
         "residual_vocal_eq": build_residual_vocal_eq(analysis, template_id, ref_features, input_features),
         "vocal_track": {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Match post-FX vocal/accomp bus levels to reference stem active-region RMS."""
+"""按 post-FX 人声/伴奏 active RMS 计算总线比例增益。"""
 
 from __future__ import annotations
 
@@ -23,17 +23,22 @@ from analyze_reference import (  # noqa: E402
 BUS_MAX_GAIN_DB = 12.0
 BUS_MAX_ATTEN_DB = 12.0
 BUS_DEAD_BAND_DB = 0.4
-# Distance-driven correction headroom: when the post-FX render gap is close to the
-# reference target, stay conservative (small cap); when the vocal is buried far below
-# the reference (the 听不清 case), allow more correction so it can actually reach the
-# target instead of being clipped 3-4 dB short. Per-bus limits scale with the cap.
+# 距离驱动的修正余量：渲染比例接近目标时保守，明显埋声时放开上限。
+# 这样“听不清”的素材可以真正靠近目标，而不是被固定 3-4 dB 上限卡住。
 BUS_RATIO_MIN_CORRECTION_DB = 6.0
 BUS_RATIO_MAX_CORRECTION_DB = 10.0
-# Gap (|reference - render|) at/above which the full max correction is unlocked.
+# 当 |目标 - 渲染| 达到这个距离时，允许使用完整最大修正量。
 BUS_RATIO_FULL_UNLOCK_GAP_DB = 12.0
-# Per-bus split of the correction (vocal up 60% / accomp down 40%), scaled to the cap.
+# 修正分配到两个 bus：人声推 60%，伴奏压 40%，并随动态上限一起缩放。
 BUS_RATIO_VOCAL_GAIN_FRACTION = 0.60
 BUS_RATIO_ACCOMP_ATTEN_FRACTION = 0.40
+GENERIC_ACTIVE_GAP_DB = -2.0
+# 弱/闷/咬字区缺失的人声，追到参考比例后听感仍可能偏埋；
+# 这里最多只把“目标比例”往人声侧挪一点，不直接改人声音色。
+WEAK_VOCAL_TARGET_MAX_LIFT_DB = 2.0
+TARGET_GAP_MIN_DB = -5.0
+TARGET_GAP_MAX_DB = 0.0
+SEVERE_ARTIFACT_PULLBACK_DB = 0.8
 
 
 def clamp(value: float, low: float, high: float) -> float:
@@ -52,6 +57,129 @@ def reference_levels(plan: dict | None) -> dict[str, Any]:
         .get("features", {})
         .get("vocal_accomp_balance", {})
     ) or {}
+
+
+def vocal_artifact_repair(plan: dict | None) -> dict[str, Any]:
+    """读取人声瑕疵修复档位，用来决定人声是否应该更往后。"""
+    return ((plan or {}).get("source_cleanup") or {}).get("vocal_artifact_repair") or {}
+
+
+def vocal_balance_compensation_db(plan: dict | None) -> tuple[float, list[str]]:
+    """根据干声自身问题给比例目标加一点人声侧补偿，不改变音色。"""
+    analysis = (plan or {}).get("analysis") or {}
+    ratios = analysis.get("ratios") or {}
+    group_ratios = analysis.get("group_ratios") or {}
+    compensation = 0.0
+    reasons: list[str] = []
+
+    lowmid = float(ratios.get("lowmid") or 0.0)
+    presence = float(group_ratios.get("presence") or 0.0)
+    body_to_presence = float(analysis.get("body_to_presence") or 0.0)
+    upper_peak = float(analysis.get("peakiness_upper") or 0.0)
+    harsh_peak = float(analysis.get("peakiness_harsh") or 0.0)
+    sib_peak = float(analysis.get("peakiness_sib") or 0.0)
+
+    # 闷、厚、低中频重的干声，即使数值比例追到原曲，听感仍会更埋。
+    if lowmid >= 0.55:
+        compensation += 0.7
+        reasons.append(f"lowmid_ratio={lowmid:.3f}")
+    if lowmid >= 0.70:
+        compensation += 0.4
+        reasons.append("extreme_lowmid")
+    if body_to_presence >= 8.0:
+        compensation += 0.7
+        reasons.append(f"body_to_presence={body_to_presence:.1f}")
+    if body_to_presence >= 12.0:
+        compensation += 0.4
+        reasons.append("extreme_body_to_presence")
+    if presence <= 0.085 and (lowmid >= 0.45 or body_to_presence >= 6.0):
+        compensation += 0.5
+        reasons.append(f"presence_starved={presence:.3f}")
+    if presence <= 0.03 and body_to_presence >= 16.0:
+        compensation += 0.5
+        reasons.append("extreme_presence_starvation")
+
+    # 刺、毛、金属感会降低可懂度；这里只轻微前推。
+    # 严重受损时推太前会把瑕疵暴露得更明显，所以这项保持很小。
+    if max(upper_peak, harsh_peak, sib_peak) >= 8.5:
+        compensation += 0.2
+        reasons.append(
+            f"peaky_hf={max(upper_peak, harsh_peak, sib_peak):.1f}dB"
+        )
+
+    repair = vocal_artifact_repair(plan)
+    if repair.get("mode") == "split_high_repair":
+        # 耀武类严重受损人声：推前会把瑕疵放大，不能再按“弱人声”大幅补偿。
+        compensation = 0.0
+        reasons.append("严重瑕疵档:不做人声前推补偿")
+
+    return round(clamp(compensation, 0.0, WEAK_VOCAL_TARGET_MAX_LIFT_DB), 2), reasons
+
+
+def reference_gap_value(ref_balance: dict[str, Any]) -> float | None:
+    """优先取 active 人声/伴奏比例，旧字段只做兼容 fallback。"""
+    value = ref_balance.get("active_vocal_minus_accomp_db")
+    if value is None:
+        value = ref_balance.get("vocal_minus_accomp_db")
+    return float(value) if value is not None else None
+
+
+def gated_vocal_balance_compensation_db(
+    plan: dict | None,
+    ref_gap_value: float | None,
+) -> tuple[float, list[str]]:
+    """把弱人声补偿统一套上参考曲 dry-deficit 限制。
+
+    有参考曲时，只有输入干声本身已经明显比参考比例更埋，才额外前推。
+    没有参考曲时走通用补偿，因为没有 dry/reference deficit 可判断。
+    """
+    compensation, reasons = vocal_balance_compensation_db(plan)
+    if ref_gap_value is None:
+        return compensation, reasons
+
+    bus = (
+        ((plan or {}).get("reference") or {})
+        .get("overrides", {})
+        .get("bus_balance", {})
+    )
+    dry_gap = bus.get("dry_input_vocal_minus_accomp_db")
+    if dry_gap is None:
+        return compensation, reasons
+
+    # 健康干声通常只是渲染后需要常规 bus balance；不要额外推前。
+    # 只有输入素材本身已经明显比参考曲更埋，才启用“问题干声可懂度补偿”。
+    dry_deficit = float(ref_gap_value) - float(dry_gap)
+    if dry_deficit < 3.5:
+        return 0.0, [*reasons, f"补偿跳过:dry_deficit={dry_deficit:.1f}dB"]
+
+    max_by_deficit = clamp(0.8 + (dry_deficit - 3.5) * 1.1, 0.8, WEAK_VOCAL_TARGET_MAX_LIFT_DB)
+    if compensation > max_by_deficit:
+        compensation = round(max_by_deficit, 2)
+        reasons = [*reasons, f"按dry_deficit限制={dry_deficit:.1f}dB"]
+    return compensation, reasons
+
+
+def target_gap_from_plan(
+    plan: dict | None,
+    ref_balance: dict[str, Any],
+) -> tuple[float, float | None, float, str, list[str]]:
+    """返回最终 active vocal-accomp 目标；无参考曲时用通用目标。"""
+    ref_gap_value = reference_gap_value(ref_balance)
+    if ref_gap_value is None:
+        base_gap = GENERIC_ACTIVE_GAP_DB
+        source = "generic"
+    else:
+        base_gap = ref_gap_value
+        source = "reference"
+
+    compensation, reasons = gated_vocal_balance_compensation_db(plan, ref_gap_value)
+    artifact_pullback = 0.0
+    if vocal_artifact_repair(plan).get("mode") == "split_high_repair":
+        artifact_pullback = SEVERE_ARTIFACT_PULLBACK_DB
+        reasons = [*reasons, f"严重瑕疵档:目标后退{artifact_pullback:.1f}dB"]
+
+    target_gap = clamp(base_gap + compensation - artifact_pullback, TARGET_GAP_MIN_DB, TARGET_GAP_MAX_DB)
+    return round(target_gap, 2), ref_gap_value, compensation, source, reasons
 
 
 def measure_render_balance(
@@ -102,42 +230,45 @@ def apply_dead_band(gain_db: float) -> float:
     return round(gain_db, 2)
 
 
-def compute_bus_gains(ref_balance: dict[str, Any], measured: dict[str, float | int | None]) -> dict[str, Any]:
+def compute_bus_gains(
+    ref_balance: dict[str, Any],
+    measured: dict[str, float | int | None],
+    plan: dict | None = None,
+) -> dict[str, Any]:
     vocal_gain = 0.0
     accomp_gain = 0.0
-    reason = "no reference active vocal/accomp ratio; buses unchanged"
-
-    ref_gap_value = ref_balance.get("active_vocal_minus_accomp_db")
-    if ref_gap_value is None:
-        ref_gap_value = ref_balance.get("vocal_minus_accomp_db")
+    target_gap, ref_gap_value, compensation, target_source, compensation_reasons = target_gap_from_plan(
+        plan,
+        ref_balance,
+    )
     render_gap = float(measured["active_vocal_minus_accomp_db"])
 
-    if ref_gap_value is not None:
-        ref_gap = float(ref_gap_value)
-        raw_correction = ref_gap - render_gap
-        # Scale the cap with how far the render sits from the reference target:
-        # close -> conservative MIN cap; buried far below -> up to MAX cap.
-        gap_distance = abs(raw_correction)
-        unlock = clamp(gap_distance / BUS_RATIO_FULL_UNLOCK_GAP_DB, 0.0, 1.0)
-        dyn_cap = BUS_RATIO_MIN_CORRECTION_DB + unlock * (
-            BUS_RATIO_MAX_CORRECTION_DB - BUS_RATIO_MIN_CORRECTION_DB
-        )
-        correction = clamp(raw_correction, -dyn_cap, dyn_cap)
-        vocal_cap = dyn_cap * BUS_RATIO_VOCAL_GAIN_FRACTION
-        accomp_cap = dyn_cap * BUS_RATIO_ACCOMP_ATTEN_FRACTION
-        if correction > 0.0:
-            vocal_gain = apply_dead_band(clamp(correction * BUS_RATIO_VOCAL_GAIN_FRACTION, 0.0, vocal_cap))
-            accomp_gain = apply_dead_band(clamp(-correction * BUS_RATIO_ACCOMP_ATTEN_FRACTION, -accomp_cap, 0.0))
-        else:
-            vocal_gain = apply_dead_band(clamp(correction * BUS_RATIO_VOCAL_GAIN_FRACTION, -BUS_MAX_ATTEN_DB, 0.0))
-            accomp_gain = 0.0
-        predicted_gap = round(render_gap + vocal_gain - accomp_gain, 2)
-        reason = (
-            f"match reference active vocal/accomp ratio (distance-driven cap): "
-            f"render gap {render_gap:+.1f} dB -> predicted {predicted_gap:+.1f} dB; "
-            f"reference {ref_gap:+.1f} dB; cap {dyn_cap:.1f} dB (distance {gap_distance:.1f} dB); "
-            f"correction applied {correction:+.1f} dB."
-        )
+    raw_correction = target_gap - render_gap
+    # 按距离动态放开修正上限：越埋越允许多修，接近目标时保持保守。
+    gap_distance = abs(raw_correction)
+    unlock = clamp(gap_distance / BUS_RATIO_FULL_UNLOCK_GAP_DB, 0.0, 1.0)
+    dyn_cap = BUS_RATIO_MIN_CORRECTION_DB + unlock * (
+        BUS_RATIO_MAX_CORRECTION_DB - BUS_RATIO_MIN_CORRECTION_DB
+    )
+    correction = clamp(raw_correction, -dyn_cap, dyn_cap)
+    vocal_cap = dyn_cap * BUS_RATIO_VOCAL_GAIN_FRACTION
+    accomp_cap = dyn_cap * BUS_RATIO_ACCOMP_ATTEN_FRACTION
+    if correction > 0.0:
+        vocal_gain = apply_dead_band(clamp(correction * BUS_RATIO_VOCAL_GAIN_FRACTION, 0.0, vocal_cap))
+        accomp_gain = apply_dead_band(clamp(-correction * BUS_RATIO_ACCOMP_ATTEN_FRACTION, -accomp_cap, 0.0))
+    else:
+        vocal_gain = apply_dead_band(clamp(correction * BUS_RATIO_VOCAL_GAIN_FRACTION, -BUS_MAX_ATTEN_DB, 0.0))
+        accomp_gain = 0.0
+    predicted_gap = round(render_gap + vocal_gain - accomp_gain, 2)
+    reason = (
+        f"match {target_source} active vocal/accomp target with weak-vocal compensation: "
+        f"render gap {render_gap:+.1f} dB -> predicted {predicted_gap:+.1f} dB; "
+        f"target {target_gap:+.1f} dB"
+        + (f" (reference {float(ref_gap_value):+.1f} dB" if ref_gap_value is not None else " (generic fallback")
+        + f", compensation +{compensation:.1f} dB); "
+        f"cap {dyn_cap:.1f} dB (distance {gap_distance:.1f} dB); "
+        f"correction applied {correction:+.1f} dB."
+    )
 
     return {
         "vocal_bus_gain_db": vocal_gain,
@@ -146,7 +277,11 @@ def compute_bus_gains(ref_balance: dict[str, Any], measured: dict[str, float | i
         "reference_accomp_lufs_i": ref_balance.get("accomp_lufs"),
         "reference_vocal_minus_accomp_lufs_db": ref_balance.get("vocal_minus_accomp_db"),
         "reference_active_vocal_minus_accomp_db": ref_gap_value,
-        "policy": "match_reference_active_vocal_accomp_ratio_conservative_weak_vocal_guard",
+        "target_active_vocal_minus_accomp_db": target_gap,
+        "target_source": target_source,
+        "weak_vocal_compensation_db": compensation,
+        "weak_vocal_compensation_reasons": compensation_reasons,
+        "policy": "match_active_vocal_accomp_target_with_generic_fallback_and_weak_vocal_compensation",
         "measurement_basis": "post_fx_vocal_group_and_accomp_bus_active_vocal_regions",
         "reason": reason,
     }
@@ -168,7 +303,7 @@ def main() -> None:
     plan = load_json(args.plan) if args.plan and args.plan.exists() else None
     measured = measure_render_balance(args.vocal_group, args.accomp_bus, include_loudness=not args.skip_loudness)
     ref_balance = reference_levels(plan)
-    bus = compute_bus_gains(ref_balance, measured)
+    bus = compute_bus_gains(ref_balance, measured, plan)
 
     metadata = {**measured, **bus, "reference_balance": ref_balance}
     if args.metadata:

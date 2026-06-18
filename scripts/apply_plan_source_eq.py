@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply reference-driven source EQ actions from a resolved mix plan."""
+"""从 resolved mix plan 应用 source_cleanup EQ 动作。"""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ def load_json(path: Path) -> Any:
 
 
 def eq_filter(action: dict[str, Any]) -> str | None:
+    """把 source_cleanup/source_eq 动作转换成 FFmpeg equalizer filter。"""
     try:
         freq = float(action["freq_hz"])
         q = float(action["q"])
@@ -38,8 +39,12 @@ def main() -> None:
     args = parser.parse_args()
 
     plan = load_json(args.plan)
-    overrides = (plan.get("reference") or {}).get("overrides") or {}
+    source_cleanup = plan.get("source_cleanup") or {}
+    # 新 plan 会把“保留素材特点的 EQ”放在 reference 之外；
+    # 兜底只用于让旧 resolved_mix_plan.json 还能正常渲染。
+    overrides = source_cleanup or ((plan.get("reference") or {}).get("overrides") or {})
     source_eq = overrides.get("source_eq") or {}
+    # --section 决定当前处理人声还是伴奏；脚本本身不做策略判断，只执行 plan。
     section = source_eq.get(args.section) or {}
     actions = section.get("actions", []) if section.get("enabled") else []
     filters = [value for action in actions if (value := eq_filter(action))]

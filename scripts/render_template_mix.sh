@@ -9,6 +9,13 @@
 #
 # A/B/C use template-specific plugin-order DSP approximations.
 # Template D delegates to the current full_fx_mix.sh fallback.
+#
+# 中文流程概览：
+#   1. 统一采样率/声道，并可选先跑 auto_volume_mix.py。
+#   2. 按模板执行人声 insert 链，再执行 plan 里的 residual/source/HF 修正。
+#   3. 伴奏执行模板 EQ、source cleanup 和人声触发的多频段避让。
+#   4. 做局部 section balance guard、stereo sum、master tilt、bus 插件和最终响度。
+#   5. 可选导出 vocal_group / stage_report，方便和参考曲做空间感审计。
 # ================================================================
 
 set -euo pipefail
@@ -239,6 +246,7 @@ VOCAL_4="$(make_temp_wav template_vocal_4)"
 VOCAL_5="$(make_temp_wav template_vocal_5)"
 VOCAL_CORRECTED="$(make_temp_wav template_vocal_residual_eq)"
 VOCAL_SOURCE_EQ="$(make_temp_wav template_vocal_source_eq)"
+VOCAL_ARTIFACT_REPAIRED="$(make_temp_wav template_vocal_artifact_repaired)"
 VOCAL_GROUP="$(make_temp_wav template_vocal_group)"
 VOCAL_GROUP_SIDE="$(make_temp_wav template_vocal_group_side)"
 ACCOMP_1="$(make_temp_wav template_accomp_1)"
@@ -253,7 +261,7 @@ MASTER_1="$(make_temp_wav template_master_1)"
 MASTER_2="$(make_temp_wav template_master_2)"
 FINAL_GUARDED="$(make_temp_wav template_final_guarded)"
 
-trap 'rm -f "$RESAMPLED_VOCAL" "$RESAMPLED_ACCOMP" "$AUTO_VOCAL" "$AUTO_ACCOMP" "$VOCAL_1" "$VOCAL_2" "$VOCAL_3" "$VOCAL_4" "$VOCAL_5" "$VOCAL_CORRECTED" "$VOCAL_SOURCE_EQ" "$VOCAL_GROUP" "$VOCAL_GROUP_SIDE" "$ACCOMP_1" "$ACCOMP_SOURCE_EQ" "$ACCOMP_DUCKED" "$ACCOMP_BUS" "$VOCAL_BALANCED" "$ACCOMP_BALANCED" "$MIX_TMP" "$MIX_TILTED" "$MASTER_1" "$MASTER_2" "$FINAL_GUARDED"' EXIT
+trap 'rm -f "$RESAMPLED_VOCAL" "$RESAMPLED_ACCOMP" "$AUTO_VOCAL" "$AUTO_ACCOMP" "$VOCAL_1" "$VOCAL_2" "$VOCAL_3" "$VOCAL_4" "$VOCAL_5" "$VOCAL_CORRECTED" "$VOCAL_SOURCE_EQ" "$VOCAL_ARTIFACT_REPAIRED" "$VOCAL_GROUP" "$VOCAL_GROUP_SIDE" "$ACCOMP_1" "$ACCOMP_SOURCE_EQ" "$ACCOMP_DUCKED" "$ACCOMP_BUS" "$VOCAL_BALANCED" "$ACCOMP_BALANCED" "$MIX_TMP" "$MIX_TILTED" "$MASTER_1" "$MASTER_2" "$FINAL_GUARDED"' EXIT
 
 VOCAL_RATE="$(audio_sample_rate "$VOCAL_IN")"
 ACCOMP_RATE="$(audio_sample_rate "$ACCOMP_IN")"
@@ -377,6 +385,18 @@ if [[ -n "$MIX_PLAN" ]]; then
         --input "vocal=$VOCAL_CHAIN_OUT" \
         --output "vocal=$VOCAL_SOURCE_EQ"
     VOCAL_CHAIN_OUT="$VOCAL_SOURCE_EQ"
+    echo "[step 1b2] Vocal artifact repair"
+    STAGE_START="$(now_ts)"
+    VOCAL_ARTIFACT_META="${FINAL_OUT%.*}.vocal_artifact_repair.json"
+    "$PYTHON_BIN" "$SCRIPT_DIR/apply_vocal_artifact_repair.py" \
+        "$VOCAL_CHAIN_OUT" \
+        "$VOCAL_ARTIFACT_REPAIRED" \
+        --plan "$MIX_PLAN" \
+        --metadata "$VOCAL_ARTIFACT_META"
+    record_stage "vocal_artifact_repair" "$STAGE_START" \
+        --input "vocal=$VOCAL_CHAIN_OUT" \
+        --output "vocal=$VOCAL_ARTIFACT_REPAIRED"
+    VOCAL_CHAIN_OUT="$VOCAL_ARTIFACT_REPAIRED"
 else
     echo "[step 1b] Vocal plan EQ skipped: no mix plan"
 fi

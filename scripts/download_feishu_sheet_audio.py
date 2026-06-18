@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download dry/accompaniment audio listed in an exported Feishu sheet."""
+"""下载飞书导出表里的原曲、人声参考、伴奏和干声。"""
 
 from __future__ import annotations
 
@@ -17,9 +17,13 @@ from urllib.parse import unquote, urlparse
 from urllib.request import Request, urlopen
 
 
-DEFAULT_OUTPUT_DIR = Path("downloads") / "feishu_long_audio_screened"
+ROOT = Path(__file__).resolve().parent.parent
+# 和 render_feishu_mix_compare_batch.py 的默认读取目录保持一致，避免下载后批处理找不到。
+DEFAULT_OUTPUT_DIR = ROOT.parent / "feishu_long_audio_screened"
 DEFAULT_SHEET_NAME = "长音频-筛选"
 DRY_COL = 27
+ORIGINAL_COL = 4
+REFERENCE_VOCAL_COL = 7
 ACCOMP_COL = 8
 CASE_COL = 1
 NAME_COL = 2
@@ -35,6 +39,17 @@ class DownloadRecord:
     output_path: str
     status: str
     error: str | None = None
+
+
+@dataclass
+class SheetRecord:
+    row: int
+    case_name: str
+    extra_name: str
+    original_urls: list[str]
+    reference_vocal_urls: list[str]
+    accompaniment_urls: list[str]
+    dry_urls: list[str]
 
 
 def sanitize_filename(value: str) -> str:
@@ -130,9 +145,13 @@ def col_urls(values: list[str], links: dict[int, list[str]], index: int) -> list
     return list(dict.fromkeys(urls))
 
 
-def output_stem(case_name: str, extra_name: str, role: str) -> str:
+def output_stem(case_name: str, extra_name: str, role: str, row: int | None = None) -> str:
     base = sanitize_filename(f"{case_name}{extra_name}" if extra_name else case_name)
-    return f"{base}_{role}"
+    stem = f"{base}_{role}"
+    # “线上数据-5.25”在同一个 case name 下有多行不同音频，文件名必须带行号。
+    if case_name == "线上数据-5.25" and row is not None:
+        stem = f"{stem}_row{row}"
+    return stem
 
 
 def filename_from_headers(headers: Message, url: str, default_stem: str, fallback_ext: str) -> str:
@@ -194,8 +213,8 @@ def build_headers(cookie: str | None, user_agent: str) -> dict[str, str]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Download A/B-named dry/accompaniment audio from Feishu sheet export.")
-    parser.add_argument("sheet_file", type=Path, help="Exported .xlsx/.csv from Feishu.")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("sheet_file", type=Path, help="飞书导出的 .xlsx/.csv。")
     parser.add_argument("--sheet-name", default=DEFAULT_SHEET_NAME)
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--start-row", type=int, default=2)
@@ -214,6 +233,7 @@ def main() -> None:
 
     headers = build_headers(args.cookie, args.user_agent)
     records: list[DownloadRecord] = []
+    sheet_records: list[SheetRecord] = []
 
     for row_num, values, links in rows:
         if row_num < args.start_row:
@@ -222,13 +242,30 @@ def main() -> None:
         if not case_name:
             continue
         extra_name = col_value(values, NAME_COL)
+        original_urls = col_urls(values, links, ORIGINAL_COL)
+        reference_vocal_urls = col_urls(values, links, REFERENCE_VOCAL_COL)
+        accompaniment_urls = col_urls(values, links, ACCOMP_COL)
+        dry_urls = col_urls(values, links, DRY_COL)
+        # 保存每行的 D/G/H/AA 列 URL，后续批处理可以准确带上参考曲。
+        sheet_records.append(SheetRecord(
+            row=row_num,
+            case_name=case_name,
+            extra_name=extra_name,
+            original_urls=original_urls,
+            reference_vocal_urls=reference_vocal_urls,
+            accompaniment_urls=accompaniment_urls,
+            dry_urls=dry_urls,
+        ))
         jobs = [
-            ("干声", dry_dir, col_urls(values, links, DRY_COL)),
-            ("伴奏", accomp_dir, col_urls(values, links, ACCOMP_COL)),
+            ("原曲", args.out_dir / "原曲", original_urls),
+            ("原曲人声", args.out_dir / "原曲人声", reference_vocal_urls),
+            ("干声", dry_dir, dry_urls),
+            ("伴奏", accomp_dir, accompaniment_urls),
         ]
         for role, role_dir, urls in jobs:
+            role_dir.mkdir(parents=True, exist_ok=True)
             for url_index, url in enumerate(urls, start=1):
-                stem = output_stem(case_name, extra_name, role)
+                stem = output_stem(case_name, extra_name, role, row=row_num)
                 if len(urls) > 1:
                     stem = f"{stem}_{url_index:02d}"
                 output_path = role_dir / f"{stem}.wav"
@@ -248,9 +285,21 @@ def main() -> None:
         json.dumps([asdict(record) for record in records], ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    # 批处理脚本读取这个聚合文件来决定每行输入和参考素材。
+    sheet_records_path = args.out_dir / "sheet_records.json"
+    sheet_records_path.write_text(
+        json.dumps({"records": [asdict(record) for record in sheet_records]}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     ok_count = sum(1 for record in records if record.status == "ok")
     failed_count = sum(1 for record in records if record.status == "failed")
-    print(json.dumps({"manifest": str(manifest), "records": len(records), "ok": ok_count, "failed": failed_count}, ensure_ascii=False, indent=2))
+    print(json.dumps({
+        "manifest": str(manifest),
+        "sheet_records": str(sheet_records_path),
+        "records": len(records),
+        "ok": ok_count,
+        "failed": failed_count,
+    }, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

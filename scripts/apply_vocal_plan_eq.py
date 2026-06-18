@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply residual vocal EQ and reference vocal source EQ in one FFmpeg pass."""
+"""在一次 FFmpeg pass 里应用 residual EQ、source_cleanup EQ 和 HF guard。"""
 
 from __future__ import annotations
 
@@ -17,8 +17,8 @@ def load_json(path: Path) -> Any:
 
 
 def eq_filter(action: dict[str, Any]) -> str | None:
-    # A lowpass action carries no gain; it removes content above freq_hz
-    # (used by the vocal HF guard to strip resampling grain above the nyquist wall).
+    # 低通动作没有增益，只负责移除指定频率以上的内容；
+    # 人声高频保护用它削掉 Nyquist 墙以上的重采样颗粒。
     if action.get("type") == "lowpass":
         try:
             freq = float(action["freq_hz"])
@@ -51,7 +51,9 @@ def main() -> None:
     residual = plan.get("residual_vocal_eq", {})
     residual_actions = residual.get("actions", []) if residual.get("enabled") else []
 
-    overrides = (plan.get("reference") or {}).get("overrides") or {}
+    source_cleanup = plan.get("source_cleanup") or {}
+    # 优先读取新的自驱动清理块；reference fallback 只用于兼容更早保存的旧 plan。
+    overrides = source_cleanup or ((plan.get("reference") or {}).get("overrides") or {})
     source_eq = overrides.get("source_eq") or {}
     vocal_eq = source_eq.get("vocal_eq") or {}
     source_actions = vocal_eq.get("actions", []) if vocal_eq.get("enabled") else []
@@ -59,7 +61,7 @@ def main() -> None:
     hf_guard = overrides.get("vocal_hf_guard") or {}
     hf_actions = hf_guard.get("actions", []) if hf_guard.get("enabled") else []
 
-    # HF guard last: tame resonances / strip grain after corrective EQ has run.
+    # 高频保护放最后：先做问题频段修正，再削共振和高频颗粒。
     ordered_actions = [*residual_actions, *source_actions, *hf_actions]
     filters = [value for action in ordered_actions if (value := eq_filter(action))]
 

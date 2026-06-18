@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply local vocal/accompaniment balance protection against reference windows."""
+"""按参考窗口做局部人声/伴奏比例保护。"""
 
 from __future__ import annotations
 
@@ -12,6 +12,11 @@ import numpy as np
 import soundfile as sf
 
 from analyze_reference import load_audio_as_float, to_mono
+from compute_render_bus_balance import (
+    gated_vocal_balance_compensation_db,
+    reference_gap_value,
+    reference_levels,
+)
 
 
 def db(value: float) -> float:
@@ -38,6 +43,7 @@ def resample_ref(path: Path, target_sr: int) -> np.ndarray:
 
 
 def source_paths(plan: dict[str, Any]) -> tuple[Path | None, Path | None]:
+    """从 plan 里取参考人声/参考伴奏路径；缺失时本脚本直接透传。"""
     sources = (((plan.get("reference") or {}).get("features") or {}).get("sources") or {})
     vocal = sources.get("vocal")
     accomp = sources.get("accomp") or sources.get("provided_accomp")
@@ -72,6 +78,7 @@ def process(
     vocal_share: float,
     max_vocal_gain_db: float,
     max_accomp_atten_db: float,
+    target_gap_lift_db: float,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
     n = min(vocal.shape[0], accomp.shape[0])
     vocal = vocal[:n] * float(lin(vocal_gain_db))
@@ -106,6 +113,7 @@ def process(
     accomp_gain_frames: list[float] = []
     events: list[dict[str, float]] = []
     for start in starts:
+        # 只在人声活跃且参考窗口本身也可信时纠偏，避免静音/间奏被硬拉。
         end = min(start + frame, n)
         ref_end = min(start + frame, ref_n)
         center = (start + (end - start) * 0.5) / sr
@@ -121,7 +129,9 @@ def process(
             accomp_gain_frames.append(0.0)
             continue
         render_gap = render_v_db - rms_db(render_accomp_mono[start:end])
-        ref_gap = ref_v_db - rms_db(ref_accomp_mono[start:ref_end])
+        # 对不健康干声，局部参考窗口也同样向人声侧补偿一点；
+        # 只改人声/伴奏比例，不改变任何频段音色。
+        ref_gap = ref_v_db - rms_db(ref_accomp_mono[start:ref_end]) + target_gap_lift_db
         if ref_gap < min_reference_gap_db:
             vocal_gain_frames.append(0.0)
             accomp_gain_frames.append(0.0)
@@ -164,6 +174,7 @@ def process(
         "min_reference_gap_db": min_reference_gap_db,
         "base_vocal_gain_db": vocal_gain_db,
         "base_accomp_gain_db": accomp_gain_db,
+        "target_gap_lift_db": round(target_gap_lift_db, 3),
         "peak_extra_vocal_gain_db": round(float(np.max(vocal_curve)) if vocal_curve.size else 0.0, 3),
         "peak_extra_accomp_gain_db": round(float(np.min(accomp_curve)) if accomp_curve.size else 0.0, 3),
         "events": events[:80],
@@ -196,7 +207,26 @@ def main() -> None:
     plan = load_json(args.plan)
     ref_vocal_path, ref_accomp_path = source_paths(plan)
     if ref_vocal_path is None or ref_accomp_path is None or not ref_vocal_path.exists() or not ref_accomp_path.exists():
-        raise SystemExit("reference vocal/accomp paths missing from mix plan")
+        # 没有参考曲时，section guard 不做局部参考窗口追踪，直接透传。
+        # 全局比例仍由 compute_render_bus_balance 的通用目标处理。
+        vocal, sr = sf.read(args.vocal_in, always_2d=True, dtype="float64")
+        accomp, sr2 = sf.read(args.accomp_in, always_2d=True, dtype="float64")
+        if sr2 != sr:
+            raise SystemExit(f"sample-rate mismatch: vocal={sr}, accomp={sr2}")
+        args.vocal_out.parent.mkdir(parents=True, exist_ok=True)
+        sf.write(args.vocal_out, vocal, sr, subtype="PCM_16")
+        sf.write(args.accomp_out, accomp, sr, subtype="PCM_16")
+        report = {
+            "enabled": False,
+            "triggered": False,
+            "reason": "missing reference vocal/accomp paths; copied inputs unchanged",
+            "policy": "no-reference no-op; global generic bus balance handles coarse ratio",
+        }
+        if args.metadata:
+            args.metadata.parent.mkdir(parents=True, exist_ok=True)
+            args.metadata.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print("[section-balance-guard] skipped: no reference vocal/accomp")
+        return
 
     vocal, sr = sf.read(args.vocal_in, always_2d=True, dtype="float64")
     accomp, sr2 = sf.read(args.accomp_in, always_2d=True, dtype="float64")
@@ -204,6 +234,9 @@ def main() -> None:
         raise SystemExit(f"sample-rate mismatch: vocal={sr}, accomp={sr2}")
     ref_vocal = resample_ref(ref_vocal_path, int(sr))
     ref_accomp = resample_ref(ref_accomp_path, int(sr))
+    # 和全局 bus balance 共用同一套补偿 gating，避免局部 guard 对健康干声额外前推。
+    ref_gap = reference_gap_value(reference_levels(plan))
+    target_gap_lift_db, lift_reasons = gated_vocal_balance_compensation_db(plan, ref_gap)
     out_vocal, out_accomp, report = process(
         vocal,
         accomp,
@@ -220,7 +253,9 @@ def main() -> None:
         vocal_share=args.vocal_share,
         max_vocal_gain_db=args.max_vocal_gain_db,
         max_accomp_atten_db=args.max_accomp_atten_db,
+        target_gap_lift_db=target_gap_lift_db,
     )
+    report["target_gap_lift_reasons"] = lift_reasons
     args.vocal_out.parent.mkdir(parents=True, exist_ok=True)
     sf.write(args.vocal_out, out_vocal, sr, subtype="PCM_16")
     sf.write(args.accomp_out, out_accomp, sr, subtype="PCM_16")
