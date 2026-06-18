@@ -651,6 +651,55 @@ plus focus windows such as `168_182s` when `--detailed-loudness-report` is enabl
 `target_error_db`, and `loudness_under_compensated` so failed loudness recovery is
 visible instead of silently producing a quiet render.
 
+### Temporary loudness strategy audit
+
+`<output>.loudness.json` currently also writes two diagnostic-only timing/audit fields:
+
+| Field | Purpose |
+|---|---|
+| `timings_sec` | Per-step wall-clock timing inside `master_loudness_finalize.py`; used to identify slow `loudnorm`, limiter, and de-click stages. |
+| `loudness_strategy_audit` | Explains why the finalizer input is low, whether each `loudnorm` measurement is used for a decision, controlled-makeup LUFS/TP margins, and whether the middle makeup `loudnorm` would be safe to skip. |
+
+These fields do **not** control audio processing and must remain diagnostic only.
+After the loudness strategy review is complete, the audit can be removed as one block:
+
+- remove `load_mix_plan_audit_context`
+- remove `build_loudness_strategy_audit`
+- remove the `loudness_strategy_audit` entry from finalizer metadata
+- optionally remove `timings_sec` if no longer profiling finalizer cost
+
+Current skip policy candidate recorded under
+`loudness_strategy_audit.safe_skip_policy_candidate`: skip the middle controlled-makeup
+`loudnorm` only when controlled makeup is small (`<= 0.75 dB`), the largest makeup
+step is also `<= 0.75 dB`, and post-L2 true peak has at least `1 dB` margin to the
+target TP. Otherwise the middle measurement remains decision-relevant.
+
+Recent timing work also changed the global de-click implementation to vectorize only
+the candidate scan while preserving event grouping, interpolation, and output samples.
+Validation on the current `炳超中文歌曲-黄昏` probe showed byte-identical WAV output
+(`max_abs_sample_diff = 0`) while reducing finalizer wall time from about 63.5 s to
+about 47.3 s for the standalone finalizer probe.
+
+### Proposed two-stage loudness target
+
+For very quiet pre-master inputs, the finalizer should not blindly chase the target
+with unlimited corrective pressure. A more maintainable strategy is:
+
+1. **Stage A: safe recovery.** Apply safe master-bus pregain up to true-peak headroom
+   and max-gain limits, then run L2 / soft true-peak protection as today.
+2. **Stage B: bounded recovery or upstream flag.** If the render is still far below
+   target after safe recovery, apply only bounded controlled makeup. When the required
+   recovery is excessive, mark the render as upstream-too-quiet instead of treating
+   finalizer gain as the only fix.
+
+This keeps the finalizer master-bus-only, but makes it explicit when the real problem
+is upstream gain staging. The current `炳超中文歌曲-黄昏` probe is one such case:
+the master bus entering the finalizer is around `-25.8 LUFS` for a `-12.5 LUFS`
+target, requiring roughly `+13 dB` of recovery. Stage reports indicate the low input
+comes mainly from a quiet `stereo_sum`, heavy `master_tilt_eq` low-band cuts, and the
+following master bus chain attenuation. Future work should turn this proposal into
+metadata and policy before changing audio behavior.
+
 ### Skip final loudness
 
 ```bash
