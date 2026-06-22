@@ -48,6 +48,10 @@ def resolve_path(path: Path) -> Path:
     return path.expanduser().resolve(strict=False)
 
 
+def optional_resolved_path(path: Path | None) -> Path | None:
+    return resolve_path(path) if path is not None else None
+
+
 def default_renderer() -> str:
     """Windows/MSYS2 环境优先走仓库内 bash；其他平台使用系统 bash。"""
     local_bash = ROOT / ".tools" / "msys64" / "usr" / "bin" / "bash.exe"
@@ -409,9 +413,9 @@ def main() -> None:
         ),
     }
     if not args.no_reference:
-        ref_full_mix = resolve_path(args.reference_audio) if args.reference_audio else None
-        ref_vocal = resolve_path(args.reference_vocal) if args.reference_vocal else None
-        ref_accomp = resolve_path(args.reference_accomp) if args.reference_accomp else None
+        ref_full_mix = optional_resolved_path(args.reference_audio)
+        ref_vocal = optional_resolved_path(args.reference_vocal)
+        ref_accomp = optional_resolved_path(args.reference_accomp)
         if (ref_full_mix is None or ref_vocal is None or ref_accomp is None) and args.reference_root:
             # 只有显式传 --reference-root 时才按本地歌名自动找参考。
             # 线上服务应由服务端直接传 reference-audio/vocal/accomp，避免扫到本机旧文件。

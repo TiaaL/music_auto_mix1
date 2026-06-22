@@ -329,6 +329,59 @@ def dynamics(data: np.ndarray) -> dict[str, float]:
     return {"crest_db": round(crest, 3), "dr_db": round(dr, 3)}
 
 
+def vocal_dynamic_profile(
+    data: np.ndarray,
+    sr: int,
+    intervals: list[tuple[float, float]],
+    frame_sec: float = 0.050,
+    hop_sec: float = 0.025,
+) -> dict[str, float | int]:
+    """Short-frame vocal dynamics inside active singing regions."""
+    active = collect_interval_audio(data, sr, intervals, max_seconds=180.0)
+    x = to_mono(active)
+    if x.size == 0:
+        return {
+            "active_frame_count": 0,
+            "active_rms_db": -120.0,
+            "peak_db": -120.0,
+            "crest_db": 0.0,
+            "frame_p10_db": -120.0,
+            "frame_p50_db": -120.0,
+            "frame_p90_db": -120.0,
+            "frame_range_p90_p10_db": 0.0,
+            "micro_range_p95_p50_db": 0.0,
+            "micro_range_p99_p50_db": 0.0,
+        }
+    rms = float(np.sqrt(np.mean(np.square(x))))
+    peak = float(np.max(np.abs(x)))
+    frame = max(128, int(frame_sec * sr))
+    hop = max(64, int(hop_sec * sr))
+    if x.size < frame:
+        frame_db = np.array([db(rms)])
+    else:
+        starts = np.arange(0, x.size - frame + 1, hop)
+        frame_db = np.array([
+            db(float(np.sqrt(np.mean(np.square(x[start : start + frame])))))
+            for start in starts
+        ])
+    floor = max(-60.0, float(np.percentile(frame_db, 95)) - 34.0)
+    active_frames = frame_db[frame_db >= floor]
+    if active_frames.size == 0:
+        active_frames = frame_db
+    return {
+        "active_frame_count": int(active_frames.size),
+        "active_rms_db": round(db(rms), 3),
+        "peak_db": round(db(peak), 3),
+        "crest_db": round(db(peak) - db(rms), 3),
+        "frame_p10_db": round(float(np.percentile(active_frames, 10)), 3),
+        "frame_p50_db": round(float(np.percentile(active_frames, 50)), 3),
+        "frame_p90_db": round(float(np.percentile(active_frames, 90)), 3),
+        "frame_range_p90_p10_db": round(float(np.percentile(active_frames, 90) - np.percentile(active_frames, 10)), 3),
+        "micro_range_p95_p50_db": round(float(np.percentile(active_frames, 95) - np.percentile(active_frames, 50)), 3),
+        "micro_range_p99_p50_db": round(float(np.percentile(active_frames, 99) - np.percentile(active_frames, 50)), 3),
+    }
+
+
 def reverb_proxy(data: np.ndarray, sr: int) -> dict[str, float]:
     """Crude wet/dry proxy: energy 150-400 ms after each transient onset vs onset peak."""
     x = to_mono(data)
@@ -644,6 +697,7 @@ def analyse(full_mix: Path, vocal: Path, accomp: Path) -> dict[str, Any]:
         "tonal_balance": tonal_balance(full_audio, full_sr),
         "vocal_tonal_balance": tonal_balance_for_intervals(vocal_audio, full_sr, active_regions),
         "accomp_tonal_balance": tonal_balance_for_intervals(accomp_audio, full_sr, active_regions),
+        "vocal_dynamics": vocal_dynamic_profile(vocal_audio, full_sr, active_regions),
         "active_band_levels": {
             "vocal": band_levels_for_intervals(vocal_audio, full_sr, active_regions),
             "accomp": band_levels_for_intervals(accomp_audio, full_sr, active_regions),
@@ -686,6 +740,7 @@ def analyse_input_pair(vocal: Path, accomp: Path) -> dict[str, Any]:
         "tonal_balance": tonal_balance(summed, sr),
         "vocal_tonal_balance": tonal_balance_for_intervals(vocal_audio, sr, active_regions),
         "accomp_tonal_balance": tonal_balance_for_intervals(accomp_audio, sr, active_regions),
+        "vocal_dynamics": vocal_dynamic_profile(vocal_audio, sr, active_regions),
         "active_band_levels": {
             "vocal": band_levels_for_intervals(vocal_audio, sr, active_regions),
             "accomp": band_levels_for_intervals(accomp_audio, sr, active_regions),

@@ -461,6 +461,8 @@ BUS_BALANCE_MAX_MOVE_DB = 6.0
 BUS_BALANCE_DEAD_BAND_DB = 0.6
 FINAL_LOUDNESS_MIN_LUFS = -13.0
 FINAL_LOUDNESS_MAX_LUFS = -11.0
+VOCAL_DYNAMIC_RANGE_WEAK_DB = 2.0
+VOCAL_DYNAMIC_MICRO_WEAK_DB = 1.0
 
 SOURCE_VOCAL_EQ_BANDS = {
     "low":    {"freq_hz": 130.0,   "q": 0.8, "actions": ("cut",)},
@@ -1201,11 +1203,13 @@ def build_reference_overrides(
     template_id: str,
 ) -> dict[str, Any]:
     """把参考/输入特征转成渲染器 overrides。"""
+    vocal_dynamics = build_vocal_dynamic_strategy(ref_features, input_features)
     overrides: dict[str, Any] = {
         "loudness_target": ref_features.get("loudness", {}),
         "reverb_observation": ref_features.get("reverb_proxy", {}),
         "spatial_fx": build_spatial_fx_plan(ref_features, analysis),
         "reference_dynamics": ref_features.get("dynamics", {}),
+        "vocal_dynamics": vocal_dynamics,
     }
 
     # 参考曲仍可用于响度、空间等非音色决策，但不能把成品拉向原曲 EQ 曲线。
@@ -1248,6 +1252,49 @@ def build_reference_overrides(
     overrides["dry_vocal_strategy"] = build_dry_vocal_strategy(analysis, input_features, template_id)
 
     return overrides
+
+
+def build_vocal_dynamic_strategy(
+    ref_features: dict[str, Any] | None,
+    input_features: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Compare submitted vocal dynamics with the original vocal stem."""
+    ref_dyn = (ref_features or {}).get("vocal_dynamics") or {}
+    input_dyn = (input_features or {}).get("vocal_dynamics") or {}
+    if not ref_dyn or not input_dyn:
+        return {
+            "enabled": False,
+            "reason": "missing reference/input vocal dynamic profile",
+            "policy": "diagnostic only",
+        }
+
+    range_gap = float(ref_dyn.get("frame_range_p90_p10_db") or 0.0) - float(
+        input_dyn.get("frame_range_p90_p10_db") or 0.0
+    )
+    micro_gap = float(ref_dyn.get("micro_range_p95_p50_db") or 0.0) - float(
+        input_dyn.get("micro_range_p95_p50_db") or 0.0
+    )
+    crest_gap = float(ref_dyn.get("crest_db") or 0.0) - float(input_dyn.get("crest_db") or 0.0)
+    weak = range_gap >= VOCAL_DYNAMIC_RANGE_WEAK_DB or micro_gap >= VOCAL_DYNAMIC_MICRO_WEAK_DB
+    return {
+        "enabled": bool(weak),
+        "mode": "diagnostic_vocal_dynamic_flatness",
+        "reference": ref_dyn,
+        "input": input_dyn,
+        "gap": {
+            "frame_range_p90_p10_db": round(range_gap, 3),
+            "micro_range_p95_p50_db": round(micro_gap, 3),
+            "crest_db": round(crest_gap, 3),
+        },
+        "thresholds": {
+            "frame_range_weak_db": VOCAL_DYNAMIC_RANGE_WEAK_DB,
+            "micro_range_weak_db": VOCAL_DYNAMIC_MICRO_WEAK_DB,
+        },
+        "policy": (
+            "诊断人声是否比原曲 stem 更平；当前只写入 plan/report，"
+            "不做上行扩展或瞬态增强，避免把瑕疵源推炸。"
+        ),
+    }
 
 
 def build_source_cleanup_overrides(
