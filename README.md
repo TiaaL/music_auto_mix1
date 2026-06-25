@@ -31,6 +31,12 @@ Faust DSP approximations of classic Waves/FabFilter plugins, wired into a Python
 
 没有参考文件也可以跑。此时系统会使用通用人声清理、通用 active 人声/伴奏比例目标和默认响度策略，不会按某首参考歌塑形。
 
+参考目标边界：
+
+- **人声音色**：只和 `--timbre-reference-vocal` 或 `音色筛选片段/` 里的筛选片段保持一致，用于干声/音色 EQ。
+- **人声效果**：纵深、混响、动态、宽度、效果高频都和原曲人声 stem 对比，用最终人声贡献轨生成的 `<output>.vocal_effect_audit.json` 排查。
+- **总线比例**：人声/伴奏大小只贴原曲 active vocal/accomp 比例或通用兜底，不用音色筛选片段决定。
+
 The system has two entry points:
 
 | Entry point | What it does |
@@ -76,6 +82,12 @@ Known issues / next checks:
 
 本次更新主要处理四类问题：干声毛刺/抖动、人声没劲、音色相似度不明显、以及人声整体被推得比原曲大。
 
+最重要的目标拆分：
+
+- **音色相似度** 只追 `音色筛选片段`，也就是筛出来的人声片段；它只进入干声/音色 EQ 和细分频谱包络校正。
+- **动态、纵深、混响、宽度、效果高频** 都追 `原曲人声 stem`，也就是最终 vocal_group 应该像原曲里的人声效果，而不是像筛选片段的空间或动态。
+- **响度和人声/伴奏比例** 不归音色筛选片段管，避免为了“像”而把所有歌的人声整体推大。
+
 核心约束：
 
 1. **总线比例不再用“弱人声自动前推目标”**  
@@ -88,10 +100,16 @@ Known issues / next checks:
    `apply_accomp_vocal_duck.py` 读取 `dry_vocal_strategy.duck_profile` 后，会按频段再次截顶。弱/闷/缺咬字通过伴奏局部让位解决，不通过把人声 bus 整体推大解决。
 
 4. **“没劲”只做微动态，不改响度**  
-   `apply_vocal_dynamic_lift.py` 只在输入人声短帧动态明显弱于参考 stem 时启用，做小幅动态对比增强，并在脚本侧加硬上限，防止异常 plan 把人声推炸。
+   `apply_vocal_dynamic_lift.py` 只在输入人声短帧动态、活动 RMS 或峰值明显弱于参考 stem 时启用，做小幅动态对比增强，并在脚本侧加硬上限，防止异常 plan 把人声推炸。
 
 5. **音色相似度从 8-band 扩展到细分频谱包络**  
    `analyze_reference.py` 新增 `vocal_spectral_envelope`，只在人声活动区提取、并归一到中频主体，避免响度差被当成音色差。`plan_mix_template.py` 的 timbre EQ 先用 8-band 判断大方向，再用细分包络补足更可听的差异；`apply_timbre_chain_guard.py` 在模板链后和 vocal group 后也会用细分包络轻校，避免模板链把相似度洗掉。
+
+6. **空间和段落比例继续保守化**  
+   居中型参考人声的 reverb wet/time/high return 会被更严格限制，避免“比原曲湿、高频多”。局部 section balance 遇到副歌埋声时优先压伴奏、少推人声；自动音量前处理的人声段落负增益和相邻跳变也收小，减少忽大忽小。
+
+7. **最终人声效果要和原曲人声 stem 对比**  
+   `audit_vocal_effect_match.py` 会把最终入 stereo sum 的人声贡献轨和原曲人声 stem 做同一活动区对比，覆盖空间/纵深、混响尾巴、delay 线索、短帧动态、效果高频和细分包络。它的职责不是裁判音色筛选片段，而是定位最终人声是否比原曲更散、更湿、更平或更亮。
 
 排查入口：
 
@@ -99,6 +117,7 @@ Known issues / next checks:
 - `<output>.accomp_duck.json`：查看 `dry_vocal_strategy`、`profile` 和 `profile_caps_db`，确认弱人声处理是否由特征触发且未超过上限。
 - `<output>.vocal_dynamic_lift.json`：查看微动态触发条件、实际增益范围和 `hard_caps`。
 - `<output>.timbre_chain_guard.json` / `<output>.post_group_timbre_guard.json`：查看 8-band 与细分包络的音色回正动作。
+- `<output>.vocal_effect_audit.json`：查看最终人声贡献轨相对原曲人声 stem 的纵深、动态、混响、宽度和效果高频误差。
 
 ---
 

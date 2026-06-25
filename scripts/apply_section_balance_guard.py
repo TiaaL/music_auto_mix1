@@ -197,11 +197,13 @@ def main() -> None:
     parser.add_argument("--frame-sec", type=float, default=4.0)
     parser.add_argument("--hop-sec", type=float, default=1.0)
     parser.add_argument("--deadband-db", type=float, default=1.15)
-    parser.add_argument("--max-total-correction-db", type=float, default=3.2)
+    # 局部副歌/强伴奏窗口只按参考 active 比例纠偏；默认多压伴奏、少推人声。
+    # 这样能处理“后半段伴奏大声”，同时避免重新引入全局人声前推。
+    parser.add_argument("--max-total-correction-db", type=float, default=3.0)
     parser.add_argument("--min-reference-gap-db", type=float, default=-22.0)
-    parser.add_argument("--vocal-share", type=float, default=0.85)
-    parser.add_argument("--max-vocal-gain-db", type=float, default=2.45)
-    parser.add_argument("--max-accomp-atten-db", type=float, default=0.50)
+    parser.add_argument("--vocal-share", type=float, default=0.62)
+    parser.add_argument("--max-vocal-gain-db", type=float, default=1.65)
+    parser.add_argument("--max-accomp-atten-db", type=float, default=1.15)
     args = parser.parse_args()
 
     plan = load_json(args.plan)

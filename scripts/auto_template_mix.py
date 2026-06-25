@@ -277,6 +277,40 @@ def run_vocal_group_spatial_audit(
     }
 
 
+def run_vocal_effect_audit(
+    reference_vocal: Path,
+    vocal_group: Path,
+    output_json: Path,
+    reference_audio: Path | None = None,
+) -> dict:
+    # 音色目标和效果目标分开：这里仅检查最终人声贡献轨是否贴近原曲人声的纵深/动态/湿度。
+    cmd = [
+        sys.executable,
+        str(ROOT / "scripts" / "audit_vocal_effect_match.py"),
+        "--reference-vocal",
+        str(reference_vocal),
+        "--candidate-vocal-group",
+        str(vocal_group),
+        "--output-json",
+        str(output_json),
+    ]
+    if reference_audio is not None:
+        cmd += ["--reference-audio", str(reference_audio)]
+    proc = subprocess.run(cmd, text=True, encoding="utf-8", errors="replace", capture_output=True, check=False, cwd=ROOT)
+    report = None
+    if output_json.exists():
+        report = json.loads(output_json.read_text(encoding="utf-8-sig"))
+    return {
+        "ran": True,
+        "command": cmd,
+        "returncode": proc.returncode,
+        "stdout": proc.stdout,
+        "stderr": proc.stderr,
+        "output_json": str(output_json),
+        "report": report,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Analyze, select template, render mix, and write reports.")
     parser.add_argument("vocal_wav", type=Path)
@@ -330,12 +364,12 @@ def main() -> None:
         "--spatial-audit",
         choices=("auto", "off"),
         default="auto",
-        help="Export and audit the post-FX vocal_group bus against the reference vocal stem when references are available.",
+        help="Export and audit the final vocal contribution effects against the reference vocal stem when references are available.",
     )
     parser.add_argument(
         "--export-vocal-group",
         action="store_true",
-        help="Keep a copy of the post-FX vocal_group bus. Implied by --spatial-audit auto when reference vocal is available.",
+        help="Keep a copy of the final vocal contribution track. Implied by --spatial-audit auto when reference vocal is available.",
     )
     parser.add_argument(
         "--vocal-group-output",
@@ -514,6 +548,8 @@ def main() -> None:
         # 音色参考可以独立于原曲参考使用：缺 D/G/H 参考时，仍可用 Z 列片段优化干声音色。
         timbre_ref_vocal = resolve_timbre_reference_file(vocal_wav, downloads_root=timbre_root)
     if timbre_ref_vocal is not None and timbre_ref_vocal.exists():
+        # 重要边界：音色筛选片段只用于人声音色相似度，不参与纵深/动态/混响/响度判断。
+        # 这些效果目标必须回到原曲人声 stem，避免筛选片段把整首歌的混音空间带偏。
         print(f"[timbre-ref] vocal: {timbre_ref_vocal}")
         timbre_features = cached_feature(
             "timbre_reference",
@@ -544,7 +580,7 @@ def main() -> None:
         args.export_vocal_group
         or (args.spatial_audit == "auto" and ref_vocal is not None and template_id != "template_d")
     )
-    # 空间审计需要 post-FX vocal_group；只有有参考人声且不是 legacy 模板时才默认导出。
+    # 效果审计需要最终人声贡献轨；只有有参考人声且不是 legacy 模板时才默认导出。
     vocal_group_output = (
         resolve_path(args.vocal_group_output)
         if args.vocal_group_output
@@ -589,6 +625,22 @@ def main() -> None:
             spatial_audit_path,
             reference_audio=ref_full_mix,
         )
+    vocal_effect_audit = None
+    if (
+        args.spatial_audit == "auto"
+        and ref_vocal is not None
+        and vocal_group_output is not None
+        and render.get("ran")
+        and render.get("returncode") == 0
+        and vocal_group_output.exists()
+    ):
+        vocal_effect_audit_path = output_wav.with_suffix(".vocal_effect_audit.json")
+        vocal_effect_audit = run_vocal_effect_audit(
+            ref_vocal,
+            vocal_group_output,
+            vocal_effect_audit_path,
+            reference_audio=ref_full_mix,
+        )
     loudness_path = output_wav.with_suffix(".loudness.json")
     loudness = json.loads(loudness_path.read_text(encoding="utf-8-sig")) if loudness_path.exists() else None
     vocal_dynamic_path = output_wav.with_suffix(".vocal_dynamic_lift.json")
@@ -627,8 +679,8 @@ def main() -> None:
             "used": timbre_features is not None,
             "vocal": str(timbre_ref_vocal) if timbre_ref_vocal else None,
             "policy": (
-                "音色筛选片段只提供音色相似度方向；"
-                "响度、总线比例和处理边界仍由原曲参考/干声瑕疵共同约束。"
+                "音色筛选片段只提供人声音色相似度方向；"
+                "动态、纵深、混响、宽度、效果高频、总线比例和处理边界仍由原曲参考/干声瑕疵共同约束。"
             ),
         },
         "reference_used": (plan.get("reference") or {}).get("features", {}).get("sources") if plan.get("reference") else None,
@@ -643,6 +695,7 @@ def main() -> None:
         "spatial_fx": "off" if args.no_spatial_fx else args.spatial_fx,
         "direct_vocal_side_layer": args.direct_vocal_side_layer,
         "spatial_audit": spatial_audit,
+        "vocal_effect_audit": vocal_effect_audit,
         "vocal_group_output": str(vocal_group_output) if vocal_group_output else None,
         "vocal_dynamic_lift": vocal_dynamic_lift,
         "vocal_event_guard": vocal_event_guard,

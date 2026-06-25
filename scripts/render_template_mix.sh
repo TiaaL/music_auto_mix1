@@ -15,7 +15,7 @@
 #   2. 按模板执行人声 insert 链，再执行 plan 里的 residual/source/HF 修正。
 #   3. 伴奏执行模板 EQ、source cleanup 和人声触发的多频段避让。
 #   4. 做局部 section balance guard、stereo sum、master tilt、bus 插件和最终响度。
-#   5. 可选导出 vocal_group / stage_report，方便和参考曲做空间感审计。
+#   5. 可选导出最终人声贡献轨 / stage_report，方便和原曲人声做效果审计。
 # ================================================================
 
 set -euo pipefail
@@ -531,11 +531,6 @@ if [[ -n "$MIX_PLAN" ]]; then
         --output "vocal_group=$VOCAL_GROUP_TIMBRE"
     VOCAL_GROUP="$VOCAL_GROUP_TIMBRE"
 fi
-if [[ -n "$EXPORT_VOCAL_GROUP" ]]; then
-    cp "$VOCAL_GROUP" "$EXPORT_VOCAL_GROUP"
-    echo "[audit] Exported post-FX vocal group: $EXPORT_VOCAL_GROUP"
-fi
-
 echo "[step 2] Accompaniment insert chain: $TEMPLATE_ID"
 ACCOMP_CHAIN_IN="$ACCOMP_SOURCE"
 STAGE_START="$(now_ts)"
@@ -637,6 +632,17 @@ if [[ -n "$MIX_PLAN" ]]; then
         --input "accomp=$ACCOMP_BUS" \
         --output "vocal=$VOCAL_BALANCED" \
         --output "accomp=$ACCOMP_BALANCED"
+fi
+
+if [[ -n "$EXPORT_VOCAL_GROUP" ]]; then
+    mkdir -p "$(dirname "$EXPORT_VOCAL_GROUP")"
+    # 导出审计用的人声轨必须是最终入 stereo sum 的人声贡献：
+    # 包含 vocal_group FX、post-group 音色保护、bus gain 和 section guard 后的动态变化。
+    ffmpeg -y -hide_banner \
+        -i "$VOCAL_SUM_INPUT" \
+        -filter:a "volume=${VOCAL_SUM_GAIN_DB}dB" \
+        "$EXPORT_VOCAL_GROUP" >/dev/null 2>&1
+    echo "[audit] Exported final vocal contribution: $EXPORT_VOCAL_GROUP"
 fi
 
 echo "[step 3] Stereo Out summing"

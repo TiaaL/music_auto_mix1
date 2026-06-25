@@ -529,8 +529,8 @@ VOCAL_ABS_EQ_MAX_BOOST_DB = {
 TIMBRE_EQ_DEAD_BAND_DB = 1.4
 TIMBRE_EQ_MAX_ACTIONS = 4
 TIMBRE_EQ_TOTAL_MAX_ACTIONS = 6
-TIMBRE_EQ_CUT_FRACTION = 0.35
-TIMBRE_EQ_BOOST_FRACTION = 0.30
+TIMBRE_EQ_CUT_FRACTION = 0.45
+TIMBRE_EQ_BOOST_FRACTION = 0.40
 TIMBRE_EQ_MAX_CUT_DB = {
     "low": 2.0,
     "lowmid": 1.8,
@@ -568,7 +568,7 @@ TIMBRE_BOOST_INPUT_LEVEL_LIMIT_DB = {
     "sib": -15.0,
 }
 TIMBRE_ENVELOPE_DEAD_BAND_DB = 1.0
-TIMBRE_ENVELOPE_GAIN_FRACTION = 0.26
+TIMBRE_ENVELOPE_GAIN_FRACTION = 0.34
 TIMBRE_ENVELOPE_MAX_ACTIONS = 3
 TIMBRE_ENVELOPE_MIN_GAIN_DB = 0.18
 TIMBRE_ENVELOPE_MAX_CUT_DB = {
@@ -1769,20 +1769,24 @@ def build_spatial_fx_plan(
     time_target = reverb_time_target(rt60_ms)
     predelay_target = clamp(12.0 + wet_delta_target * 4.0, 8.0, 28.0)
     if center_led_reference:
-        # 居中型参考人声应该保持居中（侧向窄），但仍然可以有深度和混响。
-        # 旧逻辑把 wet 强压低约 2 dB，会把长尾参考的空间削平。
-        # 这里保留参考驱动的深度，只在后面限制 stereo width；predelay 稍抬，
-        # 让干声站在保留的尾音前面。
-        wet_delta = wet_delta * 0.85
+        # 居中型参考人声通常是“有深度但不糊前景”；
+        # tail proxy 容易把原曲尾音/压缩延音估得过湿，所以 wet 增量必须有硬上限。
+        wet_delta = min(wet_delta * 0.48, 1.35)
         predelay_target = clamp(predelay_target + 4.0, 16.0, 32.0)
-        reasons.append("center_led_reference_keep_depth_narrow_side")
+        reasons.append("center_led_reference_keep_depth_dry_front")
     if preserve_missing_presence:
         # presence 极低且 body 明显偏重时，宽空间和长尾会进一步糊掉可懂度。
         # 仍参考原曲居中/深度倾向，但把 wet 和时间收窄，让人声站稳。
-        wet_delta = wet_delta * 0.45
+        wet_delta = min(wet_delta * 0.45, 0.75)
         time_target = min(time_target, 1.9)
         predelay_target = clamp(predelay_target + 2.0, 18.0, 32.0)
         reasons.append("missing_presence_keep_vocal_narrow_and_dry")
+    reverb_eq_hi_gain = baseline["rverb_eq_hi_gain_db"] + reverb_conf * 0.45
+    if center_led_reference:
+        # 混响 return 不再随参考置信度自动变亮；高频空气感交给干声音色阶段处理。
+        reverb_eq_hi_gain = min(reverb_eq_hi_gain, baseline["rverb_eq_hi_gain_db"] - 0.25)
+    if preserve_missing_presence:
+        reverb_eq_hi_gain = min(reverb_eq_hi_gain, baseline["rverb_eq_hi_gain_db"] - 0.55)
 
     rverb = {
         "send_pre_db": round(clamp(
@@ -1790,7 +1794,7 @@ def build_spatial_fx_plan(
             *SPATIAL_LIMITS["rverb_send_pre_db"],
         ), 3),
         "time_s": round(clamp(
-            baseline["rverb_time_s"] + reverb_conf * (time_target - baseline["rverb_time_s"]),
+            baseline["rverb_time_s"] + reverb_conf * 0.72 * (time_target - baseline["rverb_time_s"]),
             *SPATIAL_LIMITS["rverb_time_s"],
         ), 3),
         "predelay_ms": round(clamp(
@@ -1799,10 +1803,7 @@ def build_spatial_fx_plan(
         ), 3),
         "early_ref_db": round(baseline["rverb_early_ref_db"] - (1.5 if center_led_reference else 0.0), 3),
         "damp": round(baseline["rverb_damp"], 3),
-        "eq_hi_gain_db": round(clamp(
-            baseline["rverb_eq_hi_gain_db"] + reverb_conf * 1.0,
-            *SPATIAL_LIMITS["rverb_eq_hi_gain_db"],
-        ), 3),
+        "eq_hi_gain_db": round(clamp(reverb_eq_hi_gain, *SPATIAL_LIMITS["rverb_eq_hi_gain_db"]), 3),
         "wet_delta_db": round(wet_delta, 3),
         "confidence": round(reverb_conf, 3),
     }
@@ -1965,12 +1966,17 @@ def build_vocal_dynamic_strategy(
     micro_gap = float(ref_dyn.get("micro_range_p95_p50_db") or 0.0) - float(
         input_dyn.get("micro_range_p95_p50_db") or 0.0
     )
+    level_gap = float(ref_dyn.get("active_rms_db") or 0.0) - float(input_dyn.get("active_rms_db") or 0.0)
+    peak_gap = float(ref_dyn.get("peak_db") or 0.0) - float(input_dyn.get("peak_db") or 0.0)
     crest_gap = float(ref_dyn.get("crest_db") or 0.0) - float(input_dyn.get("crest_db") or 0.0)
-    weak = range_gap >= VOCAL_DYNAMIC_RANGE_WEAK_DB or micro_gap >= VOCAL_DYNAMIC_MICRO_WEAK_DB
+    level_weak = level_gap >= 2.5 and peak_gap >= 1.8
+    weak = range_gap >= VOCAL_DYNAMIC_RANGE_WEAK_DB or micro_gap >= VOCAL_DYNAMIC_MICRO_WEAK_DB or level_weak
     severity = max(
         0.0,
         range_gap / max(VOCAL_DYNAMIC_RANGE_WEAK_DB * 2.0, 1e-6),
         micro_gap / max(VOCAL_DYNAMIC_MICRO_WEAK_DB * 2.0, 1e-6),
+        (level_gap - 2.0) / 5.0,
+        (peak_gap - 1.5) / 4.0,
     )
     severity = clamp(severity, 0.0, 1.0)
     max_lift_db = clamp(0.7 + severity * 0.9, 0.0, VOCAL_DYNAMIC_MAX_LIFT_DB) if weak else 0.0
@@ -1984,16 +1990,22 @@ def build_vocal_dynamic_strategy(
         "gap": {
             "frame_range_p90_p10_db": round(range_gap, 3),
             "micro_range_p95_p50_db": round(micro_gap, 3),
+            "active_rms_db": round(level_gap, 3),
+            "peak_db": round(peak_gap, 3),
             "crest_db": round(crest_gap, 3),
         },
         "thresholds": {
             "frame_range_weak_db": VOCAL_DYNAMIC_RANGE_WEAK_DB,
             "micro_range_weak_db": VOCAL_DYNAMIC_MICRO_WEAK_DB,
+            "active_rms_weak_db": 2.5,
+            "peak_weak_db": 1.8,
         },
         "triggered_by": [
             name for name, gap, threshold in (
                 ("frame_range", range_gap, VOCAL_DYNAMIC_RANGE_WEAK_DB),
                 ("micro_range", micro_gap, VOCAL_DYNAMIC_MICRO_WEAK_DB),
+                ("active_rms", level_gap, 2.5),
+                ("peak", peak_gap, 1.8),
             )
             if gap >= threshold
         ],
