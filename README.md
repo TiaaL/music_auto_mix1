@@ -111,6 +111,12 @@ Known issues / next checks:
 7. **最终人声效果要和原曲人声 stem 对比**  
    `audit_vocal_effect_match.py` 会把最终入 stereo sum 的人声贡献轨和原曲人声 stem 做同一活动区对比，覆盖空间/纵深、混响尾巴、delay 线索、短帧动态、效果高频和细分包络。它的职责不是裁判音色筛选片段，而是定位最终人声是否比原曲更散、更湿、更平或更亮。
 
+8. **效果目标进入统一上下文，不按测试歌名单独调参**  
+   `plan_mix_template.py` 会把原曲人声 stem 的空间、混响、delay 和动态统一写入 `vocal_processing_context.vocal_effect_target`。后续 `spatial_fx`、微动态和审计都消费这个上下文；触发条件来自音频特征，例如原曲人声是否 center-led、active side/mid、短帧动态差、干声 presence 是否缺失。任何动作都有上限，不根据歌曲名或当前四首回归 case 做点对点处理。
+
+9. **审计复用已算好的参考特征**  
+   `auto_template_mix.py` 调用 `audit_vocal_effect_match.py` 时会传入 `resolved_mix_plan.json`。审计脚本优先复用 plan 里的 `reference.features` 和活动人声区间，只重新分析最终人声贡献轨，避免重复跑原曲人声的动态、混响、delay 和频谱包络。
+
 排查入口：
 
 - `<output>.bus_balance.json`：确认 `weak_vocal_compensation_db` 是否为 `0.0`，以及最终 target gap 是否来自原曲或通用兜底。
@@ -118,6 +124,7 @@ Known issues / next checks:
 - `<output>.vocal_dynamic_lift.json`：查看微动态触发条件、实际增益范围和 `hard_caps`。
 - `<output>.timbre_chain_guard.json` / `<output>.post_group_timbre_guard.json`：查看 8-band 与细分包络的音色回正动作。
 - `<output>.vocal_effect_audit.json`：查看最终人声贡献轨相对原曲人声 stem 的纵深、动态、混响、宽度和效果高频误差。
+- `resolved_mix_plan.json` 里的 `vocal_processing_context.vocal_effect_target`：查看效果目标来源和每个动作的通用触发证据。
 
 ---
 

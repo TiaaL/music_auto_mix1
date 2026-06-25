@@ -282,6 +282,7 @@ def run_vocal_effect_audit(
     vocal_group: Path,
     output_json: Path,
     reference_audio: Path | None = None,
+    plan_path: Path | None = None,
 ) -> dict:
     # 音色目标和效果目标分开：这里仅检查最终人声贡献轨是否贴近原曲人声的纵深/动态/湿度。
     cmd = [
@@ -296,6 +297,9 @@ def run_vocal_effect_audit(
     ]
     if reference_audio is not None:
         cmd += ["--reference-audio", str(reference_audio)]
+    if plan_path is not None:
+        # 复用 resolved plan 里的 reference.features，避免审计阶段重复跑原曲人声动态/混响/包络分析。
+        cmd += ["--plan", str(plan_path)]
     proc = subprocess.run(cmd, text=True, encoding="utf-8", errors="replace", capture_output=True, check=False, cwd=ROOT)
     report = None
     if output_json.exists():
@@ -640,6 +644,7 @@ def main() -> None:
             vocal_group_output,
             vocal_effect_audit_path,
             reference_audio=ref_full_mix,
+            plan_path=plan_path,
         )
     loudness_path = output_wav.with_suffix(".loudness.json")
     loudness = json.loads(loudness_path.read_text(encoding="utf-8-sig")) if loudness_path.exists() else None

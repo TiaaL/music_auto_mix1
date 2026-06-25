@@ -463,9 +463,12 @@ FINAL_LOUDNESS_MIN_LUFS = -13.0
 FINAL_LOUDNESS_MAX_LUFS = -11.0
 VOCAL_DYNAMIC_RANGE_WEAK_DB = 2.0
 VOCAL_DYNAMIC_MICRO_WEAK_DB = 1.0
-VOCAL_DYNAMIC_MAX_LIFT_DB = 1.6
-VOCAL_DYNAMIC_MAX_CUT_DB = 0.7
-VOCAL_DYNAMIC_MAX_CONTRAST = 0.30
+VOCAL_DYNAMIC_MICRO_P99_WEAK_DB = 2.4
+# “没劲”处理只允许增强短帧重音/微动态，不能把全局人声 bus 往前推。
+# 上限稍放宽，但仍由脚本侧二次硬截顶，避免 plan 异常导致忽大忽小。
+VOCAL_DYNAMIC_MAX_LIFT_DB = 2.1
+VOCAL_DYNAMIC_MAX_CUT_DB = 0.55
+VOCAL_DYNAMIC_MAX_CONTRAST = 0.38
 DRY_VOCAL_DUCK_CAPS_DB = {
     # 弱/闷/缺咬字的人声只请求伴奏让位，不改全局人声电平。
     # 这里是 plan 侧上限；渲染脚本里还会再做一次硬上限保护。
@@ -718,6 +721,7 @@ SPATIAL_BASELINE = {
     "rverb_early_ref_db": -2.0,
     "rverb_damp": 0.35,
     "rverb_eq_hi_gain_db": -4.0,
+    "output_side_trim_db": 0.0,
     "supertap_send_pre_db": -27.0,
     "supertap_gain_db": -18.5,
     "supertap_feedback": 0.10,
@@ -732,6 +736,7 @@ SPATIAL_LIMITS = {
     "rverb_time_s": (1.4, 3.8),
     "rverb_predelay_ms": (8.0, 35.0),
     "rverb_eq_hi_gain_db": (-5.0, -2.0),
+    "output_side_trim_db": (-10.0, 0.0),
     "supertap_send_pre_db": (-34.0, -18.0),
     "supertap_gain_db": (-24.0, -8.0),
     "supertap_feedback": (0.06, 0.24),
@@ -895,6 +900,101 @@ def reference_presence_mode(ref_balance: float | None) -> str:
     return "reference_vocal_back_or_unknown"
 
 
+def build_vocal_effect_context(
+    ref_features: dict[str, Any] | None,
+    input_features: dict[str, Any] | None,
+    analysis: dict[str, Any],
+) -> dict[str, Any]:
+    """原曲人声效果画像。
+
+    这里专门管“像原曲人声效果”的部分：纵深、宽度、混响、动态。
+    音色相似度不从这里取目标，仍然只看音色筛选片段。
+    """
+    stem_spatial = (ref_features or {}).get("vocal_spatial_profile") or {}
+    reverb = (ref_features or {}).get("reverb_proxy") or {}
+    delay = (ref_features or {}).get("delay_proxy") or {}
+    ref_dyn = (ref_features or {}).get("vocal_dynamics") or {}
+    input_dyn = (input_features or {}).get("vocal_dynamics") or {}
+    side_mid = float(stem_spatial.get("active_side_minus_mid_db") or 0.0)
+    center_led = bool(stem_spatial.get("near_mono_center_led"))
+    if center_led and side_mid <= -30.0:
+        width_mode = "near_mono_center_strict"
+        side_trim_db = -8.0
+        wet_scale = 0.22
+        time_scale = 0.34
+        delay_width = 0.16
+    elif center_led:
+        width_mode = "center_led"
+        side_trim_db = -6.0
+        wet_scale = 0.34
+        time_scale = 0.50
+        delay_width = 0.28
+    else:
+        width_mode = "reference_width_open"
+        side_trim_db = 0.0
+        wet_scale = 1.0
+        time_scale = 1.0
+        delay_width = None
+
+    group_ratios = (analysis or {}).get("group_ratios") or {}
+    presence_ratio = float(group_ratios.get("presence") or 0.0)
+    body_to_presence = float((analysis or {}).get("body_to_presence") or 0.0)
+    preserve_missing_presence = presence_ratio <= 0.03 and body_to_presence >= 16.0
+    if preserve_missing_presence:
+        # 干声缺咬字时，空间策略再收一次，但触发仍来自通用干声特征。
+        side_trim_db = min(side_trim_db, -7.5)
+        wet_scale = min(wet_scale, 0.45)
+        delay_width = min(delay_width if delay_width is not None else 0.20, 0.20)
+
+    range_gap = float(ref_dyn.get("frame_range_p90_p10_db") or 0.0) - float(
+        input_dyn.get("frame_range_p90_p10_db") or 0.0
+    )
+    micro_gap = float(ref_dyn.get("micro_range_p95_p50_db") or 0.0) - float(
+        input_dyn.get("micro_range_p95_p50_db") or 0.0
+    )
+    micro_p99_gap = float(ref_dyn.get("micro_range_p99_p50_db") or 0.0) - float(
+        input_dyn.get("micro_range_p99_p50_db") or 0.0
+    )
+    level_gap = float(ref_dyn.get("active_rms_db") or 0.0) - float(input_dyn.get("active_rms_db") or 0.0)
+    peak_gap = float(ref_dyn.get("peak_db") or 0.0) - float(input_dyn.get("peak_db") or 0.0)
+
+    return {
+        "version": 1,
+        "target_source": "original_vocal_stem",
+        "spatial": {
+            "width_mode": width_mode,
+            "center_led": center_led,
+            "active_side_minus_mid_db": round(side_mid, 3),
+            "side_trim_db": round(side_trim_db, 3),
+            "reverb_wet_scale": round(wet_scale, 3),
+            "reverb_time_scale": round(time_scale, 3),
+            "delay_width_cap": round(delay_width, 3) if delay_width is not None else None,
+            "preserve_missing_presence": bool(preserve_missing_presence),
+        },
+        "reverb": {
+            "tail_to_onset_ratio_db": reverb.get("tail_to_onset_ratio_db"),
+            "est_rt60_ms": reverb.get("est_rt60_ms"),
+            "confidence": reverb.get("confidence"),
+        },
+        "delay": {
+            "peak_corr": delay.get("peak_corr"),
+            "peak_lag_ms": delay.get("peak_lag_ms"),
+            "confidence": delay.get("confidence"),
+        },
+        "dynamics": {
+            "gap": {
+                "frame_range_p90_p10_db": round(range_gap, 3),
+                "micro_range_p95_p50_db": round(micro_gap, 3),
+                "micro_range_p99_p50_db": round(micro_p99_gap, 3),
+                "active_rms_db": round(level_gap, 3),
+                "peak_db": round(peak_gap, 3),
+            },
+            "policy": "动态只追原曲人声 stem；不使用音色筛选片段，也不改变全局 bus 比例。",
+        },
+        "policy": "音色目标和效果目标分离：本画像只给纵深、宽度、混响、动态边界。",
+    }
+
+
 def build_vocal_processing_context(
     ref_features: dict[str, Any] | None,
     input_features: dict[str, Any] | None,
@@ -926,6 +1026,7 @@ def build_vocal_processing_context(
     skip_brighter = False
     if policy["allow_dark_brighter_skip"] and delta_upper is not None:
         skip_brighter = delta_upper <= -4.0 or (delta_upper <= -2.0 and peakiness["upper"] >= 14.0)
+    vocal_effect_target = build_vocal_effect_context(ref_features, input_features, analysis)
     return {
         "version": VOCAL_CONTEXT_VERSION,
         "template_id": template_id,
@@ -965,6 +1066,7 @@ def build_vocal_processing_context(
                 "但原曲人声靠前/持平时不跳过。"
             ),
         },
+        "vocal_effect_target": vocal_effect_target,
         "vocal_event_guard": {
             "enabled": True,
             "stage": "post_dynamic_pre_vocal_group",
@@ -987,7 +1089,7 @@ def build_vocal_processing_context(
                 "音色方向来自筛选片段，边界仍由原曲人声/伴奏位置决定。"
             ),
         },
-        "policy": "音色差异给方向，原曲人声/伴奏比例给边界，干声瑕疵给最低限度修复。"
+        "policy": "音色差异给方向，原曲人声效果给纵深/动态边界，原曲人声/伴奏比例给总线边界，干声瑕疵给最低限度修复。"
     }
 
 
@@ -1699,6 +1801,7 @@ def reverb_time_target(rt60_ms: float) -> float:
 def build_spatial_fx_plan(
     ref_features: dict[str, Any] | None,
     analysis: dict[str, Any] | None = None,
+    effect_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """根据参考曲构建有上限的 vocal group 空间参数。"""
     if not ref_features:
@@ -1713,12 +1816,16 @@ def build_spatial_fx_plan(
     delay = ref_features.get("delay_proxy") or {}
     stem_quality = ref_features.get("vocal_stem_quality") or {}
     stem_spatial = ref_features.get("vocal_spatial_profile") or {}
+    effect_spatial = (effect_context or {}).get("spatial") or {}
     reasons: list[str] = []
-    center_led_reference = bool(stem_spatial.get("near_mono_center_led"))
+    center_led_reference = bool(effect_spatial.get("center_led", stem_spatial.get("near_mono_center_led")))
     group_ratios = (analysis or {}).get("group_ratios") or {}
     presence_ratio = float(group_ratios.get("presence") or 0.0)
     body_to_presence = float((analysis or {}).get("body_to_presence") or 0.0)
-    preserve_missing_presence = presence_ratio <= 0.03 and body_to_presence >= 16.0
+    preserve_missing_presence = bool(
+        effect_spatial.get("preserve_missing_presence")
+        or (presence_ratio <= 0.03 and body_to_presence >= 16.0)
+    )
 
     if bool(stem_quality.get("severe_leakage")):
         reasons.append("reference_vocal_stem_leakage_guard")
@@ -1752,6 +1859,7 @@ def build_spatial_fx_plan(
         "delay_proxy": delay,
         "vocal_stem_quality": stem_quality,
         "vocal_spatial_profile": stem_spatial,
+        "vocal_effect_target": effect_context,
     }
     if not enabled:
         return {
@@ -1771,7 +1879,8 @@ def build_spatial_fx_plan(
     if center_led_reference:
         # 居中型参考人声通常是“有深度但不糊前景”；
         # tail proxy 容易把原曲尾音/压缩延音估得过湿，所以 wet 增量必须有硬上限。
-        wet_delta = min(wet_delta * 0.48, 1.35)
+        wet_scale = float(effect_spatial.get("reverb_wet_scale") or 0.34)
+        wet_delta = min(wet_delta * wet_scale, 1.35 * wet_scale)
         predelay_target = clamp(predelay_target + 4.0, 16.0, 32.0)
         reasons.append("center_led_reference_keep_depth_dry_front")
     if preserve_missing_presence:
@@ -1781,10 +1890,10 @@ def build_spatial_fx_plan(
         time_target = min(time_target, 1.9)
         predelay_target = clamp(predelay_target + 2.0, 18.0, 32.0)
         reasons.append("missing_presence_keep_vocal_narrow_and_dry")
-    reverb_eq_hi_gain = baseline["rverb_eq_hi_gain_db"] + reverb_conf * 0.45
+    reverb_eq_hi_gain = baseline["rverb_eq_hi_gain_db"] + reverb_conf * 0.30
     if center_led_reference:
         # 混响 return 不再随参考置信度自动变亮；高频空气感交给干声音色阶段处理。
-        reverb_eq_hi_gain = min(reverb_eq_hi_gain, baseline["rverb_eq_hi_gain_db"] - 0.25)
+        reverb_eq_hi_gain = min(reverb_eq_hi_gain, baseline["rverb_eq_hi_gain_db"] - 0.85)
     if preserve_missing_presence:
         reverb_eq_hi_gain = min(reverb_eq_hi_gain, baseline["rverb_eq_hi_gain_db"] - 0.55)
 
@@ -1794,7 +1903,10 @@ def build_spatial_fx_plan(
             *SPATIAL_LIMITS["rverb_send_pre_db"],
         ), 3),
         "time_s": round(clamp(
-            baseline["rverb_time_s"] + reverb_conf * 0.72 * (time_target - baseline["rverb_time_s"]),
+            baseline["rverb_time_s"]
+            + reverb_conf
+            * float(effect_spatial.get("reverb_time_scale") or (0.50 if center_led_reference else 1.0))
+            * (time_target - baseline["rverb_time_s"]),
             *SPATIAL_LIMITS["rverb_time_s"],
         ), 3),
         "predelay_ms": round(clamp(
@@ -1808,6 +1920,12 @@ def build_spatial_fx_plan(
         "confidence": round(reverb_conf, 3),
     }
 
+    output_side_trim_db = float(effect_spatial.get("side_trim_db") or 0.0)
+    output = {
+        "side_trim_db": round(clamp(output_side_trim_db, *SPATIAL_LIMITS["output_side_trim_db"]), 3),
+        "policy": "reference_vocal_center_led_side_trim",
+    }
+
     delay_conf = float(delay.get("confidence") or 0.0)
     if preserve_missing_presence:
         delay_send_delta = -7.0
@@ -1815,9 +1933,10 @@ def build_spatial_fx_plan(
         delay_width = 0.20
         delay_policy = "missing_presence_min_side_guard"
     elif center_led_reference:
-        delay_send_delta = -5.0
-        feedback = baseline["supertap_feedback"] * 0.60
-        delay_width = 0.28
+        # 原曲人声接近居中时，delay 只能给纵深线索，不能制造明显侧向散开。
+        delay_send_delta = -7.0
+        feedback = baseline["supertap_feedback"] * 0.42
+        delay_width = float(effect_spatial.get("delay_width_cap") or 0.28)
         delay_policy = "center_led_reference_delay_side_guard"
     elif delay_conf < 0.60:
         delay_send_delta = min(0.5, max(0.0, delay_conf * 0.8))
@@ -1861,6 +1980,7 @@ def build_spatial_fx_plan(
         "confidence": round(reverb_conf, 3),
         "baseline": baseline,
         "reverb": rverb,
+        "output": output,
         "delay": supertap,
         "shimmer": shimmer,
         "limits": SPATIAL_LIMITS,
@@ -1879,11 +1999,17 @@ def build_reference_overrides(
     processing_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """把参考/输入特征转成渲染器 overrides。"""
-    vocal_dynamics = build_vocal_dynamic_strategy(ref_features, input_features)
+    effect_context = (processing_context or {}).get("vocal_effect_target") or build_vocal_effect_context(
+        ref_features,
+        input_features,
+        analysis,
+    )
+    vocal_dynamics = build_vocal_dynamic_strategy(ref_features, input_features, effect_context=effect_context)
     overrides: dict[str, Any] = {
         "loudness_target": ref_features.get("loudness", {}),
         "reverb_observation": ref_features.get("reverb_proxy", {}),
-        "spatial_fx": build_spatial_fx_plan(ref_features, analysis),
+        "vocal_effect_target": effect_context,
+        "spatial_fx": build_spatial_fx_plan(ref_features, analysis, effect_context=effect_context),
         "reference_dynamics": ref_features.get("dynamics", {}),
         "vocal_dynamics": vocal_dynamics,
     }
@@ -1949,6 +2075,7 @@ def build_reference_overrides(
 def build_vocal_dynamic_strategy(
     ref_features: dict[str, Any] | None,
     input_features: dict[str, Any] | None,
+    effect_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """比较输入干声和原曲人声 stem 的微动态差异。"""
     ref_dyn = (ref_features or {}).get("vocal_dynamics") or {}
@@ -1960,28 +2087,38 @@ def build_vocal_dynamic_strategy(
             "policy": "只做诊断：缺少原曲或输入干声动态特征时不处理",
         }
 
-    range_gap = float(ref_dyn.get("frame_range_p90_p10_db") or 0.0) - float(
-        input_dyn.get("frame_range_p90_p10_db") or 0.0
-    )
-    micro_gap = float(ref_dyn.get("micro_range_p95_p50_db") or 0.0) - float(
-        input_dyn.get("micro_range_p95_p50_db") or 0.0
-    )
-    level_gap = float(ref_dyn.get("active_rms_db") or 0.0) - float(input_dyn.get("active_rms_db") or 0.0)
-    peak_gap = float(ref_dyn.get("peak_db") or 0.0) - float(input_dyn.get("peak_db") or 0.0)
+    effect_gap = ((effect_context or {}).get("dynamics") or {}).get("gap") or {}
+
+    def dyn_gap(key: str) -> float:
+        if isinstance(effect_gap.get(key), (int, float)):
+            return float(effect_gap[key])
+        return float(ref_dyn.get(key) or 0.0) - float(input_dyn.get(key) or 0.0)
+
+    range_gap = dyn_gap("frame_range_p90_p10_db")
+    micro_gap = dyn_gap("micro_range_p95_p50_db")
+    micro_p99_gap = dyn_gap("micro_range_p99_p50_db")
+    level_gap = dyn_gap("active_rms_db")
+    peak_gap = dyn_gap("peak_db")
     crest_gap = float(ref_dyn.get("crest_db") or 0.0) - float(input_dyn.get("crest_db") or 0.0)
     level_weak = level_gap >= 2.5 and peak_gap >= 1.8
-    weak = range_gap >= VOCAL_DYNAMIC_RANGE_WEAK_DB or micro_gap >= VOCAL_DYNAMIC_MICRO_WEAK_DB or level_weak
+    weak = (
+        range_gap >= VOCAL_DYNAMIC_RANGE_WEAK_DB
+        or micro_gap >= VOCAL_DYNAMIC_MICRO_WEAK_DB
+        or micro_p99_gap >= VOCAL_DYNAMIC_MICRO_P99_WEAK_DB
+        or level_weak
+    )
     severity = max(
         0.0,
         range_gap / max(VOCAL_DYNAMIC_RANGE_WEAK_DB * 2.0, 1e-6),
         micro_gap / max(VOCAL_DYNAMIC_MICRO_WEAK_DB * 2.0, 1e-6),
+        micro_p99_gap / max(VOCAL_DYNAMIC_MICRO_P99_WEAK_DB * 2.0, 1e-6),
         (level_gap - 2.0) / 5.0,
         (peak_gap - 1.5) / 4.0,
     )
     severity = clamp(severity, 0.0, 1.0)
-    max_lift_db = clamp(0.7 + severity * 0.9, 0.0, VOCAL_DYNAMIC_MAX_LIFT_DB) if weak else 0.0
-    max_cut_db = clamp(0.25 + severity * 0.45, 0.0, VOCAL_DYNAMIC_MAX_CUT_DB) if weak else 0.0
-    contrast_amount = clamp(0.14 + severity * 0.16, 0.0, VOCAL_DYNAMIC_MAX_CONTRAST) if weak else 0.0
+    max_lift_db = clamp(0.85 + severity * 1.25, 0.0, VOCAL_DYNAMIC_MAX_LIFT_DB) if weak else 0.0
+    max_cut_db = clamp(0.18 + severity * 0.37, 0.0, VOCAL_DYNAMIC_MAX_CUT_DB) if weak else 0.0
+    contrast_amount = clamp(0.17 + severity * 0.21, 0.0, VOCAL_DYNAMIC_MAX_CONTRAST) if weak else 0.0
     return {
         "enabled": bool(weak),
         "mode": "light_vocal_dynamic_lift" if weak else "diagnostic_vocal_dynamic_flatness",
@@ -1990,6 +2127,7 @@ def build_vocal_dynamic_strategy(
         "gap": {
             "frame_range_p90_p10_db": round(range_gap, 3),
             "micro_range_p95_p50_db": round(micro_gap, 3),
+            "micro_range_p99_p50_db": round(micro_p99_gap, 3),
             "active_rms_db": round(level_gap, 3),
             "peak_db": round(peak_gap, 3),
             "crest_db": round(crest_gap, 3),
@@ -1997,6 +2135,7 @@ def build_vocal_dynamic_strategy(
         "thresholds": {
             "frame_range_weak_db": VOCAL_DYNAMIC_RANGE_WEAK_DB,
             "micro_range_weak_db": VOCAL_DYNAMIC_MICRO_WEAK_DB,
+            "micro_range_p99_weak_db": VOCAL_DYNAMIC_MICRO_P99_WEAK_DB,
             "active_rms_weak_db": 2.5,
             "peak_weak_db": 1.8,
         },
@@ -2004,6 +2143,7 @@ def build_vocal_dynamic_strategy(
             name for name, gap, threshold in (
                 ("frame_range", range_gap, VOCAL_DYNAMIC_RANGE_WEAK_DB),
                 ("micro_range", micro_gap, VOCAL_DYNAMIC_MICRO_WEAK_DB),
+                ("micro_range_p99", micro_p99_gap, VOCAL_DYNAMIC_MICRO_P99_WEAK_DB),
                 ("active_rms", level_gap, 2.5),
                 ("peak", peak_gap, 1.8),
             )
@@ -2016,7 +2156,7 @@ def build_vocal_dynamic_strategy(
             "frame_ms": 50.0,
             "hop_ms": 25.0,
             "attack_ms": 35.0,
-            "release_ms": 160.0,
+            "release_ms": 125.0,
             "peak_ceiling": 0.97,
             "severity": round(severity, 3),
             "hard_caps": {

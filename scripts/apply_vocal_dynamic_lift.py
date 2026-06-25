@@ -40,11 +40,11 @@ def mono(audio: np.ndarray) -> np.ndarray:
     return audio.mean(axis=1)
 
 
-# 脚本侧硬上限：动态“没劲”只做微动态增强，不改变整体响度目标。
-# 即使 plan 里参数异常，也不能突破这些值。
-HARD_MAX_LIFT_DB = 1.6
-HARD_MAX_CUT_DB = 0.7
-HARD_MAX_CONTRAST_AMOUNT = 0.30
+# 脚本侧硬上限：动态“没劲”只做微动态/重音增强，不改变整体响度目标。
+# 上限比第一版略放宽，但仍强制中位数归零，避免变成全局人声前推。
+HARD_MAX_LIFT_DB = 2.1
+HARD_MAX_CUT_DB = 0.55
+HARD_MAX_CONTRAST_AMOUNT = 0.38
 
 
 def rms_frames(samples: np.ndarray, sr: int, frame_ms: float, hop_ms: float) -> tuple[np.ndarray, np.ndarray]:

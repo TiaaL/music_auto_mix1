@@ -27,6 +27,7 @@ PARAM_TO_DSP = {
     "RVERB_EARLY_REF_DB": ("reverb", "early_ref_db"),
     "RVERB_DAMP": ("reverb", "damp"),
     "RVERB_EQ_HI_GAIN_DB": ("reverb", "eq_hi_gain_db"),
+    "OUTPUT_SIDE_TRIM_DB": ("output", "side_trim_db"),
     "SUPERTAP_SEND_PRE_DB": ("delay", "send_pre_db"),
     "SUPERTAP_GAIN_DB": ("delay", "gain_db"),
     "SUPERTAP_FEEDBACK": ("delay", "feedback"),

@@ -30,6 +30,19 @@ def load_summary(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
+def intervals_from_reference_features(features: dict[str, Any] | None) -> list[tuple[float, float]]:
+    rows = (((features or {}).get("active_vocal_regions") or {}).get("regions") or [])
+    intervals: list[tuple[float, float]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        start = row.get("start")
+        end = row.get("end")
+        if isinstance(start, (int, float)) and isinstance(end, (int, float)) and end > start:
+            intervals.append((float(start), float(end)))
+    return intervals
+
+
 def scalar_delta(candidate: dict[str, Any], reference: dict[str, Any], keys: tuple[str, ...]) -> dict[str, float]:
     deltas: dict[str, float] = {}
     for key in keys:
@@ -91,16 +104,18 @@ def build_recommendations(errors: dict[str, Any], spatial_rec: dict[str, Any]) -
         })
 
     dynamics = errors.get("dynamics", {})
-    active_rms_error = float(dynamics.get("active_rms_db_error", 0.0))
-    peak_error = float(dynamics.get("peak_db_error", 0.0))
     frame_range_error = float(dynamics.get("frame_range_p90_p10_db_error", 0.0))
-    if active_rms_error < -2.0 and peak_error < -1.5:
+    micro_p95_error = float(dynamics.get("micro_range_p95_p50_db_error", 0.0))
+    micro_p99_error = float(dynamics.get("micro_range_p99_p50_db_error", 0.0))
+    crest_error = float(dynamics.get("crest_db_error", 0.0))
+    if micro_p95_error < -1.4 or micro_p99_error < -2.2 or (frame_range_error < -1.2 and crest_error < -1.0):
         actions.append({
             "area": "dynamics_punch",
-            "action": "increase_bounded_micro_dynamic_presence_not_bus_loudness",
-            "reason": "candidate_vocal_active_level_and_peak_are_below_reference_vocal",
-            "active_rms_db_error": round(active_rms_error, 3),
-            "peak_db_error": round(peak_error, 3),
+            "action": "increase_bounded_micro_dynamic_contrast_not_bus_loudness",
+            "reason": "candidate_vocal_short_frame_dynamics_are_flatter_than_reference_vocal",
+            "micro_range_p95_p50_db_error": round(micro_p95_error, 3),
+            "micro_range_p99_p50_db_error": round(micro_p99_error, 3),
+            "frame_range_p90_p10_db_error": round(frame_range_error, 3),
         })
     if frame_range_error < -1.6:
         actions.append({
@@ -133,21 +148,58 @@ def build_recommendations(errors: dict[str, Any], spatial_rec: dict[str, Any]) -
         })
     return actions
 
+def build_reference_metrics(
+    reference_vocal: Path,
+    intervals: list[tuple[float, float]],
+    reference_features: dict[str, Any] | None,
+) -> dict[str, Any]:
+    # 性能：原曲人声动态/混响/包络在 analyze_reference 阶段已经计算过。
+    # 审计优先复用 plan 里的 reference.features，只在缺字段时回退到重新分析音频。
+    if reference_features:
+        missing = [
+            key
+            for key in ("vocal_dynamics", "reverb_proxy", "delay_proxy", "vocal_tonal_balance", "vocal_spectral_envelope")
+            if not reference_features.get(key)
+        ]
+        if not missing:
+            return {
+                "spatial": ms_metrics(reference_vocal, intervals),
+                "dynamics": reference_features["vocal_dynamics"],
+                "reverb": reference_features["reverb_proxy"],
+                "delay": reference_features["delay_proxy"],
+                "tonal_balance": reference_features["vocal_tonal_balance"],
+                "spectral_envelope": reference_features["vocal_spectral_envelope"],
+                "reused_reference_features": True,
+            }
 
-def build_report(reference_vocal: Path, candidate_vocal_group: Path, reference_audio: Path | None = None) -> dict[str, Any]:
     ref_audio, ref_sr = load_audio_as_float(reference_vocal)
-    cand_audio, cand_sr = load_audio_as_float(candidate_vocal_group)
-    intervals = active_intervals_from_vocal(ref_audio, ref_sr)
-    coverage_sec = sum(end - start for start, end in intervals)
-
-    reference = {
+    return {
         "spatial": ms_metrics(reference_vocal, intervals),
         "dynamics": vocal_dynamic_profile(ref_audio, ref_sr, intervals),
         "reverb": reverb_proxy(ref_audio, ref_sr),
         "delay": delay_proxy(ref_audio, ref_sr),
         "tonal_balance": tonal_balance_for_intervals(ref_audio, ref_sr, intervals),
         "spectral_envelope": spectral_envelope_for_intervals(ref_audio, ref_sr, intervals),
+        "reused_reference_features": False,
     }
+
+
+def build_report(
+    reference_vocal: Path,
+    candidate_vocal_group: Path,
+    reference_audio: Path | None = None,
+    reference_features: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    intervals = intervals_from_reference_features(reference_features)
+    if intervals:
+        ref_sr = 48000
+    else:
+        ref_audio, ref_sr = load_audio_as_float(reference_vocal)
+        intervals = active_intervals_from_vocal(ref_audio, ref_sr)
+    cand_audio, cand_sr = load_audio_as_float(candidate_vocal_group)
+    coverage_sec = sum(end - start for start, end in intervals)
+
+    reference = build_reference_metrics(reference_vocal, intervals, reference_features)
     candidate = {
         "spatial": ms_metrics(candidate_vocal_group, intervals),
         "dynamics": vocal_dynamic_profile(cand_audio, cand_sr, intervals),
@@ -209,6 +261,7 @@ def build_report(reference_vocal: Path, candidate_vocal_group: Path, reference_a
 def main() -> None:
     parser = argparse.ArgumentParser(description="Audit final vocal_group effects against the original vocal stem.")
     parser.add_argument("--summary-json", type=Path)
+    parser.add_argument("--plan", type=Path, help="resolved_mix_plan.json；优先复用其中的 reference.features")
     parser.add_argument("--reference-vocal", type=Path)
     parser.add_argument("--reference-audio", type=Path)
     parser.add_argument("--candidate-vocal-group", type=Path)
@@ -218,6 +271,7 @@ def main() -> None:
     reference_vocal = args.reference_vocal
     reference_audio = args.reference_audio
     candidate = args.candidate_vocal_group
+    reference_features = None
     if args.summary_json:
         summary = load_summary(args.summary_json)
         reference_used = summary.get("reference_used") or {}
@@ -226,13 +280,23 @@ def main() -> None:
             Path(reference_used["full_mix"]) if reference_used.get("full_mix") else None
         )
         candidate = candidate or (Path(summary["vocal_group_output"]) if summary.get("vocal_group_output") else None)
+        if args.plan is None and summary.get("resolved_mix_plan"):
+            args.plan = Path(summary["resolved_mix_plan"])
+    if args.plan is not None and args.plan.exists():
+        plan = load_summary(args.plan)
+        reference_features = ((plan.get("reference") or {}).get("features") or None)
 
     if reference_vocal is None:
         raise SystemExit("Provide --reference-vocal or --summary-json with reference_used.vocal.")
     if candidate is None:
         raise SystemExit("Provide --candidate-vocal-group or --summary-json with vocal_group_output.")
 
-    report = build_report(reference_vocal, candidate, reference_audio=reference_audio)
+    report = build_report(
+        reference_vocal,
+        candidate,
+        reference_audio=reference_audio,
+        reference_features=reference_features,
+    )
     if args.output_json:
         args.output_json.parent.mkdir(parents=True, exist_ok=True)
         args.output_json.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

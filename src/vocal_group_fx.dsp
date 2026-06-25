@@ -33,6 +33,7 @@ import("stdfaust.lib");
 GROUP_GAIN_DB      = -0.5;    // dB: trim before stereo group processing
 GROUP_PAN          = 0.0;     // -1 = left, 0 = center, +1 = right
 GROUP_WIDTH        = 1.0;     // 0 = mono center, 1 = normal stereo spread
+OUTPUT_SIDE_TRIM_DB = 0.0;    // dB: trims final side channel when reference vocal is center-led
 OUTPUT_GAIN_DB     = -1.5;    // dB: final stereo group trim
 
 // ----------------------------------------------------------------
@@ -343,10 +344,21 @@ delayPath(x) = x <: delayWet, delayDirect
             :> _,_
             : stereoGain(db2lin(SUPERTAP_GAIN_DB + mix(-24.0, 0.0, SUPERTAP_MIX / 100.0)));
 
+// Final Mid/Side trim for songs whose original vocal stem is almost mono-center.
+// It reduces spread/depth smear without changing the dry vocal bus gain.
+outputSideTrim(l, r) = outL, outR
+with {
+    mid  = (l + r) * 0.5;
+    side = (l - r) * 0.5 * db2lin(OUTPUT_SIDE_TRIM_DB);
+    outL = mid + side;
+    outR = mid - side;
+};
+
 // ----------------------------------------------------------------
 // Main rack
 // ----------------------------------------------------------------
 
 process = _ <: dryPath, earlyRefPath, reverbPath, shimmerPath, delayPath
         :> _,_
+        : outputSideTrim
         : stereoGain(db2lin(OUTPUT_GAIN_DB));
