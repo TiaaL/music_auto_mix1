@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""在一次 FFmpeg pass 里应用 residual EQ、source_cleanup EQ 和 HF guard。"""
+"""按阶段应用 plan 里的人声 EQ。
+
+音色筛选片段 EQ 可以单独放在模板链前面；自清理和高频保护留在模板链后面兜底。
+"""
 
 from __future__ import annotations
 
@@ -39,11 +42,67 @@ def eq_filter(action: dict[str, Any]) -> str | None:
     return f"equalizer=f={freq:.3f}:width_type=q:width={q:.3f}:g={gain:.3f}"
 
 
+def cap_cumulative_cuts(
+    actions: list[dict[str, Any]],
+    prior_actions: list[dict[str, Any]],
+    plan: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """按统一决策层限制同一频段累计 cut，避免多个 guard 叠刀。"""
+    context = plan.get("vocal_processing_context") or {}
+    budget = (context.get("band_budget") or {}).get("max_total_cut_db") or {}
+    if not budget:
+        return actions, []
+
+    used: dict[str, float] = {}
+    for action in prior_actions:
+        band = str(action.get("band") or "")
+        gain = action.get("gain_db")
+        if band and isinstance(gain, (int, float)) and float(gain) < 0.0:
+            used[band] = used.get(band, 0.0) + abs(float(gain))
+
+    kept: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    for action in actions:
+        band = str(action.get("band") or "")
+        gain = action.get("gain_db")
+        if not band or not isinstance(gain, (int, float)) or float(gain) >= 0.0:
+            kept.append(action)
+            continue
+        if not isinstance(budget.get(band), (int, float)):
+            kept.append(action)
+            continue
+        remaining = float(budget[band]) - used.get(band, 0.0)
+        if remaining <= 0.05:
+            skipped.append({
+                **action,
+                "reason": f"{action.get('reason', '')}; unified band budget exhausted",
+            })
+            continue
+        amount = abs(float(gain))
+        adjusted = dict(action)
+        if amount > remaining:
+            adjusted["gain_db"] = -round(remaining, 2)
+            adjusted["reason"] = (
+                f"{adjusted.get('reason', '')}; capped by unified band budget "
+                f"({used.get(band, 0.0):.2f}+{remaining:.2f}/{float(budget[band]):.2f} dB)"
+            )
+            amount = remaining
+        used[band] = used.get(band, 0.0) + amount
+        kept.append(adjusted)
+    return kept, skipped
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Apply plan-driven vocal EQ actions.")
     parser.add_argument("input_wav", type=Path)
     parser.add_argument("output_wav", type=Path)
     parser.add_argument("--plan", type=Path, required=True)
+    parser.add_argument(
+        "--eq-stage",
+        choices=("all", "timbre", "post_timbre"),
+        default="all",
+        help="all=兼容旧流程；timbre=只做音色参考；post_timbre=音色之后的清理/保护。",
+    )
     parser.add_argument("--ffmpeg", default="ffmpeg")
     args = parser.parse_args()
 
@@ -57,26 +116,44 @@ def main() -> None:
     source_eq = overrides.get("source_eq") or {}
     vocal_eq = source_eq.get("vocal_eq") or {}
     source_actions = vocal_eq.get("actions", []) if vocal_eq.get("enabled") else []
+    timbre_eq = source_eq.get("timbre_vocal_eq") or {}
+    timbre_actions = timbre_eq.get("actions", []) if timbre_eq.get("enabled") else []
 
     hf_guard = overrides.get("vocal_hf_guard") or {}
     hf_actions = hf_guard.get("actions", []) if hf_guard.get("enabled") else []
 
-    # 高频保护放最后：先做问题频段修正，再削共振和高频颗粒。
-    ordered_actions = [*residual_actions, *source_actions, *hf_actions]
+    skipped_by_budget: list[dict[str, Any]] = []
+    if args.eq_stage == "timbre":
+        # 音色相似度先进入模板链，让后续压缩/模板 EQ 基于更接近筛选片段的干声工作。
+        ordered_actions = [*timbre_actions]
+    elif args.eq_stage == "post_timbre":
+        # 后置阶段只做瑕疵修正和高频兜底，不再追音色，避免把相似度目标反复改写。
+        ordered_actions = [*residual_actions, *source_actions, *hf_actions]
+        ordered_actions, skipped_by_budget = cap_cumulative_cuts(ordered_actions, timbre_actions, plan)
+    else:
+        # 兼容旧调用：音色动作优先，最后仍由高频保护削掉危险共振/颗粒。
+        ordered_actions = [*timbre_actions, *residual_actions, *source_actions, *hf_actions]
+        skipped_by_budget = []
     filters = [value for action in ordered_actions if (value := eq_filter(action))]
 
     args.output_wav.parent.mkdir(parents=True, exist_ok=True)
     if not filters:
         shutil.copyfile(args.input_wav, args.output_wav)
-        print("[vocal-plan-eq] no actions")
+        print(f"[vocal-plan-eq:{args.eq_stage}] no actions")
         return
 
-    print("[vocal-plan-eq] applying:")
+    print(f"[vocal-plan-eq:{args.eq_stage}] applying:")
     for action in ordered_actions:
         print(
             "  - "
             f"{action.get('source')} {action.get('band')} {action.get('type')} "
             f"{action.get('gain_db')} dB @ {action.get('freq_hz')} Hz"
+        )
+    for action in skipped_by_budget:
+        print(
+            "  - skip "
+            f"{action.get('source')} {action.get('band')} {action.get('type')} "
+            f"{action.get('gain_db')} dB ({action.get('reason')})"
         )
 
     cmd = [

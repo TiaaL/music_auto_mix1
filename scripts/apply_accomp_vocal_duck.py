@@ -157,6 +157,38 @@ VOCAL_LIFT_DUCK_GAIN = {
     "presence_base_db": 0.75,
     "air_base_db": 0.1,
 }
+DRY_DUCK_DEFAULT_CAPS_DB = {
+    "low_extra_db": 0.35,
+    "body_extra_db": 0.50,
+    "presence_extra_db": 1.20,
+    "air_extra_db": 0.40,
+}
+PROFILE_CAPS_DB = {
+    # 最终伴奏避让的硬上限：模板基础 + 弱人声策略 + 旧 plan 兼容项叠加后仍不能超过这里。
+    # 弱人声问题在这个阶段通过“伴奏让位”解决，而不是把人声 bus 整体推大。
+    "low_base_db": 1.10,
+    "low_extra_db": 1.60,
+    "body_base_db": 0.85,
+    "presence_base_db": 1.75,
+    "presence_extra_db": 1.40,
+    "air_base_db": 0.75,
+}
+
+
+def clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
+def capped_dry_duck_value(
+    dry_duck: dict[str, Any],
+    caps: dict[str, Any],
+    key: str,
+) -> float:
+    # dry_vocal_strategy 只声明“由干声音频特征触发的让位请求”；
+    # 这里再次按 key 截顶，避免 plan 叠加或旧缓存导致单个频段避让过量。
+    value = float(dry_duck.get(key) or 0.0)
+    cap = float(caps.get(key, DRY_DUCK_DEFAULT_CAPS_DB[key]))
+    return clamp(value, 0.0, cap)
 
 
 def profile_from_plan(template: str, plan: dict[str, Any]) -> dict[str, float]:
@@ -165,6 +197,8 @@ def profile_from_plan(template: str, plan: dict[str, Any]) -> dict[str, float]:
     # 新 plan 的通用干声策略放在 source_cleanup；旧 reference overrides 只做兼容 fallback。
     overrides = source_cleanup or (plan.get("reference") or {}).get("overrides", {})
     accomp_eq = (overrides.get("source_eq") or {}).get("accomp_eq", {})
+    # 旧 plan 兼容：历史上 reference-relative 的弱人声 gap 会稍微加强 duck。
+    # 新 plan 里 accomp_eq 默认禁用，弱人声主要走 dry_vocal_strategy 的特征触发请求。
     needed_lift = float(accomp_eq.get("needed_relative_vocal_lift_db") or 0.0)
     deficit = max(0.0, needed_lift - VOCAL_LIFT_DEFICIT_DEAD_BAND_DB)
     scale = min(deficit / VOCAL_LIFT_DEFICIT_FULL_DB, 1.0)
@@ -172,10 +206,12 @@ def profile_from_plan(template: str, plan: dict[str, Any]) -> dict[str, float]:
         profile[band] += gain * scale
     dry_strategy = overrides.get("dry_vocal_strategy") or {}
     dry_duck = dry_strategy.get("duck_profile") or {}
-    profile["low_extra_db"] += float(dry_duck.get("low_extra_db") or 0.0)
-    profile["body_base_db"] += float(dry_duck.get("body_extra_db") or 0.0)
-    profile["presence_base_db"] += float(dry_duck.get("presence_extra_db") or 0.0)
-    profile["air_base_db"] += float(dry_duck.get("air_extra_db") or 0.0)
+    dry_caps = dry_strategy.get("duck_profile_caps_db") or DRY_DUCK_DEFAULT_CAPS_DB
+    # 这是弱/闷/缺咬字人声的主要处理落点：按干声特征让伴奏局部退让。
+    profile["low_extra_db"] += capped_dry_duck_value(dry_duck, dry_caps, "low_extra_db")
+    profile["body_base_db"] += capped_dry_duck_value(dry_duck, dry_caps, "body_extra_db")
+    profile["presence_base_db"] += capped_dry_duck_value(dry_duck, dry_caps, "presence_extra_db")
+    profile["air_base_db"] += capped_dry_duck_value(dry_duck, dry_caps, "air_extra_db")
     coordination = accomp_eq.get("duck_coordination") or {}
     regions = coordination.get("regions") or {}
     preserve_duck = coordination.get("preserve_dynamic_duck") or {}
@@ -195,7 +231,7 @@ def profile_from_plan(template: str, plan: dict[str, Any]) -> dict[str, float]:
         profile["low_extra_db"] *= 1.0 - 0.35 * reduction
         profile["body_base_db"] *= 1.0 - 0.55 * reduction
     for key, value in list(profile.items()):
-        profile[key] = round(max(0.0, float(value)), 4)
+        profile[key] = round(clamp(float(value), 0.0, PROFILE_CAPS_DB[key]), 4)
     return profile
 
 
@@ -264,17 +300,28 @@ def process(
     # 报告也优先记录新通用清理块里的避让协调信息。
     report_overrides = source_cleanup or (plan.get("reference") or {}).get("overrides", {})
     report_accomp_eq = (report_overrides.get("source_eq") or {}).get("accomp_eq", {})
+    report_dry_strategy = report_overrides.get("dry_vocal_strategy") or {}
     report = {
         "enabled": True,
         "template": template,
         "profile": profile,
+        "profile_caps_db": PROFILE_CAPS_DB,
+        "dry_vocal_strategy": {
+            "enabled": bool(report_dry_strategy.get("enabled")),
+            "tags": report_dry_strategy.get("tags"),
+            "duck_profile": report_dry_strategy.get("duck_profile"),
+            "duck_profile_caps_db": report_dry_strategy.get("duck_profile_caps_db"),
+        },
         "duck_coordination": report_accomp_eq.get("duck_coordination"),
         "active_fraction": round(float(np.mean(active)), 4),
         "low_duck_db_active_p50": round(float(np.median(low_gain_db[active])) if np.any(active) else 0.0, 3),
         "low_duck_db_active_p90": round(float(np.percentile(low_gain_db[active], 10)) if np.any(active) else 0.0, 3),
         "presence_duck_db_active_p50": round(float(np.median(presence_gain_db[active])) if np.any(active) else 0.0, 3),
         "presence_duck_db_active_p90": round(float(np.percentile(presence_gain_db[active], 10)) if np.any(active) else 0.0, 3),
-        "policy": "template-profiled multiband accompaniment ducking keyed from post-FX vocal activity",
+        "policy": (
+            "template-profiled multiband accompaniment ducking keyed from post-FX vocal activity; "
+            "weak vocal handling is feature-triggered by dry_vocal_strategy and hard-capped per band"
+        ),
     }
     if profile_timing:
         report["timings_sec"] = timings

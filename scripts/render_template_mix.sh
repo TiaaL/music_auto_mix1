@@ -30,6 +30,7 @@ WITH_STAGE_REPORT=0
 WITH_STAGE_REPORT_LOUDNESS=0
 MIX_PLAN=""
 REFERENCE_AUDIO=""
+TIMBRE_REFERENCE_VOCAL=""
 STAGE_REPORT=""
 GLOBAL_DECLICK="auto"
 FAST_LOUDNESS_STEPS=""
@@ -106,6 +107,14 @@ while [[ $# -gt 0 ]]; do
             REFERENCE_AUDIO="${1:-}"
             if [[ -z "$REFERENCE_AUDIO" ]]; then
                 echo "Error: --reference-audio requires a path" >&2
+                exit 1
+            fi
+            ;;
+        --timbre-reference-vocal)
+            shift
+            TIMBRE_REFERENCE_VOCAL="${1:-}"
+            if [[ -z "$TIMBRE_REFERENCE_VOCAL" ]]; then
+                echo "Error: --timbre-reference-vocal requires a path" >&2
                 exit 1
             fi
             ;;
@@ -245,10 +254,15 @@ VOCAL_3="$(make_temp_wav template_vocal_3)"
 VOCAL_4="$(make_temp_wav template_vocal_4)"
 VOCAL_5="$(make_temp_wav template_vocal_5)"
 VOCAL_CORRECTED="$(make_temp_wav template_vocal_residual_eq)"
+VOCAL_TIMBRE_PRE="$(make_temp_wav template_vocal_timbre_pre)"
+VOCAL_TIMBRE_GUARDED="$(make_temp_wav template_vocal_timbre_guarded)"
 VOCAL_SOURCE_EQ="$(make_temp_wav template_vocal_source_eq)"
 VOCAL_ARTIFACT_REPAIRED="$(make_temp_wav template_vocal_artifact_repaired)"
+VOCAL_DYNAMIC="$(make_temp_wav template_vocal_dynamic)"
+VOCAL_EVENT_GUARDED="$(make_temp_wav template_vocal_event_guarded)"
 VOCAL_GROUP="$(make_temp_wav template_vocal_group)"
 VOCAL_GROUP_SIDE="$(make_temp_wav template_vocal_group_side)"
+VOCAL_GROUP_TIMBRE="$(make_temp_wav template_vocal_group_timbre)"
 ACCOMP_1="$(make_temp_wav template_accomp_1)"
 ACCOMP_SOURCE_EQ="$(make_temp_wav template_accomp_source_eq)"
 ACCOMP_DUCKED="$(make_temp_wav template_accomp_ducked)"
@@ -261,7 +275,7 @@ MASTER_1="$(make_temp_wav template_master_1)"
 MASTER_2="$(make_temp_wav template_master_2)"
 FINAL_GUARDED="$(make_temp_wav template_final_guarded)"
 
-trap 'rm -f "$RESAMPLED_VOCAL" "$RESAMPLED_ACCOMP" "$AUTO_VOCAL" "$AUTO_ACCOMP" "$VOCAL_1" "$VOCAL_2" "$VOCAL_3" "$VOCAL_4" "$VOCAL_5" "$VOCAL_CORRECTED" "$VOCAL_SOURCE_EQ" "$VOCAL_ARTIFACT_REPAIRED" "$VOCAL_GROUP" "$VOCAL_GROUP_SIDE" "$ACCOMP_1" "$ACCOMP_SOURCE_EQ" "$ACCOMP_DUCKED" "$ACCOMP_BUS" "$VOCAL_BALANCED" "$ACCOMP_BALANCED" "$MIX_TMP" "$MIX_TILTED" "$MASTER_1" "$MASTER_2" "$FINAL_GUARDED"' EXIT
+trap 'rm -f "$RESAMPLED_VOCAL" "$RESAMPLED_ACCOMP" "$AUTO_VOCAL" "$AUTO_ACCOMP" "$VOCAL_1" "$VOCAL_2" "$VOCAL_3" "$VOCAL_4" "$VOCAL_5" "$VOCAL_CORRECTED" "$VOCAL_TIMBRE_PRE" "$VOCAL_TIMBRE_GUARDED" "$VOCAL_SOURCE_EQ" "$VOCAL_ARTIFACT_REPAIRED" "$VOCAL_DYNAMIC" "$VOCAL_EVENT_GUARDED" "$VOCAL_GROUP" "$VOCAL_GROUP_SIDE" "$VOCAL_GROUP_TIMBRE" "$ACCOMP_1" "$ACCOMP_SOURCE_EQ" "$ACCOMP_DUCKED" "$ACCOMP_BUS" "$VOCAL_BALANCED" "$ACCOMP_BALANCED" "$MIX_TMP" "$MIX_TILTED" "$MASTER_1" "$MASTER_2" "$FINAL_GUARDED"' EXIT
 
 VOCAL_RATE="$(audio_sample_rate "$VOCAL_IN")"
 ACCOMP_RATE="$(audio_sample_rate "$ACCOMP_IN")"
@@ -342,20 +356,43 @@ if [[ "$WITH_VOLUME_AUTOMATION" == "1" ]]; then
         --output "accomp=$ACCOMP_SOURCE"
 fi
 
+SKIP_ONEKNOB_BRIGHTER=0
+if [[ -n "$MIX_PLAN" ]]; then
+    # 模板链开关由统一 plan 决策；例如目标音色偏暗时，模板 C 的 brighter 可以跳过。
+    SKIP_ONEKNOB_BRIGHTER="$("$PYTHON_BIN" "$SCRIPT_DIR/plan_template_chain_flags.py" "$MIX_PLAN" --flag skip-oneknob-brighter)"
+fi
+
+VOCAL_TEMPLATE_IN="$VOCAL_SOURCE"
+if [[ -n "$MIX_PLAN" ]]; then
+    # 音色相似度先进入模板 insert 链，让后面的压缩/模板 EQ 基于更接近筛选片段的干声工作。
+    # 这里只处理 timbre 动作，不做瑕疵清理，避免把两个目标混在一起。
+    echo "[step 0b] Timbre reference EQ before vocal insert chain"
+    STAGE_START="$(now_ts)"
+    "$PYTHON_BIN" "$SCRIPT_DIR/apply_vocal_plan_eq.py" \
+        "$VOCAL_SOURCE" \
+        "$VOCAL_TIMBRE_PRE" \
+        --plan "$MIX_PLAN" \
+        --eq-stage timbre
+    record_stage "vocal_timbre_pre_eq" "$STAGE_START" \
+        --input "vocal=$VOCAL_SOURCE" \
+        --output "vocal=$VOCAL_TIMBRE_PRE"
+    VOCAL_TEMPLATE_IN="$VOCAL_TIMBRE_PRE"
+fi
+
 echo "[step 1] Vocal insert chain: $TEMPLATE_ID"
 VOCAL_CHAIN_OUT=""
-VOCAL_CHAIN_IN="$VOCAL_SOURCE"
+VOCAL_CHAIN_IN="$VOCAL_TEMPLATE_IN"
 STAGE_START="$(now_ts)"
 case "$TEMPLATE_ID" in
     template_a)
-        run_stage "c1_gate" "$VOCAL_SOURCE" "$VOCAL_1"
+        run_stage "c1_gate" "$VOCAL_TEMPLATE_IN" "$VOCAL_1"
         run_stage "template_a_vocal_proq3" "$VOCAL_1" "$VOCAL_2"
         run_stage "c1_comp" "$VOCAL_2" "$VOCAL_3"
         run_stage "sibilance_mono" "$VOCAL_3" "$VOCAL_4"
         VOCAL_CHAIN_OUT="$VOCAL_4"
         ;;
     template_b)
-        run_stage "rbass_mono" "$VOCAL_SOURCE" "$VOCAL_1"
+        run_stage "rbass_mono" "$VOCAL_TEMPLATE_IN" "$VOCAL_1"
         run_stage "f6_rta_mono" "$VOCAL_1" "$VOCAL_2"
         run_stage "c1_comp" "$VOCAL_2" "$VOCAL_3"
         run_stage "sibilance_mono" "$VOCAL_3" "$VOCAL_4"
@@ -363,10 +400,16 @@ case "$TEMPLATE_ID" in
         VOCAL_CHAIN_OUT="$VOCAL_5"
         ;;
     template_c)
-        run_stage "template_c_vocal_proq3" "$VOCAL_SOURCE" "$VOCAL_1"
+        run_stage "template_c_vocal_proq3" "$VOCAL_TEMPLATE_IN" "$VOCAL_1"
         run_stage "vocal_rider_mono" "$VOCAL_1" "$VOCAL_2"
         run_stage "c1_comp" "$VOCAL_2" "$VOCAL_3"
-        run_stage "oneknob_brighter_mono" "$VOCAL_3" "$VOCAL_4"
+        if [[ "$SKIP_ONEKNOB_BRIGHTER" == "1" ]]; then
+            echo ""
+            echo "[skip] oneknob_brighter_mono (timbre target is darker than template C brighter)"
+            cp "$VOCAL_3" "$VOCAL_4"
+        else
+            run_stage "oneknob_brighter_mono" "$VOCAL_3" "$VOCAL_4"
+        fi
         VOCAL_CHAIN_OUT="$VOCAL_4"
         ;;
 esac
@@ -375,12 +418,27 @@ record_stage "vocal_insert_chain" "$STAGE_START" \
     --output "vocal=$VOCAL_CHAIN_OUT"
 
 if [[ -n "$MIX_PLAN" ]]; then
-    echo "[step 1b] Combined residual/source vocal EQ"
+    # 模板链会重新染色；链后再按音色筛选片段做一次轻校，防止相似度被模板洗掉。
+    echo "[step 1a2] Post-template timbre preservation"
+    STAGE_START="$(now_ts)"
+    VOCAL_TIMBRE_GUARD_META="${FINAL_OUT%.*}.timbre_chain_guard.json"
+    "$PYTHON_BIN" "$SCRIPT_DIR/apply_timbre_chain_guard.py" \
+        "$VOCAL_CHAIN_OUT" \
+        "$VOCAL_TIMBRE_GUARDED" \
+        --plan "$MIX_PLAN" \
+        --metadata "$VOCAL_TIMBRE_GUARD_META"
+    record_stage "vocal_timbre_chain_guard" "$STAGE_START" \
+        --input "vocal=$VOCAL_CHAIN_OUT" \
+        --output "vocal=$VOCAL_TIMBRE_GUARDED"
+    VOCAL_CHAIN_OUT="$VOCAL_TIMBRE_GUARDED"
+    # timbre 之后只做清理/保护：低中频堆积、刺耳、齿音、Nyquist 颗粒等都在这里兜底。
+    echo "[step 1b] Post-timbre vocal cleanup EQ"
     STAGE_START="$(now_ts)"
     "$PYTHON_BIN" "$SCRIPT_DIR/apply_vocal_plan_eq.py" \
         "$VOCAL_CHAIN_OUT" \
         "$VOCAL_SOURCE_EQ" \
-        --plan "$MIX_PLAN"
+        --plan "$MIX_PLAN" \
+        --eq-stage post_timbre
     record_stage "vocal_plan_eq" "$STAGE_START" \
         --input "vocal=$VOCAL_CHAIN_OUT" \
         --output "vocal=$VOCAL_SOURCE_EQ"
@@ -397,6 +455,32 @@ if [[ -n "$MIX_PLAN" ]]; then
         --input "vocal=$VOCAL_CHAIN_OUT" \
         --output "vocal=$VOCAL_ARTIFACT_REPAIRED"
     VOCAL_CHAIN_OUT="$VOCAL_ARTIFACT_REPAIRED"
+    # 人声“没劲”只在微动态层处理；不改变总线比例，也不直接提高整体响度。
+    echo "[step 1b3] Vocal dynamic lift"
+    STAGE_START="$(now_ts)"
+    VOCAL_DYNAMIC_META="${FINAL_OUT%.*}.vocal_dynamic_lift.json"
+    "$PYTHON_BIN" "$SCRIPT_DIR/apply_vocal_dynamic_lift.py" \
+        "$VOCAL_CHAIN_OUT" \
+        "$VOCAL_DYNAMIC" \
+        --plan "$MIX_PLAN" \
+        --metadata "$VOCAL_DYNAMIC_META"
+    record_stage "vocal_dynamic_lift" "$STAGE_START" \
+        --input "vocal=$VOCAL_CHAIN_OUT" \
+        --output "vocal=$VOCAL_DYNAMIC"
+    VOCAL_CHAIN_OUT="$VOCAL_DYNAMIC"
+    # 短事件保护只处理句首气声/短塌陷等局部问题，避免这些瞬态误触发后面的伴奏让位。
+    echo "[step 1b4] Vocal short-event guard"
+    STAGE_START="$(now_ts)"
+    VOCAL_EVENT_META="${FINAL_OUT%.*}.vocal_event_guard.json"
+    "$PYTHON_BIN" "$SCRIPT_DIR/apply_vocal_event_guard.py" \
+        "$VOCAL_CHAIN_OUT" \
+        "$VOCAL_EVENT_GUARDED" \
+        --plan "$MIX_PLAN" \
+        --metadata "$VOCAL_EVENT_META"
+    record_stage "vocal_event_guard" "$STAGE_START" \
+        --input "vocal=$VOCAL_CHAIN_OUT" \
+        --output "vocal=$VOCAL_EVENT_GUARDED"
+    VOCAL_CHAIN_OUT="$VOCAL_EVENT_GUARDED"
 else
     echo "[step 1b] Vocal plan EQ skipped: no mix plan"
 fi
@@ -430,6 +514,22 @@ if [[ "$DIRECT_VOCAL_SIDE_LAYER" != "off" ]]; then
         --input "vocal_group=$VOCAL_GROUP" \
         --output "vocal=$VOCAL_GROUP_SIDE"
     cp "$VOCAL_GROUP_SIDE" "$VOCAL_GROUP"
+fi
+if [[ -n "$MIX_PLAN" ]]; then
+    # vocal_group_fx 的空间/总线处理也可能改变听感音色；最终入总线前再轻校一次。
+    echo "[step 1e] Post-vocal-group timbre preservation"
+    STAGE_START="$(now_ts)"
+    VOCAL_GROUP_TIMBRE_META="${FINAL_OUT%.*}.post_group_timbre_guard.json"
+    "$PYTHON_BIN" "$SCRIPT_DIR/apply_timbre_chain_guard.py" \
+        "$VOCAL_GROUP" \
+        "$VOCAL_GROUP_TIMBRE" \
+        --plan "$MIX_PLAN" \
+        --stage post_group \
+        --metadata "$VOCAL_GROUP_TIMBRE_META"
+    record_stage "post_group_timbre_guard" "$STAGE_START" \
+        --input "vocal_group=$VOCAL_GROUP" \
+        --output "vocal_group=$VOCAL_GROUP_TIMBRE"
+    VOCAL_GROUP="$VOCAL_GROUP_TIMBRE"
 fi
 if [[ -n "$EXPORT_VOCAL_GROUP" ]]; then
     cp "$VOCAL_GROUP" "$EXPORT_VOCAL_GROUP"

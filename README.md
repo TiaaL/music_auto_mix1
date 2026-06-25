@@ -72,6 +72,36 @@ Known issues / next checks:
 
 ---
 
+## Current sync note — 2026-06-25
+
+本次更新主要处理四类问题：干声毛刺/抖动、人声没劲、音色相似度不明显、以及人声整体被推得比原曲大。
+
+核心约束：
+
+1. **总线比例不再用“弱人声自动前推目标”**  
+   `compute_render_bus_balance.py` 仍会记录弱/闷/缺咬字诊断，但 `weak_vocal_compensation_db` 固定不参与全局 bus target。总线只负责贴原曲 active vocal/accomp 比例或通用兜底比例，避免所有歌的人声一起变大。
+
+2. **弱人声搬到正确阶段处理**  
+   `dry_vocal_strategy` 只根据干声音频特征触发动作，例如低中频过厚、presence 缺失、body/presence 失衡。它不会直接加人声音量，而是把有限的伴奏分频段动态让位请求写进 plan。
+
+3. **伴奏 duck 侧再做硬上限**  
+   `apply_accomp_vocal_duck.py` 读取 `dry_vocal_strategy.duck_profile` 后，会按频段再次截顶。弱/闷/缺咬字通过伴奏局部让位解决，不通过把人声 bus 整体推大解决。
+
+4. **“没劲”只做微动态，不改响度**  
+   `apply_vocal_dynamic_lift.py` 只在输入人声短帧动态明显弱于参考 stem 时启用，做小幅动态对比增强，并在脚本侧加硬上限，防止异常 plan 把人声推炸。
+
+5. **音色相似度从 8-band 扩展到细分频谱包络**  
+   `analyze_reference.py` 新增 `vocal_spectral_envelope`，只在人声活动区提取、并归一到中频主体，避免响度差被当成音色差。`plan_mix_template.py` 的 timbre EQ 先用 8-band 判断大方向，再用细分包络补足更可听的差异；`apply_timbre_chain_guard.py` 在模板链后和 vocal group 后也会用细分包络轻校，避免模板链把相似度洗掉。
+
+排查入口：
+
+- `<output>.bus_balance.json`：确认 `weak_vocal_compensation_db` 是否为 `0.0`，以及最终 target gap 是否来自原曲或通用兜底。
+- `<output>.accomp_duck.json`：查看 `dry_vocal_strategy`、`profile` 和 `profile_caps_db`，确认弱人声处理是否由特征触发且未超过上限。
+- `<output>.vocal_dynamic_lift.json`：查看微动态触发条件、实际增益范围和 `hard_caps`。
+- `<output>.timbre_chain_guard.json` / `<output>.post_group_timbre_guard.json`：查看 8-band 与细分包络的音色回正动作。
+
+---
+
 ## Requirements
 
 ### Toolchain

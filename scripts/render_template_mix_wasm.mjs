@@ -57,6 +57,7 @@ const options = {
   loudnessFinalizer: true,
   mixPlan: "",
   referenceAudio: "",
+  timbreReferenceVocal: "",
 };
 for (let i = 0; i < args.length; i += 1) {
   const arg = args[i];
@@ -68,6 +69,8 @@ for (let i = 0; i < args.length; i += 1) {
     options.mixPlan = args[++i] || "";
   } else if (arg === "--reference-audio") {
     options.referenceAudio = args[++i] || "";
+  } else if (arg === "--timbre-reference-vocal") {
+    options.timbreReferenceVocal = args[++i] || "";
   } else {
     positional.push(arg);
   }
@@ -195,6 +198,22 @@ function runChecked(command, args, label) {
   }
 }
 
+function planFlag(flag) {
+  if (!options.mixPlan) {
+    return false;
+  }
+  // 统一从 plan 读取模板链开关，避免 wasm 后端和 shell 后端在 brighter 等阶段漂移。
+  const proc = spawnSync(
+    pythonCommand(),
+    [resolve(root, "scripts", "plan_template_chain_flags.py"), options.mixPlan, "--flag", flag],
+    { encoding: "utf8" }
+  );
+  if (proc.status !== 0) {
+    return false;
+  }
+  return proc.stdout.trim() === "1";
+}
+
 function ffmpegCommand() {
   const found = spawnSync("which", ["ffmpeg"], { encoding: "utf8" });
   return found.status === 0 ? found.stdout.trim() : "ffmpeg";
@@ -228,6 +247,67 @@ function applySourceEq(section, input, output) {
     pythonCommand(),
     [resolve(root, "scripts", "apply_plan_source_eq.py"), input, output, "--plan", options.mixPlan, "--section", section],
     `source EQ ${section}`
+  );
+  return output;
+}
+
+function applyVocalPlanEq(stage, input, output) {
+  if (!options.mixPlan) {
+    return input;
+  }
+  // timbre 阶段只追音色筛选片段；post_timbre 阶段只做瑕疵清理和高频保护。
+  runChecked(
+    pythonCommand(),
+    [
+      resolve(root, "scripts", "apply_vocal_plan_eq.py"),
+      input,
+      output,
+      "--plan",
+      options.mixPlan,
+      "--eq-stage",
+      stage,
+    ],
+    `vocal plan EQ ${stage}`
+  );
+  return output;
+}
+
+function applyTimbreChainGuard(input, output, stage = "post_template") {
+  if (!options.mixPlan) {
+    return input;
+  }
+  // 模板链和 vocal group 都会再次染色，所以 wasm 后端也需要同样的链后音色轻校。
+  runChecked(
+    pythonCommand(),
+    [
+      resolve(root, "scripts", "apply_timbre_chain_guard.py"),
+      input,
+      output,
+      "--plan",
+      options.mixPlan,
+      "--stage",
+      stage,
+    ],
+    `timbre guard ${stage}`
+  );
+  return output;
+}
+
+function applyVocalEventGuard(input, output) {
+  if (!options.mixPlan) {
+    return input;
+  }
+  // 短事件保护只处理局部 breath/短塌陷，不负责整体响度或音色。
+  runChecked(
+    pythonCommand(),
+    [
+      resolve(root, "scripts", "apply_vocal_event_guard.py"),
+      input,
+      output,
+      "--plan",
+      options.mixPlan,
+    ],
+    "vocal short-event guard"
   );
   return output;
 }
@@ -309,9 +389,19 @@ try {
   console.log(`[template] ${templateId}`);
   console.log(`[input] vocal=${basename(vocalIn)} accomp=${basename(accompIn)} sr=${sampleRate} samples=${samples}`);
 
-  let vocalRendered = await renderChain(chain.vocal, vocalPrepared, tempDir, "vocal", sampleRate, samples);
-  vocalRendered = applySourceEq("vocal_eq", vocalRendered, join(tempDir, "vocal_source_eq.wav"));
+  // 音色筛选片段先作用在模板链入口；模板链后只做清理和高频保护。
+  const vocalTimbrePrepared = applyVocalPlanEq("timbre", vocalPrepared, join(tempDir, "vocal_timbre_pre.wav"));
+  let vocalStages = chain.vocal;
+  if (templateId === "template_c" && planFlag("skip-oneknob-brighter")) {
+    console.log("[skip] oneknob_brighter_mono (timbre target is darker than template C brighter)");
+    vocalStages = vocalStages.filter((stage) => stage !== "oneknob_brighter_mono");
+  }
+  let vocalRendered = await renderChain(vocalStages, vocalTimbrePrepared, tempDir, "vocal", sampleRate, samples);
+  vocalRendered = applyTimbreChainGuard(vocalRendered, join(tempDir, "vocal_timbre_guarded.wav"));
+  vocalRendered = applyVocalPlanEq("post_timbre", vocalRendered, join(tempDir, "vocal_source_eq.wav"));
+  vocalRendered = applyVocalEventGuard(vocalRendered, join(tempDir, "vocal_event_guarded.wav"));
   vocalRendered = await renderChain(chain.vocalGroup, vocalRendered, tempDir, "vocal_group", sampleRate, samples);
+  vocalRendered = applyTimbreChainGuard(vocalRendered, join(tempDir, "vocal_group_timbre.wav"), "post_group");
 
   let accompRendered = await renderChain(chain.accomp, accompPrepared, tempDir, "accomp", sampleRate, samples);
   accompRendered = applySourceEq("accomp_eq", accompRendered, join(tempDir, "accomp_source_eq.wav"));

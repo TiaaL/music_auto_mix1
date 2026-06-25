@@ -11,7 +11,13 @@ import sys
 from pathlib import Path
 
 from plan_mix_template import build_plan
-from analyze_reference import analyse as analyse_reference, analyse_input_pair, resolve_reference_files
+from analyze_reference import (
+    analyse as analyse_reference,
+    analyse_input_pair,
+    analyse_timbre_reference,
+    resolve_reference_files,
+    resolve_timbre_reference_file,
+)
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -162,6 +168,7 @@ def run_renderer(
     loudness_finalizer: bool,
     legacy_current_renderer: bool,
     reference_audio: Path | None = None,
+    timbre_reference_vocal: Path | None = None,
     mix_plan: Path | None = None,
     stage_report: bool = False,
     stage_report_loudness: bool = False,
@@ -184,6 +191,8 @@ def run_renderer(
             cmd.append("--no-loudness-finalizer")
         if reference_audio is not None:
             cmd += ["--reference-audio", str(reference_audio)]
+        if timbre_reference_vocal is not None:
+            cmd += ["--timbre-reference-vocal", str(timbre_reference_vocal)]
         if mix_plan is not None:
             cmd += ["--mix-plan", str(mix_plan)]
         if stage_report:
@@ -200,6 +209,9 @@ def run_renderer(
         if reference_audio is not None:
             ref_arg = to_msys_path(reference_audio) if is_msys_bash(renderer) else str(reference_audio)
             cmd += ["--reference-audio", ref_arg]
+        if timbre_reference_vocal is not None:
+            timbre_arg = to_msys_path(timbre_reference_vocal) if is_msys_bash(renderer) else str(timbre_reference_vocal)
+            cmd += ["--timbre-reference-vocal", timbre_arg]
         if mix_plan is not None:
             plan_arg = to_msys_path(mix_plan) if is_msys_bash(renderer) else str(mix_plan)
             cmd += ["--mix-plan", plan_arg]
@@ -367,6 +379,18 @@ def main() -> None:
         help="仅本地测试使用：包含 原曲/、原曲人声/、伴奏/ 的目录，用于按歌名自动匹配参考。",
     )
     parser.add_argument(
+        "--timbre-reference-vocal",
+        type=Path,
+        default=None,
+        help="音色筛选片段：用于在干声处理阶段做保守音色相似度校正。",
+    )
+    parser.add_argument(
+        "--timbre-reference-root",
+        type=Path,
+        default=None,
+        help="仅本地测试使用：包含 音色筛选片段/ 的目录，用于按歌名自动匹配音色参考。",
+    )
+    parser.add_argument(
         "--no-reference",
         action="store_true",
         help="Skip reference-driven feature extraction and overrides.",
@@ -403,6 +427,8 @@ def main() -> None:
     ref_accomp: Path | None = None
     ref_features: dict | None = None
     input_features: dict | None = None
+    timbre_ref_vocal: Path | None = None
+    timbre_features: dict | None = None
     reference_status: dict[str, object] = {
         "requested": not args.no_reference,
         "used": False,
@@ -482,7 +508,28 @@ def main() -> None:
             lambda: analyse_input_pair(vocal_wav, accomp_wav),
         )
 
-    plan = build_plan(analysis, ref_features=ref_features, input_features=input_features)
+    timbre_ref_vocal = optional_resolved_path(args.timbre_reference_vocal)
+    timbre_root = optional_resolved_path(args.timbre_reference_root) or optional_resolved_path(args.reference_root)
+    if timbre_ref_vocal is None and timbre_root is not None:
+        # 音色参考可以独立于原曲参考使用：缺 D/G/H 参考时，仍可用 Z 列片段优化干声音色。
+        timbre_ref_vocal = resolve_timbre_reference_file(vocal_wav, downloads_root=timbre_root)
+    if timbre_ref_vocal is not None and timbre_ref_vocal.exists():
+        print(f"[timbre-ref] vocal: {timbre_ref_vocal}")
+        timbre_features = cached_feature(
+            "timbre_reference",
+            [timbre_ref_vocal],
+            lambda: analyse_timbre_reference(timbre_ref_vocal),
+        )
+    elif timbre_ref_vocal is not None:
+        print(f"[timbre-ref] Missing timbre reference; skipped: {timbre_ref_vocal}")
+        timbre_ref_vocal = None
+
+    plan = build_plan(
+        analysis,
+        ref_features=ref_features,
+        input_features=input_features,
+        timbre_features=timbre_features,
+    )
 
     report_dir.mkdir(parents=True, exist_ok=True)
     report_prefix = args.report_prefix.replace("\\", "_").replace("/", "_").replace(":", "_")
@@ -515,6 +562,7 @@ def main() -> None:
         not args.no_loudness_finalizer,
         args.legacy_current_renderer,
         reference_audio=ref_full_mix,
+        timbre_reference_vocal=timbre_ref_vocal,
         mix_plan=plan_path,
         stage_report=args.stage_report or args.stage_report_loudness,
         stage_report_loudness=args.stage_report_loudness,
@@ -543,6 +591,30 @@ def main() -> None:
         )
     loudness_path = output_wav.with_suffix(".loudness.json")
     loudness = json.loads(loudness_path.read_text(encoding="utf-8-sig")) if loudness_path.exists() else None
+    vocal_dynamic_path = output_wav.with_suffix(".vocal_dynamic_lift.json")
+    vocal_dynamic_lift = (
+        json.loads(vocal_dynamic_path.read_text(encoding="utf-8-sig"))
+        if vocal_dynamic_path.exists()
+        else None
+    )
+    timbre_chain_guard_path = output_wav.with_suffix(".timbre_chain_guard.json")
+    timbre_chain_guard = (
+        json.loads(timbre_chain_guard_path.read_text(encoding="utf-8-sig"))
+        if timbre_chain_guard_path.exists()
+        else None
+    )
+    vocal_event_path = output_wav.with_suffix(".vocal_event_guard.json")
+    vocal_event_guard = (
+        json.loads(vocal_event_path.read_text(encoding="utf-8-sig"))
+        if vocal_event_path.exists()
+        else None
+    )
+    post_group_timbre_path = output_wav.with_suffix(".post_group_timbre_guard.json")
+    post_group_timbre_guard = (
+        json.loads(post_group_timbre_path.read_text(encoding="utf-8-sig"))
+        if post_group_timbre_path.exists()
+        else None
+    )
     summary = {
         "classification_label": plan.get("classification_label"),
         "selected_template": plan.get("selected_template"),
@@ -551,7 +623,17 @@ def main() -> None:
         "resolved_mix_plan": str(plan_path),
         "output_wav": str(output_wav),
         "reference_status": reference_status,
+        "timbre_reference": {
+            "used": timbre_features is not None,
+            "vocal": str(timbre_ref_vocal) if timbre_ref_vocal else None,
+            "policy": (
+                "音色筛选片段只提供音色相似度方向；"
+                "响度、总线比例和处理边界仍由原曲参考/干声瑕疵共同约束。"
+            ),
+        },
         "reference_used": (plan.get("reference") or {}).get("features", {}).get("sources") if plan.get("reference") else None,
+        "vocal_processing_context": plan.get("vocal_processing_context"),
+        "source_cleanup": plan.get("source_cleanup"),
         "reference_overrides": (plan.get("reference") or {}).get("overrides"),
         "render": render,
         "loudness_finalizer": not args.no_loudness_finalizer,
@@ -562,6 +644,10 @@ def main() -> None:
         "direct_vocal_side_layer": args.direct_vocal_side_layer,
         "spatial_audit": spatial_audit,
         "vocal_group_output": str(vocal_group_output) if vocal_group_output else None,
+        "vocal_dynamic_lift": vocal_dynamic_lift,
+        "vocal_event_guard": vocal_event_guard,
+        "timbre_chain_guard": timbre_chain_guard,
+        "post_group_timbre_guard": post_group_timbre_guard,
         "loudness": loudness,
         "stage_report": str(output_wav.with_suffix(".stage_report.json")) if (args.stage_report or args.stage_report_loudness) else None,
         "stage_report_loudness": args.stage_report_loudness,

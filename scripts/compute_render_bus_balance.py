@@ -33,9 +33,11 @@ BUS_RATIO_FULL_UNLOCK_GAP_DB = 12.0
 BUS_RATIO_VOCAL_GAIN_FRACTION = 0.60
 BUS_RATIO_ACCOMP_ATTEN_FRACTION = 0.40
 GENERIC_ACTIVE_GAP_DB = -2.0
-# 弱/闷/咬字区缺失的人声，追到参考比例后听感仍可能偏埋；
-# 这里最多只把“目标比例”往人声侧挪一点，不直接改人声音色。
-WEAK_VOCAL_TARGET_MAX_LIFT_DB = 2.0
+# 弱/闷/咬字区缺失只作为诊断信号，不再改全局人声/伴奏目标。
+# “人声没劲/听不清”应由可懂度、动态和伴奏遮挡策略分别处理；
+# 总线比例只负责贴参考或通用比例，避免所有歌的人声被整体推大。
+WEAK_VOCAL_TARGET_MAX_LIFT_DB = 0.0
+WEAK_VOCAL_DIAGNOSTIC_MAX_DB = 2.0
 TARGET_GAP_MIN_DB = -5.0
 TARGET_GAP_MAX_DB = 0.0
 SEVERE_ARTIFACT_PULLBACK_DB = 0.8
@@ -65,7 +67,7 @@ def vocal_artifact_repair(plan: dict | None) -> dict[str, Any]:
 
 
 def vocal_balance_compensation_db(plan: dict | None) -> tuple[float, list[str]]:
-    """根据干声自身问题给比例目标加一点人声侧补偿，不改变音色。"""
+    """诊断旧逻辑会建议多少人声前推；结果只用于记录，不直接改总线目标。"""
     analysis = (plan or {}).get("analysis") or {}
     ratios = analysis.get("ratios") or {}
     group_ratios = analysis.get("group_ratios") or {}
@@ -109,11 +111,11 @@ def vocal_balance_compensation_db(plan: dict | None) -> tuple[float, list[str]]:
 
     repair = vocal_artifact_repair(plan)
     if repair.get("mode") == "split_high_repair":
-        # 耀武类严重受损人声：推前会把瑕疵放大，不能再按“弱人声”大幅补偿。
+        # 严重受损人声：推前会把瑕疵放大，不能再按“弱人声”大幅补偿。
         compensation = 0.0
         reasons.append("严重瑕疵档:不做人声前推补偿")
 
-    return round(clamp(compensation, 0.0, WEAK_VOCAL_TARGET_MAX_LIFT_DB), 2), reasons
+    return round(clamp(compensation, 0.0, WEAK_VOCAL_DIAGNOSTIC_MAX_DB), 2), reasons
 
 
 def reference_gap_value(ref_balance: dict[str, Any]) -> float | None:
@@ -128,35 +130,23 @@ def gated_vocal_balance_compensation_db(
     plan: dict | None,
     ref_gap_value: float | None,
 ) -> tuple[float, list[str]]:
-    """把弱人声补偿统一套上参考曲 dry-deficit 限制。
+    """返回全局比例目标补偿。
 
-    有参考曲时，只有输入干声本身已经明显比参考比例更埋，才额外前推。
-    没有参考曲时走通用补偿，因为没有 dry/reference deficit 可判断。
+    旧策略会把弱/闷/咬字少的人声目标整体前推，容易造成“所有歌人声都比原曲大”。
+    现在这里保留特征诊断，但全局 bus target 不再加补偿。
     """
-    compensation, reasons = vocal_balance_compensation_db(plan)
-    if ref_gap_value is None:
-        return compensation, reasons
+    _ = ref_gap_value
+    diagnostic_compensation, reasons = vocal_balance_compensation_db(plan)
+    if diagnostic_compensation > 0.0:
+        reasons = [
+            *reasons,
+            (
+                f"诊断补偿={diagnostic_compensation:.1f}dB，"
+                f"但全局比例补偿上限={WEAK_VOCAL_TARGET_MAX_LIFT_DB:.1f}dB"
+            ),
+        ]
+    return 0.0, reasons
 
-    bus = (
-        ((plan or {}).get("reference") or {})
-        .get("overrides", {})
-        .get("bus_balance", {})
-    )
-    dry_gap = bus.get("dry_input_vocal_minus_accomp_db")
-    if dry_gap is None:
-        return compensation, reasons
-
-    # 健康干声通常只是渲染后需要常规 bus balance；不要额外推前。
-    # 只有输入素材本身已经明显比参考曲更埋，才启用“问题干声可懂度补偿”。
-    dry_deficit = float(ref_gap_value) - float(dry_gap)
-    if dry_deficit < 3.5:
-        return 0.0, [*reasons, f"补偿跳过:dry_deficit={dry_deficit:.1f}dB"]
-
-    max_by_deficit = clamp(0.8 + (dry_deficit - 3.5) * 1.1, 0.8, WEAK_VOCAL_TARGET_MAX_LIFT_DB)
-    if compensation > max_by_deficit:
-        compensation = round(max_by_deficit, 2)
-        reasons = [*reasons, f"按dry_deficit限制={dry_deficit:.1f}dB"]
-    return compensation, reasons
 
 
 def target_gap_from_plan(
@@ -261,11 +251,11 @@ def compute_bus_gains(
         accomp_gain = 0.0
     predicted_gap = round(render_gap + vocal_gain - accomp_gain, 2)
     reason = (
-        f"match {target_source} active vocal/accomp target with weak-vocal compensation: "
+        f"match {target_source} active vocal/accomp target: "
         f"render gap {render_gap:+.1f} dB -> predicted {predicted_gap:+.1f} dB; "
         f"target {target_gap:+.1f} dB"
         + (f" (reference {float(ref_gap_value):+.1f} dB" if ref_gap_value is not None else " (generic fallback")
-        + f", compensation +{compensation:.1f} dB); "
+        + f", target lift +{compensation:.1f} dB); "
         f"cap {dyn_cap:.1f} dB (distance {gap_distance:.1f} dB); "
         f"correction applied {correction:+.1f} dB."
     )
@@ -281,7 +271,7 @@ def compute_bus_gains(
         "target_source": target_source,
         "weak_vocal_compensation_db": compensation,
         "weak_vocal_compensation_reasons": compensation_reasons,
-        "policy": "match_active_vocal_accomp_target_with_generic_fallback_and_weak_vocal_compensation",
+        "policy": "match_active_vocal_accomp_target_with_generic_fallback_no_global_vocal_lift",
         "measurement_basis": "post_fx_vocal_group_and_accomp_bus_active_vocal_regions",
         "reason": reason,
     }

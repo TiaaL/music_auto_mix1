@@ -8,6 +8,7 @@ import json
 import re
 import subprocess
 import sys
+import unicodedata
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,7 @@ class BatchJob:
     label: str
     vocal: str | None
     accomp: str | None
+    timbre_reference_vocal: str | None
     reference_audio: str | None
     reference_vocal: str | None
     reference_accomp: str | None
@@ -51,6 +53,34 @@ def file_stem(case_name: str, extra_name: str, role: str, row: int) -> str:
     if case_name == "线上数据-5.25":
         stem = f"{stem}_row{row}"
     return stem
+
+
+def normalize_song_token(text: str) -> str:
+    text = unicodedata.normalize("NFKC", text)
+    return text.replace(" ", "").replace("　", "").lower()
+
+
+def song_name_from_row(case_name: str, extra_name: str) -> str:
+    """从表格行名里取歌曲名，用来兜底匹配原曲/原曲人声。"""
+    text = extra_name or case_name
+    if "-" in text:
+        text = text.rsplit("-", 1)[-1]
+    return text.strip()
+
+
+def fuzzy_find_song_audio(audio_root: Path, role: str, song_name: str) -> Path | None:
+    """按歌曲名在角色目录里找参考素材，避免表格缺 D/G URL 时退回 generic。"""
+    role_dir = audio_root / role
+    needle = normalize_song_token(song_name)
+    if not role_dir.exists() or not needle:
+        return None
+    candidates: list[Path] = []
+    for ext in AUDIO_EXTS:
+        candidates.extend(role_dir.glob(f"*{ext}"))
+    for path in sorted(candidates):
+        if needle in normalize_song_token(path.stem):
+            return path
+    return None
 
 
 def find_audio(audio_root: Path, role: str, stem: str) -> Path | None:
@@ -79,7 +109,8 @@ def resolve_reference_audio(
     extra_name: str,
     row: int,
     accomp: Path | None,
-) -> tuple[Path | None, Path | None, Path | None]:
+    allow_song_fallback: bool,
+) -> tuple[Path | None, Path | None, Path | None, str]:
     """解析 D/G/H 列下载出的参考素材。
 
     D 列原曲 -> 原曲/，G 列原曲人声 -> 原曲人声/，H 列歌曲伴奏 -> 伴奏/。
@@ -88,7 +119,18 @@ def resolve_reference_audio(
     ref_audio = resolve_role_audio(audio_root, case_name, extra_name, "原曲", row)
     ref_vocal = resolve_role_audio(audio_root, case_name, extra_name, "原曲人声", row)
     ref_accomp = resolve_role_audio(audio_root, case_name, extra_name, "伴奏", row) or accomp
-    return ref_audio, ref_vocal, ref_accomp
+    source = "sheet" if ref_audio is not None and ref_vocal is not None else "missing"
+    if allow_song_fallback and (ref_audio is None or ref_vocal is None):
+        # 有些历史下载记录只保存了伴奏/干声，但本地 原曲/原曲人声 目录已有同歌曲参考。
+        # 音量平衡、空间、响度仍应该参考原曲；只有音色相似度才用 Z 列筛选片段。
+        song_name = song_name_from_row(case_name, extra_name)
+        fallback_audio = ref_audio or fuzzy_find_song_audio(audio_root, "原曲", song_name)
+        fallback_vocal = ref_vocal or fuzzy_find_song_audio(audio_root, "原曲人声", song_name)
+        if fallback_audio is not None and fallback_vocal is not None:
+            ref_audio = fallback_audio
+            ref_vocal = fallback_vocal
+            source = "local_auto"
+    return ref_audio, ref_vocal, ref_accomp, source
 
 
 def load_records(path: Path) -> list[dict[str, Any]]:
@@ -126,8 +168,8 @@ def main() -> None:
     parser.add_argument(
         "--reference-policy",
         choices=("sheet-only", "local-auto", "off"),
-        default="sheet-only",
-        help="批处理参考策略：默认只信 records_json 的显式参考；本地测试可用 local-auto 按歌名匹配本地参考。",
+        default="local-auto",
+        help="批处理参考策略：默认允许按歌名匹配本地原曲/原曲人声，确保音量平衡仍参考原曲。",
     )
     parser.add_argument("--allow-local-auto-reference", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--no-volume-automation", action="store_true")
@@ -157,28 +199,29 @@ def main() -> None:
         # 注意 H 列伴奏同时可作为渲染伴奏和参考伴奏。
         vocal = resolve_role_audio(args.audio_root, case_name, extra_name, "干声", row)
         accomp = resolve_role_audio(args.audio_root, case_name, extra_name, "伴奏", row)
-        ref_audio, ref_vocal, ref_accomp = resolve_reference_audio(
+        reference_policy = "local-auto" if args.allow_local_auto_reference else args.reference_policy
+        if args.no_reference:
+            reference_policy = "off"
+        ref_audio, ref_vocal, ref_accomp, reference_source = resolve_reference_audio(
             args.audio_root,
             case_name,
             extra_name,
             row,
             accomp,
+            allow_song_fallback=reference_policy == "local-auto",
         )
+        # Z 列下载到“音色筛选片段/”，它只作为干声阶段的音色参考，不等同于原曲人声 stem。
+        timbre_ref_vocal = resolve_role_audio(args.audio_root, case_name, extra_name, "音色筛选片段", row)
         output_wav = args.out_dir / f"mix_{label}.wav"
         summary_json = args.out_dir / f"{label}_summary.json"
-        reference_policy = "local-auto" if args.allow_local_auto_reference else args.reference_policy
-        if args.no_reference:
-            reference_policy = "off"
 
-        # 批处理默认只信 records_json 里的显式参考；本地按歌名自动匹配必须显式选择 local-auto。
-        # 线上跑批宁可走通用兜底，也不要把同名旧文件误当参考曲。
         force_generic_fallback = ref_audio is None or ref_vocal is None
         if reference_policy == "off":
             reference_status = "disabled_by_flag"
-        elif ref_audio and ref_vocal and ref_accomp:
+        elif ref_audio and ref_vocal and ref_accomp and reference_source == "sheet":
             reference_status = "explicit_reference_ready"
-        elif reference_policy == "local-auto":
-            reference_status = "missing_explicit_reference_use_local_auto_reference"
+        elif ref_audio and ref_vocal and ref_accomp and reference_source == "local_auto":
+            reference_status = "local_auto_reference_ready"
         else:
             reference_status = "missing_explicit_reference_use_generic_fallback"
         job = BatchJob(
@@ -186,6 +229,7 @@ def main() -> None:
             label=label,
             vocal=str(vocal) if vocal else None,
             accomp=str(accomp) if accomp else None,
+            timbre_reference_vocal=str(timbre_ref_vocal) if timbre_ref_vocal else None,
             reference_audio=str(ref_audio) if ref_audio else None,
             reference_vocal=str(ref_vocal) if ref_vocal else None,
             reference_accomp=str(ref_accomp) if ref_accomp else None,
@@ -240,10 +284,15 @@ def main() -> None:
                 "--reference-accomp",
                 str(ref_accomp),
             ]
+        if timbre_ref_vocal:
+            cmd += [
+                "--timbre-reference-vocal",
+                str(timbre_ref_vocal),
+            ]
         if not args.no_volume_automation:
             cmd.append("--with-volume-automation")
-        if reference_policy == "off" or (force_generic_fallback and reference_policy != "local-auto"):
-            # ponytail: 批处理默认只信显式参考；缺 D/G 时不猜本地歌名，直接走通用兜底。
+        if reference_policy == "off" or force_generic_fallback:
+            # 找不到原曲/原曲人声时才走通用兜底；Z 列音色片段仍可单独传入。
             cmd.append("--no-reference")
         if args.stage_report:
             cmd.append("--stage-report")

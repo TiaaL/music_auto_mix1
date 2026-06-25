@@ -52,6 +52,23 @@ BANDS = [
     ("air", 12000.0, 20000.0),
 ]
 
+SPECTRAL_ENVELOPE_BANDS = [
+    # 比 8-band tonal_balance 更细的“音色轮廓”采样点。
+    # 只用于人声活动区，并归一到中频人声主体，避免响度差被误当成音色差。
+    ("env_120", 90.0, 160.0, 120.0),
+    ("env_200", 160.0, 260.0, 200.0),
+    ("env_320", 260.0, 420.0, 320.0),
+    ("env_500", 420.0, 650.0, 500.0),
+    ("env_750", 650.0, 950.0, 750.0),
+    ("env_1100", 950.0, 1400.0, 1100.0),
+    ("env_1600", 1400.0, 2100.0, 1600.0),
+    ("env_2400", 2100.0, 3200.0, 2400.0),
+    ("env_3600", 3200.0, 4800.0, 3600.0),
+    ("env_5400", 4800.0, 7200.0, 5400.0),
+    ("env_8000", 7200.0, 10500.0, 8000.0),
+    ("env_12000", 10500.0, 15500.0, 12000.0),
+]
+
 
 def command_path(name: str) -> str:
     found = shutil.which(name)
@@ -186,6 +203,61 @@ def band_profile(data: np.ndarray, sr: int, normalize_mid: bool) -> dict[str, fl
     return profile
 
 
+def spectral_envelope_profile(data: np.ndarray, sr: int) -> dict[str, Any]:
+    """细分频谱包络；用于比 8-band 更可听的音色相似度优化。"""
+    x = to_mono(data)
+    max_samples = min(x.size, sr * 90)
+    x = x[:max_samples]
+    if x.size < 16:
+        return {
+            "version": 1,
+            "basis": "active_vocal_regions_mid_normalized_fft_envelope",
+            "bands": [],
+        }
+    x = x - float(np.mean(x))
+    window = np.hanning(x.size)
+    spectrum = np.abs(np.fft.rfft(x * window)) + 1e-12
+    freqs = np.fft.rfftfreq(x.size, 1.0 / sr)
+    raw: list[dict[str, float | str]] = []
+    for name, low, high, center in SPECTRAL_ENVELOPE_BANDS:
+        upper = min(high, sr / 2.0)
+        if upper <= low:
+            continue
+        mask = (freqs >= low) & (freqs < upper)
+        if not np.any(mask):
+            continue
+        raw.append({
+            "id": name,
+            "freq_hz": round(center, 1),
+            "db_raw": db(float(np.mean(spectrum[mask]))),
+        })
+    if not raw:
+        return {
+            "version": 1,
+            "basis": "active_vocal_regions_mid_normalized_fft_envelope",
+            "bands": [],
+        }
+    mid_values = [
+        float(item["db_raw"])
+        for item in raw
+        if 500.0 <= float(item["freq_hz"]) <= 2400.0
+    ]
+    ref = float(np.median(mid_values)) if mid_values else float(np.median([float(item["db_raw"]) for item in raw]))
+    bands = [
+        {
+            "id": str(item["id"]),
+            "freq_hz": float(item["freq_hz"]),
+            "db": round(float(item["db_raw"]) - ref, 3),
+        }
+        for item in raw
+    ]
+    return {
+        "version": 1,
+        "basis": "active_vocal_regions_mid_normalized_fft_envelope",
+        "bands": bands,
+    }
+
+
 def intervals_to_rows(intervals: list[tuple[float, float]], limit: int = 60) -> list[dict[str, float]]:
     return [
         {"start": round(start, 3), "end": round(end, 3), "duration": round(end - start, 3)}
@@ -298,6 +370,15 @@ def tonal_balance_for_intervals(
 ) -> dict[str, float]:
     active = collect_interval_audio(data, sr, intervals)
     return tonal_balance(active, sr)
+
+
+def spectral_envelope_for_intervals(
+    data: np.ndarray,
+    sr: int,
+    intervals: list[tuple[float, float]],
+) -> dict[str, Any]:
+    active = collect_interval_audio(data, sr, intervals)
+    return spectral_envelope_profile(active, sr)
 
 
 def band_levels_for_intervals(
@@ -675,6 +756,16 @@ def resolve_reference_files(
     }
 
 
+def resolve_timbre_reference_file(
+    vocal_input: Path,
+    downloads_root: Path | None = None,
+) -> Path | None:
+    """按干声歌名解析同一行的“音色筛选片段”参考素材。"""
+    downloads_root = resolve_downloads_root(downloads_root)
+    song = extract_song_name(vocal_input)
+    return fuzzy_find(downloads_root / "音色筛选片段", song, (".wav", ".mp3", ".flac", ".m4a"))
+
+
 def analyse(full_mix: Path, vocal: Path, accomp: Path) -> dict[str, Any]:
     full_audio, full_sr = load_audio_as_float(full_mix)
     vocal_audio, _ = load_audio_as_float(vocal)
@@ -696,6 +787,7 @@ def analyse(full_mix: Path, vocal: Path, accomp: Path) -> dict[str, Any]:
         "loudness": loudness,
         "tonal_balance": tonal_balance(full_audio, full_sr),
         "vocal_tonal_balance": tonal_balance_for_intervals(vocal_audio, full_sr, active_regions),
+        "vocal_spectral_envelope": spectral_envelope_for_intervals(vocal_audio, full_sr, active_regions),
         "accomp_tonal_balance": tonal_balance_for_intervals(accomp_audio, full_sr, active_regions),
         "vocal_dynamics": vocal_dynamic_profile(vocal_audio, full_sr, active_regions),
         "active_band_levels": {
@@ -724,6 +816,32 @@ def analyse(full_mix: Path, vocal: Path, accomp: Path) -> dict[str, Any]:
     }
 
 
+def analyse_timbre_reference(vocal: Path) -> dict[str, Any]:
+    """只提取音色筛选片段的人声活动区特征。
+
+    这里故意不测 loudness / 伴奏比例 / 空间参数，避免把“音色相似度”
+    和后续混音阶段的响度、空间、总线平衡耦合在一起。
+    """
+    vocal_audio, sr = load_audio_as_float(vocal)
+    active_regions = active_intervals_from_vocal(vocal_audio, sr)
+    return {
+        "sources": {
+            "timbre_vocal": str(vocal),
+        },
+        "vocal_tonal_balance": tonal_balance_for_intervals(vocal_audio, sr, active_regions),
+        "vocal_spectral_envelope": spectral_envelope_for_intervals(vocal_audio, sr, active_regions),
+        "active_band_levels": {
+            "vocal": band_levels_for_intervals(vocal_audio, sr, active_regions),
+        },
+        "vocal_dynamics": vocal_dynamic_profile(vocal_audio, sr, active_regions),
+        "active_vocal_regions": {
+            "count": len(active_regions),
+            "coverage_sec": round(sum(end - start for start, end in active_regions), 3),
+            "regions": intervals_to_rows(active_regions),
+        },
+    }
+
+
 def analyse_input_pair(vocal: Path, accomp: Path) -> dict[str, Any]:
     """Predict the input-mix tonal/dynamics by summing pre-render vocal + accomp."""
     vocal_audio, sr = load_audio_as_float(vocal)
@@ -739,6 +857,7 @@ def analyse_input_pair(vocal: Path, accomp: Path) -> dict[str, Any]:
         "sources": {"vocal": str(vocal), "accomp": str(accomp)},
         "tonal_balance": tonal_balance(summed, sr),
         "vocal_tonal_balance": tonal_balance_for_intervals(vocal_audio, sr, active_regions),
+        "vocal_spectral_envelope": spectral_envelope_for_intervals(vocal_audio, sr, active_regions),
         "accomp_tonal_balance": tonal_balance_for_intervals(accomp_audio, sr, active_regions),
         "vocal_dynamics": vocal_dynamic_profile(vocal_audio, sr, active_regions),
         "active_band_levels": {
