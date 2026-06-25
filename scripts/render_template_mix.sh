@@ -718,7 +718,10 @@ if [[ "$WITH_LOUDNESS_FINALIZER" == "1" ]]; then
     "$PYTHON_BIN" "$SCRIPT_DIR/apply_final_transient_guard.py" \
         "$FINAL_OUT" \
         "$FINAL_GUARDED" \
-        --metadata "$FINAL_GUARD_META"
+        --metadata "$FINAL_GUARD_META" \
+        --max-atten-db 5.0 \
+        --excess-threshold-db 11.0 \
+        --min-high-db -42.0
     cp "$FINAL_GUARDED" "$FINAL_OUT"
     record_stage "final_transient_guard" "$STAGE_START" \
         --input "mix=$FINAL_OUT" \

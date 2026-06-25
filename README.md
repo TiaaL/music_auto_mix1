@@ -117,6 +117,9 @@ Known issues / next checks:
 9. **审计复用已算好的参考特征**  
    `auto_template_mix.py` 调用 `audit_vocal_effect_match.py` 时会传入 `resolved_mix_plan.json`。审计脚本优先复用 plan 里的 `reference.features` 和活动人声区间，只重新分析最终人声贡献轨，避免重复跑原曲人声的动态、混响、delay 和频谱包络。
 
+10. **禁止爆音，人声不能比原曲更靠前**  
+   `compute_render_bus_balance.py` 把原曲 active vocal/accomp gap 当作前景上限，并留 `0.6 dB` 安全余量；`apply_section_balance_guard.py` 的默认局部纠偏只压伴奏、不再额外推人声。最终 `apply_final_transient_guard.py` 只对短促高频突发做衰减，作为 loudness finalizer 之后的最后安全闸。
+
 排查入口：
 
 - `<output>.bus_balance.json`：确认 `weak_vocal_compensation_db` 是否为 `0.0`，以及最终 target gap 是否来自原曲或通用兜底。
@@ -125,6 +128,7 @@ Known issues / next checks:
 - `<output>.timbre_chain_guard.json` / `<output>.post_group_timbre_guard.json`：查看 8-band 与细分包络的音色回正动作。
 - `<output>.vocal_effect_audit.json`：查看最终人声贡献轨相对原曲人声 stem 的纵深、动态、混响、宽度和效果高频误差。
 - `resolved_mix_plan.json` 里的 `vocal_processing_context.vocal_effect_target`：查看效果目标来源和每个动作的通用触发证据。
+- `<output>.final_transient_guard.json`：查看是否出现短促高频爆点，以及最终安全闸实际衰减了多少。
 
 ---
 

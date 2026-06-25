@@ -33,6 +33,9 @@ BUS_RATIO_FULL_UNLOCK_GAP_DB = 12.0
 BUS_RATIO_VOCAL_GAIN_FRACTION = 0.60
 BUS_RATIO_ACCOMP_ATTEN_FRACTION = 0.40
 GENERIC_ACTIVE_GAP_DB = -2.0
+# 参考 active gap 是“不能更靠前”的天花板。实际渲染留一点安全余量，
+# 抵消 active 区间检测、压缩/限制器和主观前后感的误差，避免所有歌人声都贴脸。
+REFERENCE_FRONT_SAFETY_MARGIN_DB = 0.6
 # 弱/闷/咬字区缺失只作为诊断信号，不再改全局人声/伴奏目标。
 # “人声没劲/听不清”应由可懂度、动态和伴奏遮挡策略分别处理；
 # 总线比例只负责贴参考或通用比例，避免所有歌的人声被整体推大。
@@ -159,7 +162,7 @@ def target_gap_from_plan(
         base_gap = GENERIC_ACTIVE_GAP_DB
         source = "generic"
     else:
-        base_gap = ref_gap_value
+        base_gap = ref_gap_value - REFERENCE_FRONT_SAFETY_MARGIN_DB
         source = "reference"
 
     compensation, reasons = gated_vocal_balance_compensation_db(plan, ref_gap_value)

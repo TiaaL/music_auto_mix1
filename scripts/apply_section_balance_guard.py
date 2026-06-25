@@ -179,7 +179,10 @@ def process(
         "peak_extra_accomp_gain_db": round(float(np.min(accomp_curve)) if accomp_curve.size else 0.0, 3),
         "events": events[:80],
         "event_count": len(events),
-        "policy": "local reference-window guard: only lift weak active vocal windows that trail the original vocal/accompaniment balance",
+        "policy": (
+            "local reference-window guard: fix buried active vocal windows mainly by attenuating accompaniment; "
+            "default vocal lift is disabled so section repair cannot make the singer closer than the original"
+        ),
     }
     return np.clip(out_vocal, -0.98, 0.98), np.clip(out_accomp, -0.98, 0.98), report
 
@@ -197,13 +200,13 @@ def main() -> None:
     parser.add_argument("--frame-sec", type=float, default=4.0)
     parser.add_argument("--hop-sec", type=float, default=1.0)
     parser.add_argument("--deadband-db", type=float, default=1.15)
-    # 局部副歌/强伴奏窗口只按参考 active 比例纠偏；默认多压伴奏、少推人声。
-    # 这样能处理“后半段伴奏大声”，同时避免重新引入全局人声前推。
+    # 局部副歌/强伴奏窗口只按参考 active 比例纠偏；默认只压伴奏、不推人声。
+    # 弱人声由干声动态/伴奏让位处理，这里不能制造“所有人声比原曲靠前”。
     parser.add_argument("--max-total-correction-db", type=float, default=3.0)
     parser.add_argument("--min-reference-gap-db", type=float, default=-22.0)
-    parser.add_argument("--vocal-share", type=float, default=0.62)
-    parser.add_argument("--max-vocal-gain-db", type=float, default=1.65)
-    parser.add_argument("--max-accomp-atten-db", type=float, default=1.15)
+    parser.add_argument("--vocal-share", type=float, default=0.0)
+    parser.add_argument("--max-vocal-gain-db", type=float, default=0.0)
+    parser.add_argument("--max-accomp-atten-db", type=float, default=1.6)
     args = parser.parse_args()
 
     plan = load_json(args.plan)
