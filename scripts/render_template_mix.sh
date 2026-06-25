@@ -263,6 +263,7 @@ VOCAL_EVENT_GUARDED="$(make_temp_wav template_vocal_event_guarded)"
 VOCAL_GROUP="$(make_temp_wav template_vocal_group)"
 VOCAL_GROUP_SIDE="$(make_temp_wav template_vocal_group_side)"
 VOCAL_GROUP_TIMBRE="$(make_temp_wav template_vocal_group_timbre)"
+VOCAL_GROUP_GUARDED="$(make_temp_wav template_vocal_group_guarded)"
 ACCOMP_1="$(make_temp_wav template_accomp_1)"
 ACCOMP_SOURCE_EQ="$(make_temp_wav template_accomp_source_eq)"
 ACCOMP_DUCKED="$(make_temp_wav template_accomp_ducked)"
@@ -275,7 +276,7 @@ MASTER_1="$(make_temp_wav template_master_1)"
 MASTER_2="$(make_temp_wav template_master_2)"
 FINAL_GUARDED="$(make_temp_wav template_final_guarded)"
 
-trap 'rm -f "$RESAMPLED_VOCAL" "$RESAMPLED_ACCOMP" "$AUTO_VOCAL" "$AUTO_ACCOMP" "$VOCAL_1" "$VOCAL_2" "$VOCAL_3" "$VOCAL_4" "$VOCAL_5" "$VOCAL_CORRECTED" "$VOCAL_TIMBRE_PRE" "$VOCAL_TIMBRE_GUARDED" "$VOCAL_SOURCE_EQ" "$VOCAL_ARTIFACT_REPAIRED" "$VOCAL_DYNAMIC" "$VOCAL_EVENT_GUARDED" "$VOCAL_GROUP" "$VOCAL_GROUP_SIDE" "$VOCAL_GROUP_TIMBRE" "$ACCOMP_1" "$ACCOMP_SOURCE_EQ" "$ACCOMP_DUCKED" "$ACCOMP_BUS" "$VOCAL_BALANCED" "$ACCOMP_BALANCED" "$MIX_TMP" "$MIX_TILTED" "$MASTER_1" "$MASTER_2" "$FINAL_GUARDED"' EXIT
+trap 'rm -f "$RESAMPLED_VOCAL" "$RESAMPLED_ACCOMP" "$AUTO_VOCAL" "$AUTO_ACCOMP" "$VOCAL_1" "$VOCAL_2" "$VOCAL_3" "$VOCAL_4" "$VOCAL_5" "$VOCAL_CORRECTED" "$VOCAL_TIMBRE_PRE" "$VOCAL_TIMBRE_GUARDED" "$VOCAL_SOURCE_EQ" "$VOCAL_ARTIFACT_REPAIRED" "$VOCAL_DYNAMIC" "$VOCAL_EVENT_GUARDED" "$VOCAL_GROUP" "$VOCAL_GROUP_SIDE" "$VOCAL_GROUP_TIMBRE" "$VOCAL_GROUP_GUARDED" "$ACCOMP_1" "$ACCOMP_SOURCE_EQ" "$ACCOMP_DUCKED" "$ACCOMP_BUS" "$VOCAL_BALANCED" "$ACCOMP_BALANCED" "$MIX_TMP" "$MIX_TILTED" "$MASTER_1" "$MASTER_2" "$FINAL_GUARDED"' EXIT
 
 VOCAL_RATE="$(audio_sample_rate "$VOCAL_IN")"
 ACCOMP_RATE="$(audio_sample_rate "$ACCOMP_IN")"
@@ -530,6 +531,22 @@ if [[ -n "$MIX_PLAN" ]]; then
         --input "vocal_group=$VOCAL_GROUP" \
         --output "vocal_group=$VOCAL_GROUP_TIMBRE"
     VOCAL_GROUP="$VOCAL_GROUP_TIMBRE"
+    # 人声组进总线前先削短促高频爆点；爆音应在来源层处理，不能等母带后才硬压。
+    echo "[step 1f] Vocal-group transient safety guard"
+    STAGE_START="$(now_ts)"
+    VOCAL_GROUP_GUARD_META="${FINAL_OUT%.*}.vocal_group_transient_guard.json"
+    "$PYTHON_BIN" "$SCRIPT_DIR/apply_final_transient_guard.py" \
+        "$VOCAL_GROUP" \
+        "$VOCAL_GROUP_GUARDED" \
+        --metadata "$VOCAL_GROUP_GUARD_META" \
+        --max-atten-db 4.0 \
+        --excess-threshold-db 10.5 \
+        --min-high-db -44.0 \
+        --max-event-ms 220.0
+    record_stage "vocal_group_transient_guard" "$STAGE_START" \
+        --input "vocal_group=$VOCAL_GROUP" \
+        --output "vocal_group=$VOCAL_GROUP_GUARDED"
+    VOCAL_GROUP="$VOCAL_GROUP_GUARDED"
 fi
 echo "[step 2] Accompaniment insert chain: $TEMPLATE_ID"
 ACCOMP_CHAIN_IN="$ACCOMP_SOURCE"

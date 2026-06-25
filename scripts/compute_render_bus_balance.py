@@ -34,7 +34,7 @@ BUS_RATIO_VOCAL_GAIN_FRACTION = 0.60
 BUS_RATIO_ACCOMP_ATTEN_FRACTION = 0.40
 GENERIC_ACTIVE_GAP_DB = -2.0
 # 参考 active gap 是“不能更靠前”的天花板。实际渲染留一点安全余量，
-# 抵消 active 区间检测、压缩/限制器和主观前后感的误差，避免所有歌人声都贴脸。
+# 抵消 active 区间检测、压缩/限制器和主观前后感误差，避免人声普遍贴脸。
 REFERENCE_FRONT_SAFETY_MARGIN_DB = 0.6
 # 弱/闷/咬字区缺失只作为诊断信号，不再改全局人声/伴奏目标。
 # “人声没劲/听不清”应由可懂度、动态和伴奏遮挡策略分别处理；

@@ -90,35 +90,38 @@ Known issues / next checks:
 
 核心约束：
 
-1. **总线比例不再用“弱人声自动前推目标”**  
+1. **总线比例不再用“弱人声自动前推目标”**
    `compute_render_bus_balance.py` 仍会记录弱/闷/缺咬字诊断，但 `weak_vocal_compensation_db` 固定不参与全局 bus target。总线只负责贴原曲 active vocal/accomp 比例或通用兜底比例，避免所有歌的人声一起变大。
 
-2. **弱人声搬到正确阶段处理**  
+2. **弱人声搬到正确阶段处理**
    `dry_vocal_strategy` 只根据干声音频特征触发动作，例如低中频过厚、presence 缺失、body/presence 失衡。它不会直接加人声音量，而是把有限的伴奏分频段动态让位请求写进 plan。
 
-3. **伴奏 duck 侧再做硬上限**  
+3. **伴奏 duck 侧再做硬上限**
    `apply_accomp_vocal_duck.py` 读取 `dry_vocal_strategy.duck_profile` 后，会按频段再次截顶。弱/闷/缺咬字通过伴奏局部让位解决，不通过把人声 bus 整体推大解决。
 
-4. **“没劲”只做微动态，不改响度**  
+4. **“没劲”只做微动态，不改响度**
    `apply_vocal_dynamic_lift.py` 只在输入人声短帧动态、活动 RMS 或峰值明显弱于参考 stem 时启用，做小幅动态对比增强，并在脚本侧加硬上限，防止异常 plan 把人声推炸。
 
-5. **音色相似度从 8-band 扩展到细分频谱包络**  
+5. **音色相似度从 8-band 扩展到细分频谱包络**
    `analyze_reference.py` 新增 `vocal_spectral_envelope`，只在人声活动区提取、并归一到中频主体，避免响度差被当成音色差。`plan_mix_template.py` 的 timbre EQ 先用 8-band 判断大方向，再用细分包络补足更可听的差异；`apply_timbre_chain_guard.py` 在模板链后和 vocal group 后也会用细分包络轻校，避免模板链把相似度洗掉。
 
-6. **空间和段落比例继续保守化**  
+6. **空间和段落比例继续保守化**
    居中型参考人声的 reverb wet/time/high return 会被更严格限制，避免“比原曲湿、高频多”。局部 section balance 遇到副歌埋声时优先压伴奏、少推人声；自动音量前处理的人声段落负增益和相邻跳变也收小，减少忽大忽小。
 
-7. **最终人声效果要和原曲人声 stem 对比**  
+7. **最终人声效果要和原曲人声 stem 对比**
    `audit_vocal_effect_match.py` 会把最终入 stereo sum 的人声贡献轨和原曲人声 stem 做同一活动区对比，覆盖空间/纵深、混响尾巴、delay 线索、短帧动态、效果高频和细分包络。它的职责不是裁判音色筛选片段，而是定位最终人声是否比原曲更散、更湿、更平或更亮。
 
-8. **效果目标进入统一上下文，不按测试歌名单独调参**  
+8. **效果目标进入统一上下文，不按测试歌名单独调参**
    `plan_mix_template.py` 会把原曲人声 stem 的空间、混响、delay 和动态统一写入 `vocal_processing_context.vocal_effect_target`。后续 `spatial_fx`、微动态和审计都消费这个上下文；触发条件来自音频特征，例如原曲人声是否 center-led、active side/mid、短帧动态差、干声 presence 是否缺失。任何动作都有上限，不根据歌曲名或当前四首回归 case 做点对点处理。
 
-9. **审计复用已算好的参考特征**  
+9. **审计复用已算好的参考特征**
    `auto_template_mix.py` 调用 `audit_vocal_effect_match.py` 时会传入 `resolved_mix_plan.json`。审计脚本优先复用 plan 里的 `reference.features` 和活动人声区间，只重新分析最终人声贡献轨，避免重复跑原曲人声的动态、混响、delay 和频谱包络。
 
-10. **禁止爆音，人声不能比原曲更靠前**  
-   `compute_render_bus_balance.py` 把原曲 active vocal/accomp gap 当作前景上限，并留 `0.6 dB` 安全余量；`apply_section_balance_guard.py` 的默认局部纠偏只压伴奏、不再额外推人声。最终 `apply_final_transient_guard.py` 只对短促高频突发做衰减，作为 loudness finalizer 之后的最后安全闸。
+10. **禁止爆音，人声不能比原曲更靠前**
+   `compute_render_bus_balance.py` 把原曲 active vocal/accomp gap 当作前景上限，并留 `0.6 dB` 安全余量；`apply_section_balance_guard.py` 的默认局部纠偏只压伴奏、不再额外推人声。爆音先在 vocal_group 入总线前用 `<output>.vocal_group_transient_guard.json` 处理，最终 `apply_final_transient_guard.py` 再做 loudness finalizer 后的短促高频安全闸。
+
+11. **混响默认回到 0.1 之前固定 rack**
+   `plan_mix_template.py` 对 center-led / near-mono 原曲人声，或 RT60 proxy 明显不可信的参考，默认不再编译 per-song spatial vocal_group，而是使用 0.1 之前的固定 `vocal_group_fx`。只有原曲人声空间更开放且 reverb proxy 可靠时，才允许有上限的 adaptive spatial。
 
 排查入口：
 
@@ -126,9 +129,9 @@ Known issues / next checks:
 - `<output>.accomp_duck.json`：查看 `dry_vocal_strategy`、`profile` 和 `profile_caps_db`，确认弱人声处理是否由特征触发且未超过上限。
 - `<output>.vocal_dynamic_lift.json`：查看微动态触发条件、实际增益范围和 `hard_caps`。
 - `<output>.timbre_chain_guard.json` / `<output>.post_group_timbre_guard.json`：查看 8-band 与细分包络的音色回正动作。
+- `<output>.vocal_group_transient_guard.json` / `<output>.final_transient_guard.json`：查看短促高频爆点是否在来源层或最终层被衰减。
 - `<output>.vocal_effect_audit.json`：查看最终人声贡献轨相对原曲人声 stem 的纵深、动态、混响、宽度和效果高频误差。
 - `resolved_mix_plan.json` 里的 `vocal_processing_context.vocal_effect_target`：查看效果目标来源和每个动作的通用触发证据。
-- `<output>.final_transient_guard.json`：查看是否出现短促高频爆点，以及最终安全闸实际衰减了多少。
 
 ---
 

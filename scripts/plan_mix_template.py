@@ -682,13 +682,15 @@ VOCAL_PRESENCE_POLICY = {
     "reference_vocal_forward_or_even": {
         "pre_timbre_cut_scale": 0.48,
         "pre_timbre_cut_caps_db": {"upper": 0.8, "harsh": 0.55, "sib": 0.45},
-        "post_timbre_cut_scale": 0.42,
-        "post_timbre_cut_caps_db": {"upper": 0.9, "harsh": 0.75, "sib": 0.65},
+        # post-group 是最终可听人声贡献轨；这里允许稍多回正偏亮/偏冲频段，
+        # 但仍只 cut、不靠总线改变前后，避免音色相似度和“人声靠前”互相打架。
+        "post_timbre_cut_scale": 0.58,
+        "post_timbre_cut_caps_db": {"upper": 1.35, "harsh": 1.05, "sib": 0.85},
         "hf_cut_caps_db": HF_GUARD_REFERENCE_EVEN_CAP_DB,
         "repair_strength_scale": 0.75,
         "allow_dark_brighter_skip": False,
-        "max_total_cut_db": {"low": 5.5, "lowmid": 5.5, "mid": 1.8, "upper": 2.6, "harsh": 1.8, "sib": 1.5},
-        "reason": "原曲人声接近持平或靠前，不能为了音色相似度削掉咬字和穿透力",
+        "max_total_cut_db": {"low": 5.5, "lowmid": 5.5, "mid": 1.8, "upper": 3.2, "harsh": 2.2, "sib": 1.8},
+        "reason": "原曲人声接近持平或靠前，但最终人声过亮/过冲时仍允许小幅音色回正",
     },
     "reference_vocal_slightly_back": {
         "pre_timbre_cut_scale": 0.7,
@@ -1861,6 +1863,20 @@ def build_spatial_fx_plan(
         "vocal_spatial_profile": stem_spatial,
         "vocal_effect_target": effect_context,
     }
+    rt60_ms = float(reverb.get("est_rt60_ms") or 0.0)
+    if center_led_reference or rt60_ms > 8000.0:
+        # 0.1 之前的 vocal_group_fx 是固定空间 rack。当前回归显示 center-led
+        # 原曲人声的 reverb proxy 容易把尾音/抽取残留当成长混响，导致更湿、更靠前。
+        # 因此居中或 RT60 明显不可信时回到旧固定 rack；不再动态改 reverb/delay/side。
+        reasons.append("legacy_fixed_vocal_group_fx_for_center_led_or_unreliable_reverb")
+        return {
+            "enabled": False,
+            "applied_to_render": False,
+            "reason": ",".join(reasons),
+            "baseline": baseline,
+            "evidence": evidence,
+            "policy": "legacy_0_1_pre_spatial_rack_default_when_reverb_proxy_is_unreliable",
+        }
     if not enabled:
         return {
             "enabled": False,
@@ -1871,7 +1887,6 @@ def build_spatial_fx_plan(
         }
 
     tail_ratio = float(reverb.get("tail_to_onset_ratio_db") or -60.0)
-    rt60_ms = float(reverb.get("est_rt60_ms") or 0.0)
     wet_delta_target = clamp((tail_ratio + 12.0) / 12.0 * 4.0, 0.0, 4.0)
     wet_delta = wet_delta_target * reverb_conf
     time_target = reverb_time_target(rt60_ms)
@@ -1986,7 +2001,7 @@ def build_spatial_fx_plan(
         "limits": SPATIAL_LIMITS,
         "evidence": evidence,
         "guards": reasons,
-        "policy": "bounded_reference_mapping_confidence_blend_center_led_guard",
+        "policy": "bounded_reference_mapping_confidence_blend_open_reference_only",
     }
 
 
@@ -2263,7 +2278,9 @@ def build_vocal_artifact_repair(
             reasons.append(
                 f"统一决策层判定 {presence_policy.get('mode')}，repair 强度缩放为 {repair_scale:.2f}"
             )
-        severe_artifact = max_peak >= 9.5 and len(high_hits) >= 3
+        # 单个 upper 极端尖峰也会形成“爆音/电流感”，尤其低原生采样率干声。
+        # severe 仍然只分层修高频，不动中低频主体，也不按歌名触发。
+        severe_artifact = (max_peak >= 18.0 and len(high_hits) >= 2) or (max_peak >= 12.0 and len(high_hits) >= 3)
         actions.append({
             "type": "adeclick",
             "window": 40,

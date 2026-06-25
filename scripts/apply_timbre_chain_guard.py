@@ -56,9 +56,11 @@ MAX_BOOST_DB = {
 POST_GROUP_MAX_CUT_DB = {
     "low": 1.2,
     "lowmid": 1.2,
-    "upper": 1.0,
-    "harsh": 0.8,
-    "sib": 0.65,
+    # post-group 是最终入总线的人声贡献轨；偏亮/偏冲会直接变成靠前感。
+    # 这里适度放宽 cut 上限，但仍保持低幅度、宽峰、只按音色筛选片段差异触发。
+    "upper": 1.35,
+    "harsh": 1.05,
+    "sib": 0.85,
     "air": 0.8,
 }
 POST_GROUP_MAX_BOOST_DB = {
