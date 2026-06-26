@@ -36,7 +36,6 @@ Faust DSP approximations of classic Waves/FabFilter plugins, wired into a Python
 - **人声音色**：只和 `--timbre-reference-vocal` 或 `音色筛选片段/` 里的筛选片段保持一致，用于干声/音色 EQ。自动匹配时会先按干声同 basename 精确找同一行筛选片段，找不到才按歌名 fuzzy 兜底，避免同歌名不同歌手串用。
 - **人声效果**：靠前/靠后、纵深、混响、delay、动态、宽度都和原曲人声 stem 对比，用最终人声贡献轨生成的 `<output>.vocal_effect_audit.json` 排查。
 - **总线比例**：人声/伴奏大小只贴原曲 active vocal/accomp 比例或通用兜底，不用音色筛选片段决定。
-- **空间策略**：center-led 原曲也允许小幅参考混响/纵深，但 RT60 只当深度线索，不照抄成长尾；wet/time/delay/side 都有硬上限，后面还有宽度 guard 和瞬态 guard 兜底。
 
 The system has two entry points:
 
@@ -108,7 +107,7 @@ Known issues / next checks:
    `analyze_reference.py` 新增 `vocal_spectral_envelope`，只在人声活动区提取、并归一到中频主体，避免响度差被当成音色差。`plan_mix_template.py` 的 timbre EQ 先用 8-band 判断大方向，再用细分包络补足更可听的差异；`apply_timbre_chain_guard.py` 在模板链后和 vocal group 后也会用细分包络轻校，避免模板链把相似度洗掉。
 
 6. **空间和段落比例继续保守化**
-   居中型参考人声仍会进入空间映射，但只允许小幅 wet/time，delay 和 Side 更窄，return 高频更暗；RT60 proxy 很长时只作为纵深存在的证据，不直接生成超长尾巴。局部 section balance 遇到副歌埋声时优先压伴奏、少推人声；自动音量前处理的人声段落负增益和相邻跳变也收小，减少忽大忽小。
+   居中型参考人声的 reverb wet/time/high return 会被更严格限制，避免“比原曲湿、高频多”。局部 section balance 遇到副歌埋声时优先压伴奏、少推人声；自动音量前处理的人声段落负增益和相邻跳变也收小，减少忽大忽小。
 
 7. **最终人声效果要和原曲人声 stem 对比**
    `audit_vocal_effect_match.py` 会把最终入 stereo sum 的人声贡献轨和原曲人声 stem 做同一活动区对比，覆盖靠前/靠后、空间/纵深、混响尾巴、delay 线索和短帧动态。它不会用原唱频段裁判音色；频谱差异只保留诊断，音色相似度仍只看音色筛选片段。
@@ -122,10 +121,10 @@ Known issues / next checks:
 10. **禁止爆音，人声不能比原曲更靠前**
    `compute_render_bus_balance.py` 把原曲 active vocal/accomp gap 当作前景上限，并留 `0.6 dB` 安全余量；`apply_section_balance_guard.py` 的默认局部纠偏只压伴奏、不再额外推人声。爆音先在 vocal_group 入总线前用 `<output>.vocal_group_transient_guard.json` 处理，最终 `apply_final_transient_guard.py` 再做 loudness finalizer 后的短促高频安全闸。
 
-11. **混响策略从“整段回退”改成“有上限映射”**
-   `plan_mix_template.py` 不再因为 center-led 或长 RT60 proxy 就完全回退固定 `vocal_group_fx`。它会保留 0.1 之前 rack 的基准听感，只在可信参考特征上做小幅、受限的 wet/time/predelay/return 高频/delay/side 调整；proxy 低置信或参考 stem 泄漏时才禁用 adaptive spatial。
+11. **混响默认回到 0.1 之前固定 rack**
+   `plan_mix_template.py` 对 center-led / near-mono 原曲人声，或 RT60 proxy 明显不可信的参考，默认不再编译 per-song spatial vocal_group，而是使用 0.1 之前的固定 `vocal_group_fx`。只有原曲人声空间更开放且 reverb proxy 可靠时，才允许有上限的 adaptive spatial。
 
-12. **center-led 人声仍由宽度 guard 兜底**
+12. **center-led 人声只收宽度，不改旧混响**
    `apply_vocal_group_width_guard.py` 在 vocal_group 之后读取 plan 中的原曲人声 `active_side_minus_mid_db` 和 active 区间，只在当前人声组比 center-led 原曲明显更宽时衰减 Side。它不改变 Mid、总线响度、混响时间或音色 EQ，用来处理“人声散/贴脸”而不破坏 0.1 之前的混响听感。
 
 13. **人声处理顺序：先修问题，再捏相似度，最后小调**

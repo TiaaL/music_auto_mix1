@@ -150,7 +150,7 @@ def process(input_wav: Path, output_wav: Path, plan: dict[str, Any], metadata: P
         "before": current,
         "after": after,
         "policy": (
-            "无论前面 vocal_group 空间 rack 是否启用参考映射，最终都只对超出原曲 center-led 宽度余量的 Side 做硬上限衰减。"
+            "保留 0.1 之前 vocal_group 混响 rack，只对超出原曲 center-led 宽度余量的 Side 做硬上限衰减。"
         ),
     }
     if metadata:
