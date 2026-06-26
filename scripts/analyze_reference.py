@@ -538,6 +538,86 @@ def reverb_proxy(data: np.ndarray, sr: int) -> dict[str, float]:
     }
 
 
+def phrase_tail_proxy(data: np.ndarray, sr: int, intervals: list[tuple[float, float]]) -> dict[str, float | int | str]:
+    """句尾空间尾巴代理。
+
+    reverb_proxy 看瞬态之后的能量，容易把歌手拖音、压缩延音当成混响。
+    这里专门看 active 人声段结束后的 80-650ms 空隙，只用下一句进来前的窗口，
+    更接近听感里的“句尾还有没有房间/板混/delay 尾巴”。
+    """
+    x = to_mono(data)
+    if x.size < sr or not intervals:
+        return {
+            "tail_to_active_db": -60.0,
+            "early_tail_to_active_db": -60.0,
+            "late_tail_to_active_db": -60.0,
+            "gap_count": 0,
+            "confidence": 0.0,
+            "basis": "phrase_end_tail_windows",
+        }
+
+    ordered = sorted((float(s), float(e)) for s, e in intervals if e > s)
+    early_ratios: list[float] = []
+    late_ratios: list[float] = []
+    full_ratios: list[float] = []
+    for idx, (start, end) in enumerate(ordered):
+        next_start = ordered[idx + 1][0] if idx + 1 < len(ordered) else x.size / sr
+        gap = next_start - end
+        if gap < 0.32 or end - start < 0.18:
+            continue
+
+        active_start = max(start, end - 0.36)
+        active_end = max(active_start + 0.08, end - 0.04)
+        tail_start = end + 0.08
+        early_end = min(end + 0.32, next_start - 0.04, x.size / sr)
+        late_start = end + 0.32
+        late_end = min(end + 0.65, next_start - 0.04, x.size / sr)
+        full_end = min(end + 0.65, next_start - 0.04, x.size / sr)
+
+        def rms_window(a: float, b: float) -> float | None:
+            ia = max(0, int(a * sr))
+            ib = min(x.size, int(b * sr))
+            if ib - ia < int(0.06 * sr):
+                return None
+            return float(np.sqrt(np.mean(np.square(x[ia:ib]))))
+
+        active_rms = rms_window(active_start, active_end)
+        early_rms = rms_window(tail_start, early_end)
+        late_rms = rms_window(late_start, late_end)
+        full_rms = rms_window(tail_start, full_end)
+        if active_rms is None or active_rms < 1e-5:
+            continue
+        if early_rms is not None:
+            early_ratios.append(db(early_rms) - db(active_rms))
+        if late_rms is not None:
+            late_ratios.append(db(late_rms) - db(active_rms))
+        if full_rms is not None:
+            full_ratios.append(db(full_rms) - db(active_rms))
+
+    if not full_ratios:
+        return {
+            "tail_to_active_db": -60.0,
+            "early_tail_to_active_db": -60.0,
+            "late_tail_to_active_db": -60.0,
+            "gap_count": 0,
+            "confidence": 0.0,
+            "basis": "phrase_end_tail_windows",
+        }
+
+    spread = float(np.percentile(full_ratios, 75) - np.percentile(full_ratios, 25)) if len(full_ratios) > 1 else 0.0
+    count_score = clamp((len(full_ratios) - 2.0) / 8.0, 0.0, 1.0)
+    stability_score = 1.0 - clamp(spread / 10.0, 0.0, 1.0)
+    return {
+        "tail_to_active_db": round(float(np.median(full_ratios)), 2),
+        "early_tail_to_active_db": round(float(np.median(early_ratios)), 2) if early_ratios else -60.0,
+        "late_tail_to_active_db": round(float(np.median(late_ratios)), 2) if late_ratios else -60.0,
+        "gap_count": int(len(full_ratios)),
+        "tail_iqr_db": round(spread, 2),
+        "confidence": round(clamp(0.20 + 0.50 * count_score + 0.30 * stability_score, 0.0, 1.0), 3),
+        "basis": "phrase_end_tail_windows",
+    }
+
+
 def delay_proxy(data: np.ndarray, sr: int) -> dict[str, float]:
     """Envelope autocorrelation proxy for audible 80-800 ms repeat structure."""
     x = to_mono(data)
@@ -859,6 +939,7 @@ def analyse(full_mix: Path, vocal: Path, accomp: Path) -> dict[str, Any]:
         "vocal_stem_quality": vocal_stem_quality(vocal_audio, full_sr, active_regions),
         "vocal_spatial_profile": vocal_spatial_profile(vocal_audio, full_sr, active_regions),
         "reverb_proxy": reverb_proxy(vocal_audio, full_sr),
+        "phrase_tail_proxy": phrase_tail_proxy(vocal_audio, full_sr, active_regions),
         "delay_proxy": delay_proxy(vocal_audio, full_sr),
     }
 
@@ -907,6 +988,7 @@ def analyse_input_pair(vocal: Path, accomp: Path) -> dict[str, Any]:
         "vocal_spectral_envelope": spectral_envelope_for_intervals(vocal_audio, sr, active_regions),
         "accomp_tonal_balance": tonal_balance_for_intervals(accomp_audio, sr, active_regions),
         "vocal_dynamics": vocal_dynamic_profile(vocal_audio, sr, active_regions),
+        "phrase_tail_proxy": phrase_tail_proxy(vocal_audio, sr, active_regions),
         "active_band_levels": {
             "vocal": band_levels_for_intervals(vocal_audio, sr, active_regions),
             "accomp": band_levels_for_intervals(accomp_audio, sr, active_regions),

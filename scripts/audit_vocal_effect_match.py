@@ -19,6 +19,7 @@ from analyze_reference import (
     active_intervals_from_vocal,
     delay_proxy,
     load_audio_as_float,
+    phrase_tail_proxy,
     reverb_proxy,
     spectral_envelope_for_intervals,
     tonal_balance_for_intervals,
@@ -182,6 +183,13 @@ def reverb_axis_summary(
         decay_state = "candidate_longer_decay"
     elif rt_error < -180.0:
         decay_state = "candidate_shorter_decay"
+    phrase = errors.get("phrase_tail", {})
+    phrase_tail_error = float(phrase.get("tail_to_active_db_error", 0.0))
+    phrase_tail_state = "match"
+    if phrase_tail_error > 1.2:
+        phrase_tail_state = "candidate_more_phrase_tail"
+    elif phrase_tail_error < -1.6:
+        phrase_tail_state = "candidate_less_phrase_tail"
     conflict = tail_state != "match" and decay_state != "match" and tail_error * rt_error < 0.0
     return {
         "tail_amount": {
@@ -196,9 +204,17 @@ def reverb_axis_summary(
             "error_ms": round(rt_error, 3),
             "state": decay_state,
         },
+        "phrase_tail": {
+            "reference_tail_to_active_db": reference["phrase_tail"].get("tail_to_active_db"),
+            "candidate_tail_to_active_db": candidate["phrase_tail"].get("tail_to_active_db"),
+            "error_db": round(phrase_tail_error, 3),
+            "state": phrase_tail_state,
+            "confidence_error": round(float(phrase.get("confidence_error", 0.0)), 3),
+            "basis": "句尾后 80-650ms 空间残留，优先判断听感是否偏干。",
+        },
         "proxy_conflict": bool(conflict),
         "policy": (
-            "tail_amount 控制 wet/return，decay_time 控制 time；两轴方向相反时只报诊断，不自动加减混响。"
+            "phrase_tail 优先判断听感干湿；tail_amount 辅助 wet/return，decay_time 辅助 time；方向相反时先诊断，不自动一刀切。"
         ),
     }
 
@@ -213,7 +229,14 @@ def build_reference_metrics(
     if reference_features:
         missing = [
             key
-            for key in ("vocal_dynamics", "reverb_proxy", "delay_proxy", "vocal_tonal_balance", "vocal_spectral_envelope")
+            for key in (
+                "vocal_dynamics",
+                "reverb_proxy",
+                "phrase_tail_proxy",
+                "delay_proxy",
+                "vocal_tonal_balance",
+                "vocal_spectral_envelope",
+            )
             if not reference_features.get(key)
         ]
         if not missing:
@@ -221,6 +244,7 @@ def build_reference_metrics(
                 "spatial": ms_metrics(reference_vocal, intervals),
                 "dynamics": reference_features["vocal_dynamics"],
                 "reverb": reference_features["reverb_proxy"],
+                "phrase_tail": reference_features.get("phrase_tail_proxy") or {},
                 "delay": reference_features["delay_proxy"],
                 "tonal_balance": reference_features["vocal_tonal_balance"],
                 "spectral_envelope": reference_features["vocal_spectral_envelope"],
@@ -232,6 +256,7 @@ def build_reference_metrics(
         "spatial": ms_metrics(reference_vocal, intervals),
         "dynamics": vocal_dynamic_profile(ref_audio, ref_sr, intervals),
         "reverb": reverb_proxy(ref_audio, ref_sr),
+        "phrase_tail": phrase_tail_proxy(ref_audio, ref_sr, intervals),
         "delay": delay_proxy(ref_audio, ref_sr),
         "tonal_balance": tonal_balance_for_intervals(ref_audio, ref_sr, intervals),
         "spectral_envelope": spectral_envelope_for_intervals(ref_audio, ref_sr, intervals),
@@ -259,6 +284,7 @@ def build_report(
         "spatial": ms_metrics(candidate_vocal_group, intervals),
         "dynamics": vocal_dynamic_profile(cand_audio, cand_sr, intervals),
         "reverb": reverb_proxy(cand_audio, cand_sr),
+        "phrase_tail": phrase_tail_proxy(cand_audio, cand_sr, intervals),
         "delay": delay_proxy(cand_audio, cand_sr),
         "tonal_balance": tonal_balance_for_intervals(cand_audio, cand_sr, intervals),
         "spectral_envelope": spectral_envelope_for_intervals(cand_audio, cand_sr, intervals),
@@ -283,6 +309,11 @@ def build_report(
             candidate["reverb"],
             reference["reverb"],
             ("tail_to_onset_ratio_db", "est_rt60_ms", "confidence"),
+        ),
+        "phrase_tail": scalar_delta(
+            candidate["phrase_tail"],
+            reference["phrase_tail"],
+            ("tail_to_active_db", "early_tail_to_active_db", "late_tail_to_active_db", "confidence"),
         ),
         "delay": scalar_delta(candidate["delay"], reference["delay"], ("peak_corr", "peak_lag_ms", "confidence")),
         "tonal_balance": scalar_delta(

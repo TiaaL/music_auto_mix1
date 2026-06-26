@@ -1934,6 +1934,7 @@ def build_spatial_fx_plan(
     }
 
     delay_conf = float(delay.get("confidence") or 0.0)
+    delay_corr = float(delay.get("peak_corr") or 0.0)
     if preserve_missing_presence:
         delay_send_delta = -7.0
         feedback = baseline["supertap_feedback"] * 0.45
@@ -1941,10 +1942,18 @@ def build_spatial_fx_plan(
         delay_policy = "missing_presence_min_side_guard"
     elif center_led_reference:
         # 原曲人声接近居中时，delay 只能给纵深线索，不能制造明显侧向散开。
-        delay_send_delta = -7.0
-        feedback = baseline["supertap_feedback"] * 0.42
+        # 但如果原曲 stem 本身有稳定 delay 相关峰，不能把 send/gain 一律压到最低，
+        # 否则听感会“干”。这里只保留窄 delay 深度，不放开宽度和反馈。
+        has_reference_depth_delay = delay_conf >= 0.35 and delay_corr >= 0.72
+        if has_reference_depth_delay:
+            delay_send_delta = -3.8 + min(1.0, max(0.0, (delay_corr - 0.72) * 4.0))
+            feedback = baseline["supertap_feedback"] * 0.62
+            delay_policy = "center_led_reference_narrow_depth_delay"
+        else:
+            delay_send_delta = -7.0
+            feedback = baseline["supertap_feedback"] * 0.42
+            delay_policy = "center_led_reference_delay_side_guard"
         delay_width = float(effect_spatial.get("delay_width_cap") or 0.28)
-        delay_policy = "center_led_reference_delay_side_guard"
     elif delay_conf < 0.60:
         delay_send_delta = min(0.5, max(0.0, delay_conf * 0.8))
         feedback = baseline["supertap_feedback"]
