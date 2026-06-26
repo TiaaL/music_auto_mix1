@@ -126,9 +126,13 @@ Known issues / next checks:
 12. **center-led 人声只收宽度，不改旧混响**
    `apply_vocal_group_width_guard.py` 在 vocal_group 之后读取 plan 中的原曲人声 `active_side_minus_mid_db` 和 active 区间，只在当前人声组比 center-led 原曲明显更宽时衰减 Side。它不改变 Mid、总线响度、混响时间或音色 EQ，用来处理“人声散/贴脸”而不破坏 0.1 之前的混响听感。
 
+13. **人声处理顺序：先修问题，再捏相似度，最后小调**
+   `render_template_mix.sh` 现在先跑 `source_cleanup` 和 `vocal_artifact_repair` 处理干声泥、刺、齿音、Nyquist 颗粒和毛刺；再用音色筛选片段做 timbre EQ；模板链后只保留 timbre guard、微动态、短事件、宽度和瞬态这类小幅校验。修复动作不使用音色筛选片段做依据，相似度动作不负责修瑕疵。
+
 排查入口：
 
 - `<output>.bus_balance.json`：确认 `weak_vocal_compensation_db` 是否为 `0.0`，以及最终 target gap 是否来自原曲或通用兜底。
+- `stage_report.json`：确认人声顺序是 `vocal_source_cleanup_eq → vocal_artifact_repair → vocal_timbre_pre_eq → vocal_timbre_chain_guard → vocal_dynamic_lift`。
 - `<output>.accomp_duck.json`：查看 `dry_vocal_strategy`、`profile` 和 `profile_caps_db`，确认弱人声处理是否由特征触发且未超过上限。
 - `<output>.vocal_dynamic_lift.json`：查看微动态触发条件、实际增益范围和 `hard_caps`。
 - `<output>.timbre_chain_guard.json` / `<output>.post_group_timbre_guard.json`：查看 8-band 与细分包络的音色回正动作。
@@ -323,10 +327,18 @@ Template vocal plugin chains:
 Templates A/B/C share:
 
 ```
-vocal insert chain
-  → [step 1b] residual vocal EQ (from mix plan, if --mix-plan is passed)
-  → [step 1c] reference vocal source EQ (plan-driven, optional)
+dry vocal
+  → [step 0b] source cleanup EQ (dry-vocal problems only)
+  → [step 0c] artifact repair (click/grain smoothing, if triggered)
+  → [step 0d] timbre reference EQ (screened vocal clip only)
+  → vocal insert chain
+  → [step 1a2] post-template timbre preservation
+  → [step 1b] vocal dynamic lift
+  → [step 1c] short-event guard
   → vocal_group_fx (baseline or reference spatial plan)
+  → [step 1f] post-vocal-group timbre preservation
+  → [step 1g] reference width guard
+  → [step 1h] vocal-group transient guard
 accompaniment
   → template_music_proq3_{ab|c}
   → [step 2b] reference accomp carve EQ (plan-driven, optional)

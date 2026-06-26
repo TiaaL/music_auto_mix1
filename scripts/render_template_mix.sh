@@ -366,17 +366,42 @@ fi
 
 VOCAL_TEMPLATE_IN="$VOCAL_SOURCE"
 if [[ -n "$MIX_PLAN" ]]; then
-    # 音色相似度先进入模板 insert 链，让后面的压缩/模板 EQ 基于更接近筛选片段的干声工作。
-    # 这里只处理 timbre 动作，不做瑕疵清理，避免把两个目标混在一起。
-    echo "[step 0b] Timbre reference EQ before vocal insert chain"
+    # 新顺序：先修干声问题，再捏音色相似度，最后只小幅校验。
+    # 清理动作只由干声瑕疵/统一预算触发，不使用音色筛选片段当“修复”依据。
+    echo "[step 0b] Dry vocal cleanup EQ before timbre match"
     STAGE_START="$(now_ts)"
     "$PYTHON_BIN" "$SCRIPT_DIR/apply_vocal_plan_eq.py" \
         "$VOCAL_SOURCE" \
+        "$VOCAL_SOURCE_EQ" \
+        --plan "$MIX_PLAN" \
+        --eq-stage source_cleanup
+    record_stage "vocal_source_cleanup_eq" "$STAGE_START" \
+        --input "vocal=$VOCAL_SOURCE" \
+        --output "vocal=$VOCAL_SOURCE_EQ"
+
+    # 去点击/轻度频谱平滑也放在音色匹配前，避免先捏相似度、后修毛刺把音色再洗掉。
+    echo "[step 0c] Dry vocal artifact repair before timbre match"
+    STAGE_START="$(now_ts)"
+    VOCAL_ARTIFACT_META="${FINAL_OUT%.*}.vocal_artifact_repair.json"
+    "$PYTHON_BIN" "$SCRIPT_DIR/apply_vocal_artifact_repair.py" \
+        "$VOCAL_SOURCE_EQ" \
+        "$VOCAL_ARTIFACT_REPAIRED" \
+        --plan "$MIX_PLAN" \
+        --metadata "$VOCAL_ARTIFACT_META"
+    record_stage "vocal_artifact_repair" "$STAGE_START" \
+        --input "vocal=$VOCAL_SOURCE_EQ" \
+        --output "vocal=$VOCAL_ARTIFACT_REPAIRED"
+
+    # 干声问题收住后，再让音色筛选片段决定宽带方向。
+    echo "[step 0d] Timbre reference EQ before vocal insert chain"
+    STAGE_START="$(now_ts)"
+    "$PYTHON_BIN" "$SCRIPT_DIR/apply_vocal_plan_eq.py" \
+        "$VOCAL_ARTIFACT_REPAIRED" \
         "$VOCAL_TIMBRE_PRE" \
         --plan "$MIX_PLAN" \
         --eq-stage timbre
     record_stage "vocal_timbre_pre_eq" "$STAGE_START" \
-        --input "vocal=$VOCAL_SOURCE" \
+        --input "vocal=$VOCAL_ARTIFACT_REPAIRED" \
         --output "vocal=$VOCAL_TIMBRE_PRE"
     VOCAL_TEMPLATE_IN="$VOCAL_TIMBRE_PRE"
 fi
@@ -433,32 +458,8 @@ if [[ -n "$MIX_PLAN" ]]; then
         --input "vocal=$VOCAL_CHAIN_OUT" \
         --output "vocal=$VOCAL_TIMBRE_GUARDED"
     VOCAL_CHAIN_OUT="$VOCAL_TIMBRE_GUARDED"
-    # timbre 之后只做清理/保护：低中频堆积、刺耳、齿音、Nyquist 颗粒等都在这里兜底。
-    echo "[step 1b] Post-timbre vocal cleanup EQ"
-    STAGE_START="$(now_ts)"
-    "$PYTHON_BIN" "$SCRIPT_DIR/apply_vocal_plan_eq.py" \
-        "$VOCAL_CHAIN_OUT" \
-        "$VOCAL_SOURCE_EQ" \
-        --plan "$MIX_PLAN" \
-        --eq-stage post_timbre
-    record_stage "vocal_plan_eq" "$STAGE_START" \
-        --input "vocal=$VOCAL_CHAIN_OUT" \
-        --output "vocal=$VOCAL_SOURCE_EQ"
-    VOCAL_CHAIN_OUT="$VOCAL_SOURCE_EQ"
-    echo "[step 1b2] Vocal artifact repair"
-    STAGE_START="$(now_ts)"
-    VOCAL_ARTIFACT_META="${FINAL_OUT%.*}.vocal_artifact_repair.json"
-    "$PYTHON_BIN" "$SCRIPT_DIR/apply_vocal_artifact_repair.py" \
-        "$VOCAL_CHAIN_OUT" \
-        "$VOCAL_ARTIFACT_REPAIRED" \
-        --plan "$MIX_PLAN" \
-        --metadata "$VOCAL_ARTIFACT_META"
-    record_stage "vocal_artifact_repair" "$STAGE_START" \
-        --input "vocal=$VOCAL_CHAIN_OUT" \
-        --output "vocal=$VOCAL_ARTIFACT_REPAIRED"
-    VOCAL_CHAIN_OUT="$VOCAL_ARTIFACT_REPAIRED"
-    # 人声“没劲”只在微动态层处理；不改变总线比例，也不直接提高整体响度。
-    echo "[step 1b3] Vocal dynamic lift"
+    # 人声“没劲”只在微动态层处理；放在相似度之后，不改变总线比例，也不直接提高整体响度。
+    echo "[step 1b] Vocal dynamic lift"
     STAGE_START="$(now_ts)"
     VOCAL_DYNAMIC_META="${FINAL_OUT%.*}.vocal_dynamic_lift.json"
     "$PYTHON_BIN" "$SCRIPT_DIR/apply_vocal_dynamic_lift.py" \
@@ -471,7 +472,7 @@ if [[ -n "$MIX_PLAN" ]]; then
         --output "vocal=$VOCAL_DYNAMIC"
     VOCAL_CHAIN_OUT="$VOCAL_DYNAMIC"
     # 短事件保护只处理句首气声/短塌陷等局部问题，避免这些瞬态误触发后面的伴奏让位。
-    echo "[step 1b4] Vocal short-event guard"
+    echo "[step 1c] Vocal short-event guard"
     STAGE_START="$(now_ts)"
     VOCAL_EVENT_META="${FINAL_OUT%.*}.vocal_event_guard.json"
     "$PYTHON_BIN" "$SCRIPT_DIR/apply_vocal_event_guard.py" \
@@ -490,7 +491,7 @@ STAGE_START="$(now_ts)"
 VOCAL_GROUP_FX_BIN="$BUILD_DIR/vocal_group_fx"
 ensure_binary "vocal_group_fx"
 if [[ -n "$MIX_PLAN" && "$SPATIAL_FX" != "off" ]]; then
-    echo "[step 1c] Reference spatial vocal group FX"
+    echo "[step 1d] Reference spatial vocal group FX"
     SPATIAL_META="${FINAL_OUT%.*}.spatial_fx.json"
     VOCAL_GROUP_FX_BIN="$("$PYTHON_BIN" "$SCRIPT_DIR/build_spatial_vocal_group.py" \
         --plan "$MIX_PLAN" \
@@ -502,7 +503,7 @@ record_stage "vocal_group_fx" "$STAGE_START" \
     --input "vocal=$VOCAL_CHAIN_OUT" \
     --output "vocal=$VOCAL_GROUP"
 if [[ "$DIRECT_VOCAL_SIDE_LAYER" != "off" ]]; then
-    echo "[step 1d] Direct vocal side layer: $DIRECT_VOCAL_SIDE_LAYER"
+    echo "[step 1e] Direct vocal side layer: $DIRECT_VOCAL_SIDE_LAYER"
     STAGE_START="$(now_ts)"
     DIRECT_SIDE_META="${FINAL_OUT%.*}.direct_vocal_side_layer.json"
     "$PYTHON_BIN" "$SCRIPT_DIR/apply_direct_vocal_side_layer.py" \
@@ -519,7 +520,7 @@ if [[ "$DIRECT_VOCAL_SIDE_LAYER" != "off" ]]; then
 fi
 if [[ -n "$MIX_PLAN" ]]; then
     # vocal_group_fx 的空间/总线处理也可能改变听感音色；最终入总线前再轻校一次。
-    echo "[step 1e] Post-vocal-group timbre preservation"
+    echo "[step 1f] Post-vocal-group timbre preservation"
     STAGE_START="$(now_ts)"
     VOCAL_GROUP_TIMBRE_META="${FINAL_OUT%.*}.post_group_timbre_guard.json"
     "$PYTHON_BIN" "$SCRIPT_DIR/apply_timbre_chain_guard.py" \
@@ -534,7 +535,7 @@ if [[ -n "$MIX_PLAN" ]]; then
     VOCAL_GROUP="$VOCAL_GROUP_TIMBRE"
     # 0.1 之前的混响 rack 保留，但 center-led 原曲不能让 vocal_group 侧向变宽。
     # 宽度 guard 只衰减 Side，不动 Mid/响度/混响时间，避免听感继续“散”。
-    echo "[step 1f] Vocal-group reference width guard"
+    echo "[step 1g] Vocal-group reference width guard"
     STAGE_START="$(now_ts)"
     VOCAL_GROUP_WIDTH_META="${FINAL_OUT%.*}.vocal_group_width_guard.json"
     "$PYTHON_BIN" "$SCRIPT_DIR/apply_vocal_group_width_guard.py" \
@@ -547,7 +548,7 @@ if [[ -n "$MIX_PLAN" ]]; then
         --output "vocal_group=$VOCAL_GROUP_WIDTH"
     VOCAL_GROUP="$VOCAL_GROUP_WIDTH"
     # 人声组进总线前先削短促高频爆点；爆音应在来源层处理，不能等母带后才硬压。
-    echo "[step 1g] Vocal-group transient safety guard"
+    echo "[step 1h] Vocal-group transient safety guard"
     STAGE_START="$(now_ts)"
     VOCAL_GROUP_GUARD_META="${FINAL_OUT%.*}.vocal_group_transient_guard.json"
     "$PYTHON_BIN" "$SCRIPT_DIR/apply_final_transient_guard.py" \

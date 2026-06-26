@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """按阶段应用 plan 里的人声 EQ。
 
-音色筛选片段 EQ 可以单独放在模板链前面；自清理和高频保护留在模板链后面兜底。
+渲染主流程按“先修干声问题 -> 再捏音色相似度 -> 后面只小幅校验”执行。
+这里保留 post_timbre/all 是为了兼容旧调用；新流程优先使用 source_cleanup + timbre。
 """
 
 from __future__ import annotations
@@ -99,9 +100,12 @@ def main() -> None:
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument(
         "--eq-stage",
-        choices=("all", "timbre", "post_timbre"),
+        choices=("all", "source_cleanup", "timbre", "post_timbre"),
         default="all",
-        help="all=兼容旧流程；timbre=只做音色参考；post_timbre=音色之后的清理/保护。",
+        help=(
+            "source_cleanup=先修干声问题；timbre=只做音色参考；"
+            "post_timbre=旧流程里音色之后的清理/保护；all=兼容旧调用。"
+        ),
     )
     parser.add_argument("--ffmpeg", default="ffmpeg")
     args = parser.parse_args()
@@ -123,11 +127,15 @@ def main() -> None:
     hf_actions = hf_guard.get("actions", []) if hf_guard.get("enabled") else []
 
     skipped_by_budget: list[dict[str, Any]] = []
-    if args.eq_stage == "timbre":
-        # 音色相似度先进入模板链，让后续压缩/模板 EQ 基于更接近筛选片段的干声工作。
+    if args.eq_stage == "source_cleanup":
+        # 新主流程第一步：先处理泥、刺、齿音、Nyquist 颗粒等干声问题。
+        # 这些动作只来自干声自身特征/统一预算，不使用音色筛选片段当“修复”依据。
+        ordered_actions = [*residual_actions, *source_actions, *hf_actions]
+    elif args.eq_stage == "timbre":
+        # 干声修复后再捏相似度，让音色 EQ 建立在更稳定的声音底子上。
         ordered_actions = [*timbre_actions]
     elif args.eq_stage == "post_timbre":
-        # 后置阶段只做瑕疵修正和高频兜底，不再追音色，避免把相似度目标反复改写。
+        # 兼容旧流程：后置阶段只做瑕疵修正和高频兜底，不再追音色。
         ordered_actions = [*residual_actions, *source_actions, *hf_actions]
         ordered_actions, skipped_by_budget = cap_cumulative_cuts(ordered_actions, timbre_actions, plan)
     else:
