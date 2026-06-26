@@ -356,8 +356,8 @@ def main() -> None:
     parser.add_argument(
         "--spatial-fx",
         choices=("auto", "off"),
-        default="auto",
-        help="Use reference-driven vocal-group spatial FX when the resolved plan enables it.",
+        default="off",
+        help="Use reference-driven vocal-group spatial FX when explicitly set to auto; default off keeps the 0.1 fixed rack.",
     )
     parser.add_argument(
         "--no-spatial-fx",

@@ -35,7 +35,8 @@ STAGE_REPORT=""
 GLOBAL_DECLICK="auto"
 FAST_LOUDNESS_STEPS=""
 COMPARE_FAST_LOUDNESS=0
-SPATIAL_FX="auto"
+# 空间处理默认回到 0.1 固定 vocal_group_fx；参考空间证据仍在 plan/audit 中保留。
+SPATIAL_FX="off"
 EXPORT_VOCAL_GROUP=""
 EXPORT_ACCOMP_BUS=""
 DIRECT_VOCAL_SIDE_LAYER="off"
@@ -491,7 +492,7 @@ STAGE_START="$(now_ts)"
 VOCAL_GROUP_FX_BIN="$BUILD_DIR/vocal_group_fx"
 ensure_binary "vocal_group_fx"
 if [[ -n "$MIX_PLAN" && "$SPATIAL_FX" != "off" ]]; then
-    echo "[step 1d] Reference spatial vocal group FX"
+    echo "[step 1d] Legacy 0.1 vocal group FX with spatial diagnostics"
     SPATIAL_META="${FINAL_OUT%.*}.spatial_fx.json"
     VOCAL_GROUP_FX_BIN="$("$PYTHON_BIN" "$SCRIPT_DIR/build_spatial_vocal_group.py" \
         --plan "$MIX_PLAN" \
@@ -643,29 +644,8 @@ VOCAL_SUM_INPUT="$VOCAL_GROUP"
 ACCOMP_SUM_INPUT="$ACCOMP_BUS"
 VOCAL_SUM_GAIN_DB="$VOCAL_BUS_GAIN_DB"
 ACCOMP_SUM_GAIN_DB="$ACCOMP_BUS_GAIN_DB"
-if [[ -n "$MIX_PLAN" ]]; then
-    echo "[step 3b] Reference-window section balance guard"
-    STAGE_START="$(now_ts)"
-    SECTION_BALANCE_META="${FINAL_OUT%.*}.section_balance_guard.json"
-    "$PYTHON_BIN" "$SCRIPT_DIR/apply_section_balance_guard.py" \
-        "$VOCAL_GROUP" \
-        "$ACCOMP_BUS" \
-        "$VOCAL_BALANCED" \
-        "$ACCOMP_BALANCED" \
-        --plan "$MIX_PLAN" \
-        --vocal-gain-db "$VOCAL_BUS_GAIN_DB" \
-        --accomp-gain-db "$ACCOMP_BUS_GAIN_DB" \
-        --metadata "$SECTION_BALANCE_META"
-    VOCAL_SUM_INPUT="$VOCAL_BALANCED"
-    ACCOMP_SUM_INPUT="$ACCOMP_BALANCED"
-    VOCAL_SUM_GAIN_DB="0.0"
-    ACCOMP_SUM_GAIN_DB="0.0"
-    record_stage "section_balance_guard" "$STAGE_START" \
-        --input "vocal=$VOCAL_GROUP" \
-        --input "accomp=$ACCOMP_BUS" \
-        --output "vocal=$VOCAL_BALANCED" \
-        --output "accomp=$ACCOMP_BALANCED"
-fi
+# 音量平衡回到 0.1：只使用全局 bus balance，不再追加 reference-window section guard。
+# 动态、人声音色相似度和最终效果审计仍保留在各自阶段。
 
 if [[ -n "$EXPORT_VOCAL_GROUP" ]]; then
     mkdir -p "$(dirname "$EXPORT_VOCAL_GROUP")"

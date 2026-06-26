@@ -12,12 +12,6 @@ import numpy as np
 import soundfile as sf
 
 from analyze_reference import load_audio_as_float, to_mono
-from compute_render_bus_balance import (
-    gated_vocal_balance_compensation_db,
-    reference_gap_value,
-    reference_levels,
-)
-
 
 def db(value: float) -> float:
     return 20.0 * np.log10(max(value, 1e-12))
@@ -239,9 +233,10 @@ def main() -> None:
         raise SystemExit(f"sample-rate mismatch: vocal={sr}, accomp={sr2}")
     ref_vocal = resample_ref(ref_vocal_path, int(sr))
     ref_accomp = resample_ref(ref_accomp_path, int(sr))
-    # 和全局 bus balance 共用同一套补偿 gating，避免局部 guard 对健康干声额外前推。
-    ref_gap = reference_gap_value(reference_levels(plan))
-    target_gap_lift_db, lift_reasons = gated_vocal_balance_compensation_db(plan, ref_gap)
+    # 音量平衡默认回到 0.1：section guard 不再继承弱人声全局前推补偿。
+    # 本脚本目前只作为手动排查工具保留，默认渲染链不会调用。
+    target_gap_lift_db = 0.0
+    lift_reasons = ["v0.1_bus_balance_mode:no_section_target_lift"]
     out_vocal, out_accomp, report = process(
         vocal,
         accomp,

@@ -59,22 +59,21 @@ Problem being addressed:
 What changed:
 
 - `analyze_reference.py` now reports reverb confidence, delay-repeat evidence, tail stability, and a vocal-stem leakage guard.
-- `plan_mix_template.py` now writes `reference.overrides.spatial_fx`, with bounded RVerb/SuperTap parameters blended from the Faust baseline by confidence.
-- `render_template_mix.sh` can build a cached per-song `vocal_group_fx` binary from that plan via `build_spatial_vocal_group.py`; metadata is written to `<output>.spatial_fx.json`.
-- `auto_template_mix.py` forwards `--spatial-fx auto|off` and records the selected mode in the summary JSON.
+- `plan_mix_template.py` still records reference space/depth evidence for audit and future diagnosis.
+- `render_template_mix.sh` defaults to the legacy 0.1 fixed `vocal_group_fx` rack; per-song spatial binaries are opt-in only via `--spatial-fx auto`.
+- `auto_template_mix.py` defaults `--spatial-fx off` and records the selected mode in the summary JSON.
 
 Why this shape:
 
-- It changes only vocal-group space, not bus balance, source EQ, master loudness, de-click, or accompaniment duck/carve policy.
-- It keeps low-confidence delay near baseline and keeps shimmer hidden by default.
-- It can be disabled with `--spatial-fx off` or `--no-spatial-fx` for A/B comparison and rollback.
+- It keeps the 0.1 vocal-group spatial sound fixed by default while leaving source EQ, master loudness, de-click, accompaniment duck/carve policy, dynamic lift, depth audit, and timbre similarity intact.
+- Bus balance also follows the v0.1 conservative active vocal/accomp ratio rule by default; section-window balance guard is not part of the default render.
+- Reference reverb/delay evidence is diagnostic unless `--spatial-fx auto` is explicitly requested.
 
 Known issues / next checks:
 
-- This is a conservative first rollout using generated DSP binaries; the longer-term architecture should make `vocal_group_fx` runtime-parameterized.
-- Accuracy still depends on reference stem quality. Check `<output>.spatial_fx.json` for `reason`, `guards`, and confidence before trusting an unexpected wet/dry result.
-- Validate baseline vs. spatial render on the target songs before widening limits, especially `炳超 - 黄昏` and `佳菲 - 阴天`.
-- If a render becomes too distant, first compare with `--spatial-fx off`; do not compensate by changing vocal/accompaniment bus balance or master loudness.
+- Adaptive per-song spatial mapping is opt-in for experiments; rebuild it only after diagnosis shows which axis is wrong.
+- Accuracy still depends on reference stem quality. In default renders `<output>.spatial_fx.json` may be absent because the 0.1 fixed rack is used directly.
+- If a render feels too dry, distant, or unnatural, diagnose the vocal-group rack and post-group guards first; do not compensate by changing vocal/accompaniment bus balance or master loudness.
 
 ---
 
@@ -107,7 +106,7 @@ Known issues / next checks:
    `analyze_reference.py` 新增 `vocal_spectral_envelope`，只在人声活动区提取、并归一到中频主体，避免响度差被当成音色差。`plan_mix_template.py` 的 timbre EQ 先用 8-band 判断大方向，再用细分包络补足更可听的差异；`apply_timbre_chain_guard.py` 在模板链后和 vocal group 后也会用细分包络轻校，避免模板链把相似度洗掉。
 
 6. **空间和段落比例继续保守化**
-   居中型参考人声的 reverb wet/time/high return 会被更严格限制，避免“比原曲湿、高频多”。局部 section balance 遇到副歌埋声时优先压伴奏、少推人声；自动音量前处理的人声段落负增益和相邻跳变也收小，减少忽大忽小。
+   默认空间处理回到 0.1 固定 `vocal_group_fx` rack；参考空间/纵深特征仍进入 plan 和审计，但不默认生成 per-song spatial rack。自动音量前处理的人声段落负增益和相邻跳变仍保留当前逻辑，用来减少忽大忽小。
 
 7. **最终人声效果要和原曲人声 stem 对比**
    `audit_vocal_effect_match.py` 会把最终入 stereo sum 的人声贡献轨和原曲人声 stem 做同一活动区对比，覆盖靠前/靠后、空间/纵深、混响尾巴、delay 线索和短帧动态。它不会用原唱频段裁判音色；频谱差异只保留诊断，音色相似度仍只看音色筛选片段。
@@ -119,10 +118,10 @@ Known issues / next checks:
    `auto_template_mix.py` 调用 `audit_vocal_effect_match.py` 时会传入 `resolved_mix_plan.json`。审计脚本优先复用 plan 里的 `reference.features` 和活动人声区间，只重新分析最终人声贡献轨，避免重复跑原曲人声的动态、混响、delay 和频谱包络。
 
 10. **禁止爆音，人声不能比原曲更靠前**
-   `compute_render_bus_balance.py` 把原曲 active vocal/accomp gap 当作前景上限，并留 `0.6 dB` 安全余量；`apply_section_balance_guard.py` 的默认局部纠偏只压伴奏、不再额外推人声。爆音先在 vocal_group 入总线前用 `<output>.vocal_group_transient_guard.json` 处理，最终 `apply_final_transient_guard.py` 再做 loudness finalizer 后的短促高频安全闸。
+   `compute_render_bus_balance.py` 回到 0.1 的保守 active vocal/accomp 比例匹配：固定 correction cap、60/40 分配，不使用弱人声全局前推或动态大上限。默认渲染不再追加 `apply_section_balance_guard.py` 的局部比例二次纠偏。爆音先在 vocal_group 入总线前用 `<output>.vocal_group_transient_guard.json` 处理，最终 `apply_final_transient_guard.py` 再做 loudness finalizer 后的短促高频安全闸。
 
 11. **混响默认回到 0.1 之前固定 rack**
-   `plan_mix_template.py` 对 center-led / near-mono 原曲人声，或 RT60 proxy 明显不可信的参考，默认不再编译 per-song spatial vocal_group，而是使用 0.1 之前的固定 `vocal_group_fx`。只有原曲人声空间更开放且 reverb proxy 可靠时，才允许有上限的 adaptive spatial。
+   默认 `--spatial-fx off`，使用 0.1 固定 `vocal_group_fx`。`plan_mix_template.py` 仍保留参考空间证据，`--spatial-fx auto` 仅作为显式实验入口，不参与默认效果。
 
 12. **center-led 人声只收宽度，不改旧混响**
    `apply_vocal_group_width_guard.py` 在 vocal_group 之后读取 plan 中的原曲人声 `active_side_minus_mid_db` 和 active 区间，只在当前人声组比 center-led 原曲明显更宽时衰减 Side。它不改变 Mid、总线响度、混响时间或音色 EQ，用来处理“人声散/贴脸”而不破坏 0.1 之前的混响听感。
@@ -449,7 +448,7 @@ When a reference full-mix, vocal stem, and accompaniment stem are provided (auto
 - **`source_eq.accomp_eq`** — cut-only accompaniment carve EQ after the music template EQ, focused on bands where the current accompaniment masks the current vocal and the vocal sits behind the reference balance. One problem region should only be carved once, and carve decisions are coordinated with dynamic ducking so the same upper/mid issue is not cut twice.
 - **`dry_vocal_strategy`** — current dry-vocal tags and a ducking profile. Low-mid-heavy, dark, or presence-masked vocals ask the accompaniment to yield more in body/presence/air bands while voiced sections are active.
 - **`master_tilt_eq`** — up to 4 EQ moves between amix and master Pro-Q3, applied by `apply_master_tilt_eq.py`. Pushes the mix's 8-band tonal shape toward the reference's.
-- **`spatial_fx`** — bounded vocal-group RVerb/SuperTap parameters derived from reference reverb/delay evidence. The render path applies this only when confidence and stem-quality guards pass; otherwise it records the reason and uses the baseline `vocal_group_fx`.
+- **`spatial_fx`** — opt-in only. Default renders use the legacy 0.1 fixed `vocal_group_fx`; reference reverb/delay evidence remains in the plan and audit path, but per-song spatial constants are applied only when explicitly running `--spatial-fx auto`.
 
 Master tilt safety rules (in `plan_mix_template.MASTER_TILT_*`):
 
@@ -461,12 +460,10 @@ Master tilt safety rules (in `plan_mix_template.MASTER_TILT_*`):
 | `MASTER_TILT_MAX_ACTIONS` | 4 | Take only the 4 worst deltas |
 | `harsh` (6.2 kHz), `sib` (9.5 kHz) | **cut-only** | Boosting these on a complete mix amplifies sibilance and cymbal hash. Brightness deficit must be accepted, not boosted. |
 
-Reverb characteristics from the reference (`reverb_proxy`) now feed a conservative
-`spatial_fx` plan when reference stems are available. Rendering defaults to
-`--spatial-fx auto`: if confidence and leakage guards pass, the renderer builds or
-reuses a per-song `vocal_group_fx` binary under `build/spatial/`; otherwise it falls
-back to the fixed built-in `vocal_group_fx.dsp` baseline. External `delayverb` is not
-wired into this pipeline yet.
+Reverb characteristics from the reference (`reverb_proxy`) are recorded for diagnosis.
+Default rendering is locked to the fixed 0.1 `vocal_group_fx.dsp` baseline via
+`--spatial-fx off`. `--spatial-fx auto` remains available only for explicit spatial
+experiments. External `delayverb` is not wired into this pipeline yet.
 
 ### Reference spatial FX
 
@@ -480,9 +477,9 @@ is not fader level, but fixed vocal-group spatial constants. Baseline values are
 | SuperTap | send `-27 dB`, return `-18.5 dB`, dark repeats, low feedback |
 | Shimmer | send `-18 dB` plus return `-18 dB`, intentionally very hidden |
 
-The design is **reference-driven spatial planning**, not simply "more reverb".
-Reference analysis produces a bounded `spatial_fx` plan that drives only the vocal
-group space:
+This section documents the opt-in adaptive-spatial design. Current default policy is
+**legacy 0.1 fixed spatial rack**: reference analysis records the evidence below,
+but default renders do not drive vocal-group space from it:
 
 | Evidence | Intended control | Safety rule |
 |---|---|---|
