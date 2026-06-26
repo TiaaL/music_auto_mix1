@@ -533,8 +533,8 @@ if [[ -n "$MIX_PLAN" ]]; then
         --input "vocal_group=$VOCAL_GROUP" \
         --output "vocal_group=$VOCAL_GROUP_TIMBRE"
     VOCAL_GROUP="$VOCAL_GROUP_TIMBRE"
-    # 0.1 之前的混响 rack 保留，但 center-led 原曲不能让 vocal_group 侧向变宽。
-    # 宽度 guard 只衰减 Side，不动 Mid/响度/混响时间，避免听感继续“散”。
+    # 空间 rack 可以做有上限的参考映射，但 center-led 原曲不能让 vocal_group 侧向变宽。
+    # 宽度 guard 只衰减 Side，不动 Mid/响度/混响时间，作为空间策略后的最终兜底。
     echo "[step 1g] Vocal-group reference width guard"
     STAGE_START="$(now_ts)"
     VOCAL_GROUP_WIDTH_META="${FINAL_OUT%.*}.vocal_group_width_guard.json"

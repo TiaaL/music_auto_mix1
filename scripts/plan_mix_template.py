@@ -1864,19 +1864,11 @@ def build_spatial_fx_plan(
         "vocal_effect_target": effect_context,
     }
     rt60_ms = float(reverb.get("est_rt60_ms") or 0.0)
-    if center_led_reference or rt60_ms > 8000.0:
-        # 0.1 之前的 vocal_group_fx 是固定空间 rack。当前回归显示 center-led
-        # 原曲人声的 reverb proxy 容易把尾音/抽取残留当成长混响，导致更湿、更靠前。
-        # 因此居中或 RT60 明显不可信时回到旧固定 rack；不再动态改 reverb/delay/side。
-        reasons.append("legacy_fixed_vocal_group_fx_for_center_led_or_unreliable_reverb")
-        return {
-            "enabled": False,
-            "applied_to_render": False,
-            "reason": ",".join(reasons),
-            "baseline": baseline,
-            "evidence": evidence,
-            "policy": "legacy_0_1_pre_spatial_rack_default_when_reverb_proxy_is_unreliable",
-        }
+    if rt60_ms > 8000.0:
+        # 原曲人声 stem 的 RT60 proxy 在长尾、连音或分离残留里会被明显拉长。
+        # 这里不再因此退回固定 rack，而是把它当“纵深存在”的证据；
+        # 后面的 center-led / missing-presence 分支会用硬上限限制 wet、time、delay 和高频 return。
+        reasons.append("long_rt60_proxy_depth_hint_only")
     if not enabled:
         return {
             "enabled": False,
