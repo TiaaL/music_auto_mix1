@@ -123,12 +123,16 @@ Known issues / next checks:
 11. **混响默认回到 0.1 之前固定 rack**
    `plan_mix_template.py` 对 center-led / near-mono 原曲人声，或 RT60 proxy 明显不可信的参考，默认不再编译 per-song spatial vocal_group，而是使用 0.1 之前的固定 `vocal_group_fx`。只有原曲人声空间更开放且 reverb proxy 可靠时，才允许有上限的 adaptive spatial。
 
+12. **center-led 人声只收宽度，不改旧混响**
+   `apply_vocal_group_width_guard.py` 在 vocal_group 之后读取 plan 中的原曲人声 `active_side_minus_mid_db` 和 active 区间，只在当前人声组比 center-led 原曲明显更宽时衰减 Side。它不改变 Mid、总线响度、混响时间或音色 EQ，用来处理“人声散/贴脸”而不破坏 0.1 之前的混响听感。
+
 排查入口：
 
 - `<output>.bus_balance.json`：确认 `weak_vocal_compensation_db` 是否为 `0.0`，以及最终 target gap 是否来自原曲或通用兜底。
 - `<output>.accomp_duck.json`：查看 `dry_vocal_strategy`、`profile` 和 `profile_caps_db`，确认弱人声处理是否由特征触发且未超过上限。
 - `<output>.vocal_dynamic_lift.json`：查看微动态触发条件、实际增益范围和 `hard_caps`。
 - `<output>.timbre_chain_guard.json` / `<output>.post_group_timbre_guard.json`：查看 8-band 与细分包络的音色回正动作。
+- `<output>.vocal_group_width_guard.json`：查看 center-led 原曲下 vocal_group 是否被 Side trim，以及 trim 前后的 active side/mid。
 - `<output>.vocal_group_transient_guard.json` / `<output>.final_transient_guard.json`：查看短促高频爆点是否在来源层或最终层被衰减。
 - `<output>.vocal_effect_audit.json`：查看最终人声贡献轨相对原曲人声 stem 的纵深、动态、混响、宽度和效果高频误差。
 - `resolved_mix_plan.json` 里的 `vocal_processing_context.vocal_effect_target`：查看效果目标来源和每个动作的通用触发证据。
