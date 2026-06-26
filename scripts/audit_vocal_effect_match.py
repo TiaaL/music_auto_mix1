@@ -3,7 +3,8 @@
 
 原则必须拆开：
 - 人声音色相似度追「音色筛选片段」，用于干声/音色 EQ。
-- 纵深、混响、动态、宽度和效果高频追「原曲人声 stem」，用于最终人声贡献轨审计。
+- 纵深、混响、动态、宽度、delay 追「原曲人声 stem」，用于最终人声贡献轨审计。
+- 频段差异只保留诊断，不再生成 effect_brightness 建议；音色允许和原唱不同。
 """
 
 from __future__ import annotations
@@ -132,20 +133,9 @@ def build_recommendations(errors: dict[str, Any], spatial_rec: dict[str, Any]) -
             "frame_range_p90_p10_db_error": round(frame_range_error, 3),
         })
 
-    tonal = errors.get("tonal_balance", {})
-    high_error = max(
-        float(tonal.get("upper_error", 0.0)),
-        float(tonal.get("harsh_error", 0.0)),
-        float(tonal.get("sib_error", 0.0)),
-        float(tonal.get("air_error", 0.0)),
-    )
-    if high_error > 1.8:
-        actions.append({
-            "area": "effect_brightness",
-            "action": "reduce_post_fx_presence_or_reverb_high_return",
-            "reason": "candidate_vocal_effect_highs_are_above_reference_vocal",
-            "max_high_error_db": round(high_error, 3),
-        })
+    # 频段差异不再当作效果错误：不同歌手/音色片段本来就可能和原唱不同。
+    # 高频、齿音、刺耳问题应由干声瑕疵检测和音色筛选片段约束；本审计只把 tonal
+    # 数据留在 errors 里辅助排查，不生成 effect_brightness 这类主流程建议。
     return actions
 
 def build_reference_metrics(
@@ -243,7 +233,8 @@ def build_report(
         "reference_audio": str(reference_audio) if reference_audio else None,
         "target_policy": {
             "timbre": "音色相似度只追音色筛选片段，不使用本报告裁判。",
-            "effects": "动态、纵深、混响、宽度和效果高频追原曲人声 stem。",
+            "effects": "人声靠前/靠后、动态、纵深、混响、宽度和 delay 追原曲人声 stem。",
+            "tonal_balance": "频段差异仅作诊断，不作为效果建议；不同歌手音色不需要贴原曲人声频谱。",
             "candidate_stage": "候选轨应为最终入 stereo sum 的人声贡献，包含 bus/section 动态后的人声效果。",
         },
         "active_regions": {

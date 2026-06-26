@@ -34,7 +34,7 @@ Faust DSP approximations of classic Waves/FabFilter plugins, wired into a Python
 参考目标边界：
 
 - **人声音色**：只和 `--timbre-reference-vocal` 或 `音色筛选片段/` 里的筛选片段保持一致，用于干声/音色 EQ。
-- **人声效果**：纵深、混响、动态、宽度、效果高频都和原曲人声 stem 对比，用最终人声贡献轨生成的 `<output>.vocal_effect_audit.json` 排查。
+- **人声效果**：靠前/靠后、纵深、混响、delay、动态、宽度都和原曲人声 stem 对比，用最终人声贡献轨生成的 `<output>.vocal_effect_audit.json` 排查。
 - **总线比例**：人声/伴奏大小只贴原曲 active vocal/accomp 比例或通用兜底，不用音色筛选片段决定。
 
 The system has two entry points:
@@ -85,7 +85,8 @@ Known issues / next checks:
 最重要的目标拆分：
 
 - **音色相似度** 只追 `音色筛选片段`，也就是筛出来的人声片段；它只进入干声/音色 EQ 和细分频谱包络校正。
-- **动态、纵深、混响、宽度、效果高频** 都追 `原曲人声 stem`，也就是最终 vocal_group 应该像原曲里的人声效果，而不是像筛选片段的空间或动态。
+- **靠前/靠后、动态、纵深、混响、delay、宽度** 都追 `原曲人声 stem`，也就是最终 vocal_group 应该像原曲里的人声效果，而不是像筛选片段的空间或动态。
+- **频段差异** 可以和原曲人声不同；原唱频谱只作为诊断信息，不再触发 `effect_brightness` 这类效果建议。
 - **响度和人声/伴奏比例** 不归音色筛选片段管，避免为了“像”而把所有歌的人声整体推大。
 
 核心约束：
@@ -109,7 +110,7 @@ Known issues / next checks:
    居中型参考人声的 reverb wet/time/high return 会被更严格限制，避免“比原曲湿、高频多”。局部 section balance 遇到副歌埋声时优先压伴奏、少推人声；自动音量前处理的人声段落负增益和相邻跳变也收小，减少忽大忽小。
 
 7. **最终人声效果要和原曲人声 stem 对比**
-   `audit_vocal_effect_match.py` 会把最终入 stereo sum 的人声贡献轨和原曲人声 stem 做同一活动区对比，覆盖空间/纵深、混响尾巴、delay 线索、短帧动态、效果高频和细分包络。它的职责不是裁判音色筛选片段，而是定位最终人声是否比原曲更散、更湿、更平或更亮。
+   `audit_vocal_effect_match.py` 会把最终入 stereo sum 的人声贡献轨和原曲人声 stem 做同一活动区对比，覆盖靠前/靠后、空间/纵深、混响尾巴、delay 线索和短帧动态。它不会用原唱频段裁判音色；频谱差异只保留诊断，音色相似度仍只看音色筛选片段。
 
 8. **效果目标进入统一上下文，不按测试歌名单独调参**
    `plan_mix_template.py` 会把原曲人声 stem 的空间、混响、delay 和动态统一写入 `vocal_processing_context.vocal_effect_target`。后续 `spatial_fx`、微动态和审计都消费这个上下文；触发条件来自音频特征，例如原曲人声是否 center-led、active side/mid、短帧动态差、干声 presence 是否缺失。任何动作都有上限，不根据歌曲名或当前四首回归 case 做点对点处理。
@@ -138,7 +139,7 @@ Known issues / next checks:
 - `<output>.timbre_chain_guard.json` / `<output>.post_group_timbre_guard.json`：查看 8-band 与细分包络的音色回正动作。
 - `<output>.vocal_group_width_guard.json`：查看 center-led 原曲下 vocal_group 是否被 Side trim，以及 trim 前后的 active side/mid。
 - `<output>.vocal_group_transient_guard.json` / `<output>.final_transient_guard.json`：查看短促高频爆点是否在来源层或最终层被衰减。
-- `<output>.vocal_effect_audit.json`：查看最终人声贡献轨相对原曲人声 stem 的纵深、动态、混响、宽度和效果高频误差。
+- `<output>.vocal_effect_audit.json`：查看最终人声贡献轨相对原曲人声 stem 的靠前/靠后、纵深、动态、混响、delay 和宽度误差；频段误差只作诊断。
 - `resolved_mix_plan.json` 里的 `vocal_processing_context.vocal_effect_target`：查看效果目标来源和每个动作的通用触发证据。
 
 ---
