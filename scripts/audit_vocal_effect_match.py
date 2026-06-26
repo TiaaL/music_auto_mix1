@@ -87,39 +87,23 @@ def build_recommendations(errors: dict[str, Any], spatial_rec: dict[str, Any]) -
     reverb = errors.get("reverb", {})
     tail_error = float(reverb.get("tail_to_onset_ratio_db_error", 0.0))
     rt_error = float(reverb.get("est_rt60_ms_error", 0.0))
-    # 混响不能再用一个 reverb_depth 粗暴概括：
-    # tail 是“尾巴量/湿度”，RT60 是“持续时间/纵深”。两者方向相反时只做诊断，不自动加减混响。
-    tail_too_much = tail_error > 1.2
-    tail_too_little = tail_error < -1.6
-    decay_too_long = rt_error > 220.0
-    decay_too_short = rt_error < -180.0
-    if tail_too_much and decay_too_long:
+    if (tail_error > 1.2 and rt_error > 220.0) or (tail_error > 2.0 and rt_error > 0.0):
         actions.append({
-            "area": "reverb_tail_amount",
-            "action": "reduce_vocal_group_wet_or_return_level",
-            "reason": "candidate_reverb_tail_amount_is_above_reference",
+            "area": "reverb_depth",
+            "action": "reduce_vocal_group_wet_time_or_high_return",
+            "reason": "candidate_vocal_group_is_wetter_or_deeper_than_reference_vocal",
             "tail_to_onset_ratio_db_error": round(tail_error, 3),
-        })
-        actions.append({
-            "area": "reverb_decay_time",
-            "action": "shorten_bounded_vocal_group_decay",
-            "reason": "candidate_reverb_decay_is_longer_than_reference",
             "est_rt60_ms_error": round(rt_error, 3),
         })
-    elif tail_too_little and decay_too_short:
+    elif tail_error < -1.6 and rt_error < -180.0:
         actions.append({
-            "area": "reverb_tail_amount",
-            "action": "consider_bounded_wet_or_return_lift",
-            "reason": "candidate_reverb_tail_amount_is_below_reference",
+            "area": "reverb_depth",
+            "action": "consider_bounded_wet_or_time_lift",
+            "reason": "candidate_vocal_group_is_drier_than_reference_vocal",
             "tail_to_onset_ratio_db_error": round(tail_error, 3),
-        })
-        actions.append({
-            "area": "reverb_decay_time",
-            "action": "consider_bounded_decay_lift",
-            "reason": "candidate_reverb_decay_is_shorter_than_reference",
             "est_rt60_ms_error": round(rt_error, 3),
         })
-    elif (tail_too_much or tail_too_little) and (decay_too_long or decay_too_short):
+    elif abs(tail_error) >= 0.8 and abs(rt_error) >= 220.0 and tail_error * rt_error < 0.0:
         actions.append({
             "area": "reverb_proxy_conflict",
             "action": "diagnostic_only_do_not_auto_change_wet",
@@ -161,47 +145,6 @@ def build_recommendations(errors: dict[str, Any], spatial_rec: dict[str, Any]) -
     # 高频、齿音、刺耳问题应由干声瑕疵检测和音色筛选片段约束；本审计只把 tonal
     # 数据留在 errors 里辅助排查，不生成 effect_brightness 这类主流程建议。
     return actions
-
-
-def reverb_axis_summary(
-    reference: dict[str, Any],
-    candidate: dict[str, Any],
-    errors: dict[str, Any],
-) -> dict[str, Any]:
-    """把混响拆成尾巴量和持续时间两条轴，避免一个 depth 结论误导后续策略。"""
-    reverb = errors.get("reverb", {})
-    tail_error = float(reverb.get("tail_to_onset_ratio_db_error", 0.0))
-    rt_error = float(reverb.get("est_rt60_ms_error", 0.0))
-    tail_state = "match"
-    if tail_error > 1.2:
-        tail_state = "candidate_more_tail_amount"
-    elif tail_error < -1.6:
-        tail_state = "candidate_less_tail_amount"
-    decay_state = "match"
-    if rt_error > 220.0:
-        decay_state = "candidate_longer_decay"
-    elif rt_error < -180.0:
-        decay_state = "candidate_shorter_decay"
-    conflict = tail_state != "match" and decay_state != "match" and tail_error * rt_error < 0.0
-    return {
-        "tail_amount": {
-            "reference_tail_to_onset_ratio_db": reference["reverb"].get("tail_to_onset_ratio_db"),
-            "candidate_tail_to_onset_ratio_db": candidate["reverb"].get("tail_to_onset_ratio_db"),
-            "error_db": round(tail_error, 3),
-            "state": tail_state,
-        },
-        "decay_time": {
-            "reference_est_rt60_ms": reference["reverb"].get("est_rt60_ms"),
-            "candidate_est_rt60_ms": candidate["reverb"].get("est_rt60_ms"),
-            "error_ms": round(rt_error, 3),
-            "state": decay_state,
-        },
-        "proxy_conflict": bool(conflict),
-        "policy": (
-            "tail_amount 控制 wet/return，decay_time 控制 time；两轴方向相反时只报诊断，不自动加减混响。"
-        ),
-    }
-
 
 def build_reference_metrics(
     reference_vocal: Path,
@@ -310,7 +253,6 @@ def build_report(
         "reference": reference,
         "candidate": candidate,
         "errors": errors,
-        "reverb_match": reverb_axis_summary(reference, candidate, errors),
         "recommendations": build_recommendations(errors, spatial_rec),
     }
 
