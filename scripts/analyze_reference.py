@@ -756,14 +756,61 @@ def resolve_reference_files(
     }
 
 
+def find_exact_timbre_reference(
+    vocal_input: Path,
+    timbre_folder: Path,
+    extensions: tuple[str, ...],
+) -> Path | None:
+    """按干声文件名精确匹配同一行音色筛选片段，避免同歌名不同歌手串用。"""
+    stem = vocal_input.stem
+    candidate_stems: list[str] = []
+
+    if "_干声" in stem:
+        # 常规命名：歌手歌曲_干声.wav -> 歌手歌曲_音色筛选片段.wav。
+        candidate_stems.append(stem.replace("_干声", "_音色筛选片段", 1))
+        # row 后缀不一定在两边都存在，先保留 row，再补一个去 row 的同名候选。
+        no_row_stem = re.sub(r"_干声(?:_row\d+)?$", "_音色筛选片段", stem)
+        candidate_stems.append(no_row_stem)
+    elif stem.endswith("干声"):
+        candidate_stems.append(f"{stem[:-2]}音色筛选片段")
+
+    # 有些临时输入不带“干声”后缀，仍允许显式同 basename 的筛选片段。
+    candidate_stems.append(f"{stem}_音色筛选片段")
+
+    seen_stems: set[str] = set()
+    seen_exts: set[str] = set()
+    ordered_exts = (vocal_input.suffix.lower(),) + extensions
+    for candidate_stem in candidate_stems:
+        if not candidate_stem or candidate_stem in seen_stems:
+            continue
+        seen_stems.add(candidate_stem)
+        for ext in ordered_exts:
+            ext = ext.lower()
+            if not ext or ext in seen_exts:
+                continue
+            seen_exts.add(ext)
+            candidate = timbre_folder / f"{candidate_stem}{ext}"
+            if candidate.exists():
+                return candidate
+        seen_exts.clear()
+    return None
+
+
 def resolve_timbre_reference_file(
     vocal_input: Path,
     downloads_root: Path | None = None,
 ) -> Path | None:
-    """按干声歌名解析同一行的“音色筛选片段”参考素材。"""
+    """解析“音色筛选片段”参考素材：先精确同 basename，再旧逻辑兜底。"""
     downloads_root = resolve_downloads_root(downloads_root)
+    timbre_folder = downloads_root / "音色筛选片段"
+    extensions = (".wav", ".mp3", ".flac", ".m4a")
+    exact_match = find_exact_timbre_reference(vocal_input, timbre_folder, extensions)
+    if exact_match is not None:
+        return exact_match
+
+    # 兜底才按歌名 fuzzy，防止黄昏/勇气这类同歌名素材误优先到别的歌手。
     song = extract_song_name(vocal_input)
-    return fuzzy_find(downloads_root / "音色筛选片段", song, (".wav", ".mp3", ".flac", ".m4a"))
+    return fuzzy_find(timbre_folder, song, extensions)
 
 
 def analyse(full_mix: Path, vocal: Path, accomp: Path) -> dict[str, Any]:
