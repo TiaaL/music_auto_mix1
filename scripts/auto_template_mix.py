@@ -666,6 +666,12 @@ def main() -> None:
         if vocal_event_path.exists()
         else None
     )
+    final_fusion_path = output_wav.with_suffix(".final_fusion_pass.json")
+    final_fusion_pass = (
+        json.loads(final_fusion_path.read_text(encoding="utf-8-sig"))
+        if final_fusion_path.exists()
+        else None
+    )
     post_group_timbre_path = output_wav.with_suffix(".post_group_timbre_guard.json")
     post_group_timbre_guard = (
         json.loads(post_group_timbre_path.read_text(encoding="utf-8-sig"))
@@ -704,6 +710,7 @@ def main() -> None:
         "vocal_group_output": str(vocal_group_output) if vocal_group_output else None,
         "vocal_dynamic_lift": vocal_dynamic_lift,
         "vocal_event_guard": vocal_event_guard,
+        "final_fusion_pass": final_fusion_pass,
         "timbre_chain_guard": timbre_chain_guard,
         "post_group_timbre_guard": post_group_timbre_guard,
         "loudness": loudness,

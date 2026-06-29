@@ -13,8 +13,8 @@
 # 中文流程概览：
 #   1. 统一采样率/声道，并可选先跑 auto_volume_mix.py。
 #   2. 先清理源人声瑕疵，再做模板基础 EQ/增色和音色筛选片段塑形。
-#   3. 随后做人声压缩/齿音/空间、伴奏 EQ 和人声触发的多频段避让。
-#   4. 做局部 section balance guard、stereo sum、master tilt、bus 插件和最终响度。
+#   3. 随后做人声压缩/齿音/空间和伴奏 EQ。
+#   4. 用 final fusion pass 统一处理伴奏让位、总线比例和局部融合，再做 stereo sum、master tilt、bus 插件和最终响度。
 #   5. 最后只做短毛刺/爆点兜底；可选导出人声贡献轨 / stage_report 做审计。
 # ================================================================
 
@@ -266,7 +266,6 @@ VOCAL_GROUP_TIMBRE="$(make_temp_wav template_vocal_group_timbre)"
 VOCAL_GROUP_GUARDED="$(make_temp_wav template_vocal_group_guarded)"
 ACCOMP_1="$(make_temp_wav template_accomp_1)"
 ACCOMP_SOURCE_EQ="$(make_temp_wav template_accomp_source_eq)"
-ACCOMP_DUCKED="$(make_temp_wav template_accomp_ducked)"
 ACCOMP_BUS="$(make_temp_wav template_accomp_bus)"
 VOCAL_BALANCED="$(make_temp_wav template_vocal_section_balanced)"
 ACCOMP_BALANCED="$(make_temp_wav template_accomp_section_balanced)"
@@ -276,7 +275,7 @@ MASTER_1="$(make_temp_wav template_master_1)"
 MASTER_2="$(make_temp_wav template_master_2)"
 FINAL_GUARDED="$(make_temp_wav template_final_guarded)"
 
-trap 'rm -f "$RESAMPLED_VOCAL" "$RESAMPLED_ACCOMP" "$AUTO_VOCAL" "$AUTO_ACCOMP" "$VOCAL_1" "$VOCAL_2" "$VOCAL_3" "$VOCAL_4" "$VOCAL_5" "$VOCAL_CORRECTED" "$VOCAL_TIMBRE_PRE" "$VOCAL_TIMBRE_GUARDED" "$VOCAL_SOURCE_EQ" "$VOCAL_ARTIFACT_REPAIRED" "$VOCAL_DYNAMIC" "$VOCAL_EVENT_GUARDED" "$VOCAL_GROUP" "$VOCAL_GROUP_SIDE" "$VOCAL_GROUP_TIMBRE" "$VOCAL_GROUP_GUARDED" "$ACCOMP_1" "$ACCOMP_SOURCE_EQ" "$ACCOMP_DUCKED" "$ACCOMP_BUS" "$VOCAL_BALANCED" "$ACCOMP_BALANCED" "$MIX_TMP" "$MIX_TILTED" "$MASTER_1" "$MASTER_2" "$FINAL_GUARDED"' EXIT
+trap 'rm -f "$RESAMPLED_VOCAL" "$RESAMPLED_ACCOMP" "$AUTO_VOCAL" "$AUTO_ACCOMP" "$VOCAL_1" "$VOCAL_2" "$VOCAL_3" "$VOCAL_4" "$VOCAL_5" "$VOCAL_CORRECTED" "$VOCAL_TIMBRE_PRE" "$VOCAL_TIMBRE_GUARDED" "$VOCAL_SOURCE_EQ" "$VOCAL_ARTIFACT_REPAIRED" "$VOCAL_DYNAMIC" "$VOCAL_EVENT_GUARDED" "$VOCAL_GROUP" "$VOCAL_GROUP_SIDE" "$VOCAL_GROUP_TIMBRE" "$VOCAL_GROUP_GUARDED" "$ACCOMP_1" "$ACCOMP_SOURCE_EQ" "$ACCOMP_BUS" "$VOCAL_BALANCED" "$ACCOMP_BALANCED" "$MIX_TMP" "$MIX_TILTED" "$MASTER_1" "$MASTER_2" "$FINAL_GUARDED"' EXIT
 
 VOCAL_RATE="$(audio_sample_rate "$VOCAL_IN")"
 ACCOMP_RATE="$(audio_sample_rate "$ACCOMP_IN")"
@@ -558,83 +557,40 @@ if [[ -n "$MIX_PLAN" ]]; then
 else
     echo "[step 2b] Reference accompaniment carve EQ skipped: no mix plan"
 fi
-echo "[step 2c] Vocal-aware accompaniment ducking"
+echo "[step 2c] Final reference fusion pass"
 STAGE_START="$(now_ts)"
-ACCOMP_DUCK_META="${FINAL_OUT%.*}.accomp_duck.json"
-DUCK_CMD=("$PYTHON_BIN" "$SCRIPT_DIR/apply_accomp_vocal_duck.py"
-    "$ACCOMP_CHAIN_OUT"
+FINAL_FUSION_META="${FINAL_OUT%.*}.final_fusion_pass.json"
+FINAL_FUSION_CMD=("$PYTHON_BIN" "$SCRIPT_DIR/apply_final_fusion_pass.py"
     "$VOCAL_GROUP"
-    "$ACCOMP_DUCKED"
-    --template "$TEMPLATE_ID"
-    --metadata "$ACCOMP_DUCK_META"
-    --profile-timing)
+    "$ACCOMP_CHAIN_OUT"
+    "$VOCAL_BALANCED"
+    "$ACCOMP_BALANCED"
+    --metadata "$FINAL_FUSION_META")
 if [[ -n "$MIX_PLAN" ]]; then
-    DUCK_CMD+=(--plan "$MIX_PLAN")
+    FINAL_FUSION_CMD+=(--plan "$MIX_PLAN")
 fi
-"${DUCK_CMD[@]}"
-cp "$ACCOMP_DUCKED" "$ACCOMP_BUS"
+"${FINAL_FUSION_CMD[@]}"
+cp "$ACCOMP_BALANCED" "$ACCOMP_BUS"
 if [[ -n "$EXPORT_ACCOMP_BUS" ]]; then
     mkdir -p "$(dirname "$EXPORT_ACCOMP_BUS")"
-    cp "$ACCOMP_BUS" "$EXPORT_ACCOMP_BUS"
+    cp "$ACCOMP_BALANCED" "$EXPORT_ACCOMP_BUS"
     echo "[audit] Exported post-FX accompaniment bus: $EXPORT_ACCOMP_BUS"
 fi
-record_stage "accomp_vocal_duck" "$STAGE_START" \
+record_stage "final_fusion_pass" "$STAGE_START" \
     --input "accomp=$ACCOMP_CHAIN_OUT" \
     --input "vocal=$VOCAL_GROUP" \
-    --output "accomp=$ACCOMP_BUS"
+    --output "vocal=$VOCAL_BALANCED" \
+    --output "accomp=$ACCOMP_BALANCED"
 
-VOCAL_BUS_GAIN_DB="0.0"
-ACCOMP_BUS_GAIN_DB="0.0"
-if [[ -n "$MIX_PLAN" ]]; then
-    BUS_BALANCE_META="${FINAL_OUT%.*}.bus_balance.json"
-    STAGE_START="$(now_ts)"
-    read -r _V_GAIN _A_GAIN < <(
-        "$PYTHON_BIN" "$SCRIPT_DIR/compute_render_bus_balance.py" \
-            "$VOCAL_GROUP" "$ACCOMP_BUS" \
-            --plan "$MIX_PLAN" \
-            --metadata "$BUS_BALANCE_META" \
-            --skip-loudness | tail -1
-    )
-    [[ -n "${_V_GAIN:-}" ]] && VOCAL_BUS_GAIN_DB="$_V_GAIN"
-    [[ -n "${_A_GAIN:-}" ]] && ACCOMP_BUS_GAIN_DB="$_A_GAIN"
-    echo "[step 3a] Bus balance from post-FX buses: vocal ${VOCAL_BUS_GAIN_DB} dB, accomp ${ACCOMP_BUS_GAIN_DB} dB"
-    record_stage "bus_balance_analysis" "$STAGE_START" \
-        --input "vocal=$VOCAL_GROUP" \
-        --input "accomp=$ACCOMP_BUS"
-fi
-
-VOCAL_SUM_INPUT="$VOCAL_GROUP"
-ACCOMP_SUM_INPUT="$ACCOMP_BUS"
-VOCAL_SUM_GAIN_DB="$VOCAL_BUS_GAIN_DB"
-ACCOMP_SUM_GAIN_DB="$ACCOMP_BUS_GAIN_DB"
-if [[ -n "$MIX_PLAN" ]]; then
-    echo "[step 3b] Reference-window section balance guard"
-    STAGE_START="$(now_ts)"
-    SECTION_BALANCE_META="${FINAL_OUT%.*}.section_balance_guard.json"
-    "$PYTHON_BIN" "$SCRIPT_DIR/apply_section_balance_guard.py" \
-        "$VOCAL_GROUP" \
-        "$ACCOMP_BUS" \
-        "$VOCAL_BALANCED" \
-        "$ACCOMP_BALANCED" \
-        --plan "$MIX_PLAN" \
-        --vocal-gain-db "$VOCAL_BUS_GAIN_DB" \
-        --accomp-gain-db "$ACCOMP_BUS_GAIN_DB" \
-        --metadata "$SECTION_BALANCE_META"
-    VOCAL_SUM_INPUT="$VOCAL_BALANCED"
-    ACCOMP_SUM_INPUT="$ACCOMP_BALANCED"
-    VOCAL_SUM_GAIN_DB="0.0"
-    ACCOMP_SUM_GAIN_DB="0.0"
-    record_stage "section_balance_guard" "$STAGE_START" \
-        --input "vocal=$VOCAL_GROUP" \
-        --input "accomp=$ACCOMP_BUS" \
-        --output "vocal=$VOCAL_BALANCED" \
-        --output "accomp=$ACCOMP_BALANCED"
-fi
+VOCAL_SUM_INPUT="$VOCAL_BALANCED"
+ACCOMP_SUM_INPUT="$ACCOMP_BALANCED"
+VOCAL_SUM_GAIN_DB="0.0"
+ACCOMP_SUM_GAIN_DB="0.0"
 
 if [[ -n "$EXPORT_VOCAL_GROUP" ]]; then
     mkdir -p "$(dirname "$EXPORT_VOCAL_GROUP")"
     # 导出审计用的人声轨必须是最终入 stereo sum 的人声贡献：
-    # 包含 vocal_group FX、post-group 音色保护、bus gain 和 section guard 后的动态变化。
+    # 包含 vocal_group FX 和 final fusion pass 后的动态变化。
     ffmpeg -y -hide_banner \
         -i "$VOCAL_SUM_INPUT" \
         -filter:a "volume=${VOCAL_SUM_GAIN_DB}dB" \

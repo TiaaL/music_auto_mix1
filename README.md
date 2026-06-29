@@ -118,15 +118,14 @@ Known issues / next checks:
    `auto_template_mix.py` 调用 `audit_vocal_effect_match.py` 时会传入 `resolved_mix_plan.json`。审计脚本优先复用 plan 里的 `reference.features` 和活动人声区间，只重新分析最终人声贡献轨，避免重复跑原曲人声的动态、混响、delay 和频谱包络。
 
 10. **禁止爆音，人声不能比原曲更靠前**
-   `compute_render_bus_balance.py` 把原曲 active vocal/accomp gap 当作前景上限，并留 `0.6 dB` 安全余量；`apply_section_balance_guard.py` 的默认局部纠偏只压伴奏、不再额外推人声。爆音先在 vocal_group 入总线前用 `<output>.vocal_group_transient_guard.json` 处理，最终 `apply_final_transient_guard.py` 再做 loudness finalizer 后的短促高频安全闸。
+   `apply_final_fusion_pass.py` 把原曲 active vocal/accomp gap 当作核心目标，并在同一个 pass 内处理伴奏让位、全局比例和参考窗口局部比例；默认链路不再额外叠加 `compute_render_bus_balance.py` 和 `apply_section_balance_guard.py`。最终 `apply_final_transient_guard.py` 只做 loudness finalizer 后的短促高频安全闸。
 
 11. **混响默认回到 0.1 之前固定 rack**
    `plan_mix_template.py` 对 center-led / near-mono 原曲人声，或 RT60 proxy 明显不可信的参考，默认不再编译 per-song spatial vocal_group，而是使用 0.1 之前的固定 `vocal_group_fx`。只有原曲人声空间更开放且 reverb proxy 可靠时，才允许有上限的 adaptive spatial。
 
 排查入口：
 
-- `<output>.bus_balance.json`：确认 `weak_vocal_compensation_db` 是否为 `0.0`，以及最终 target gap 是否来自原曲或通用兜底。
-- `<output>.accomp_duck.json`：查看 `dry_vocal_strategy`、`profile` 和 `profile_caps_db`，确认弱人声处理是否由特征触发且未超过上限。
+- `<output>.final_fusion_pass.json`：确认最终 duck budget、active gap、section events 和 safety trim 是否来自原曲参考目标。
 - `<output>.vocal_dynamic_lift.json`：查看微动态触发条件、实际增益范围和 `hard_caps`。
 - `<output>.timbre_chain_guard.json` / `<output>.post_group_timbre_guard.json`：查看 8-band 与细分包络的音色回正动作。
 - `<output>.vocal_group_transient_guard.json` / `<output>.final_transient_guard.json`：查看短促高频爆点是否在来源层或最终层被衰减。
@@ -137,7 +136,7 @@ Known issues / next checks:
 
 ## Current sync note — 2026-06-29
 
-本次更新开始把“融合度”从多个分散模块里抽出来，先做成只读的最终融合决策层。
+本次更新把“融合度”从多个分散模块里收口到最终融合层：先有只读决策报告，再由渲染链里的 `apply_final_fusion_pass.py` 真正落到音频。
 
 核心原则：
 
@@ -148,7 +147,8 @@ Known issues / next checks:
 新增脚本：
 
 - `scripts/diagnose_fusion_intent.py`：只读聚合已有报告，解释当前融合画像和冲突点。
-- `scripts/plan_final_fusion_pass.py`：只读生成 final fusion pass 决策 JSON，不写音频、不接渲染链。
+- `scripts/plan_final_fusion_pass.py`：只读生成 final fusion pass 决策 JSON，不写音频。
+- `scripts/apply_final_fusion_pass.py`：渲染时统一应用最终融合，替代默认链路里分散的 accompaniment duck、render bus balance 和 section balance guard。
 
 典型用法：
 
@@ -186,7 +186,7 @@ python3 scripts/plan_final_fusion_pass.py \
 }
 ```
 
-注意：`render_consumption.active=false` 表示这一步不会改变声音。后续如果要真正应用，需要再写/接入 `apply_final_fusion_pass.py`，并用四首固定验证集一起跑听感回归。
+注意：`plan_final_fusion_pass.py` 仍是只读报告；真正改变声音的是 `render_template_mix.sh` 里的 `apply_final_fusion_pass.py`，输出 `<output>.final_fusion_pass.json`。这样同一类融合职责只在一个位置执行，避免旧 duck、bus balance、section guard 互相覆盖。
 
 ---
 
@@ -381,8 +381,7 @@ vocal insert chain
 accompaniment
   → template_music_proq3_{ab|c}
   → [step 2b] reference accomp carve EQ (plan-driven, optional)
-  → [step 2c] vocal-aware multiband accompaniment ducking (template + dry-vocal strategy)
-  → [step 3a] bus balance (render-time, see below)
+  → [step 2c] final fusion pass (duck budget + active gap + section reference)
   → amix stereo sum
   → [step 3b] master tilt EQ (reference-driven, optional)
   → template_bus_proq3_{ab|c} → gw_mixcentric_stereo
@@ -669,23 +668,20 @@ It writes `reference.overrides.dry_vocal_strategy` into the resolved mix plan. T
 
 ### How accompaniment yields
 
-`render_template_mix.sh` applies accompaniment processing in this order:
+`render_template_mix.sh` applies accompaniment/fusion processing in this order:
 
 1. Template music EQ from `template_music_proq3_{ab|c}`.
 2. Reference/source carve EQ from `source_eq.accomp_eq`; this is cut-only and only carves masking bands when the active vocal is behind the reference balance. The plan keeps one action per problem region, such as `presence` or `body`.
-3. Vocal-aware multiband ducking from `apply_accomp_vocal_duck.py`; this is keyed by the post-FX vocal group, so the accompaniment yields mainly while the singer is active. If carve already handled the same region, ducking is reduced there.
-4. Conservative bus balance from `compute_render_bus_balance.py`; this matches the reference active vocal/accompaniment gap, rather than boosting both stems toward their own LUFS targets.
+3. Final fusion pass from `apply_final_fusion_pass.py`; this uses the post-FX vocal group and post-carve accompaniment, then统一做伴奏让位、active vocal/accomp gap、参考窗口局部比例和必要的人声宽度轻收。
 
-The ducking bands are low (`<180 Hz`), body (`180-1200 Hz`), presence (`1200-5000 Hz`),
-and air (`>5000 Hz`). Template A/B/C provide different base profiles, then the dry-vocal
-strategy adds small extra cuts where the current vocal needs space.
+The fusion duck bands are low (`<180 Hz`), body (`180-1200 Hz`), presence (`1200-5000 Hz`),
+and air (`>5000 Hz`). Dry-vocal strategy only provides遮挡线索；最终比例仍以每首歌自己的原曲 reference target error 为核心。
 
 Output metadata:
 
 | File | Meaning |
 |---|---|
-| `<output>.accomp_duck.json` | Per-band ducking profile and applied reduction stats |
-| `<output>.bus_balance.json` | Active-region reference gap, render-time gap, and final vocal/accomp gains |
+| `<output>.final_fusion_pass.json` | Final duck budget, active gap correction, section reference events, and safety trim |
 | `<output>.loudness.json` | Master loudness, true-peak, and global de-click report |
 
 Important constraint: this layer is for **space making**, not loudness rewriting. Overall
@@ -696,41 +692,45 @@ The plan metadata for accompaniment coordination lives under:
 
 - `source_eq.accomp_eq.actions[*].region`
 - `source_eq.accomp_eq.duck_coordination`
-- `<output>.accomp_duck.json.profile`
-- `<output>.accomp_duck.json.duck_coordination`
+- `<output>.final_fusion_pass.json.duck`
 
 ---
 
-## Bus balance at render time (`compute_render_bus_balance.py`)
+## Final fusion at render time (`apply_final_fusion_pass.py`)
 
-Older versions derived bus `volume=` filters from the mix plan at plan time, or matched
-each post-FX bus to its reference stem LUFS independently. That could make the track
-technically louder while still losing the original vocal/accompaniment relationship.
+Older versions split fusion across three runtime steps: accompaniment ducking,
+bus-balance gain calculation, and section balance guard. Those steps could each be
+reasonable in isolation, but together they made it easy to change the same vocal/accompaniment
+relationship more than once.
 
-The current render path measures the **actual post-FX buses** and matches the reference
-song's active vocal/accompaniment gap:
+The current render path measures the **actual post-FX vocal group** and **post-carve
+accompaniment**, then applies fusion once:
 
 1. Render vocal through insert chain → `vocal_group_fx` → `VOCAL_GROUP`
-2. Render accompaniment through music EQ / carve EQ / vocal-aware ducking → `ACCOMP_BUS`
-3. Measure active vocal sections on both buses
-4. Compare `vocal_minus_accomp_db` with the original song's active reference gap
-5. Apply a capped correction inside the `amix` call in step 3
+2. Render accompaniment through music EQ / carve EQ → `ACCOMP_CHAIN_OUT`
+3. Apply `apply_final_fusion_pass.py` once:
+   - necessary vocal side trim against reference width
+   - vocal-aware multiband accompaniment yielding
+   - global active vocal/accomp gap correction
+   - reference-window local section correction
+4. Feed the resulting `VOCAL_BALANCED` and `ACCOMP_BALANCED` into `amix` at `0.0 dB`
 
-When the vocal is behind, the correction is split between vocal lift and accompaniment
-attenuation. Current caps are intentionally small:
+When the vocal is behind, correction is split between vocal lift and accompaniment
+attenuation; when the vocal is too far forward, the pass can also pull the vocal back.
+The important part is that this happens once, after tone/space decisions are already
+settled.
 
 | Limit | Value |
 |---|---|
-| Maximum vocal lift from bus balance | `+3.0 dB` |
-| Maximum accompaniment attenuation from bus balance | `-2.0 dB` |
-| Maximum total ratio correction | `4.8 dB` |
+| Maximum global ratio correction | `8.0 dB` |
+| Section correction frame / hop | `4.0 s` / `1.0 s` |
+| Output subtype | `FLOAT` WAV |
 
-Example (黄昏 v5, template C): HJF measured around a `-7.2 dB` render gap before bus
-balance, reference gap was about `-2.8 dB`, so step 3a applied vocal `+2.65 dB` and
-accompaniment `-1.76 dB`. 炳超 similarly applied vocal `+2.76 dB` and accompaniment
-`-1.84 dB`. The goal is to restore the reference ratio without large fader moves.
+Output metadata: `<output>.final_fusion_pass.json`.
 
-Output metadata: `<output>.bus_balance.json`.
+`apply_accomp_vocal_duck.py`, `compute_render_bus_balance.py`, and
+`apply_section_balance_guard.py` are retained for legacy comparison/manual debugging,
+but normal `render_template_mix.sh` no longer chains them by default.
 
 `apply_master_level_staging.py` (pre-master bus staging / window correction) is **no longer
 called** — loudness is handled only on the master bus in `master_loudness_finalize.py`.
@@ -1100,14 +1100,14 @@ Optimization directions still open:
 
 | Area | Direction | Risk |
 |---|---|---|
-| `accomp_vocal_duck` | Reduce cost of multiband split/envelope/gain arrays; current timing shows `sosfiltfilt` band split is the main cost | Medium: changes the ducking curve and therefore the mix |
+| `final_fusion_pass` | Reduce cost of multiband split/envelope/gain arrays; current timing should focus on the unified fusion pass | Medium: changes the ducking/section curve and therefore the mix |
 | `vocal_group_fx` | Inspect Faust/native binary performance, compile flags, and possible DSP simplification | Medium/high: this is audible spatial FX, not just measurement |
 | Finalizer copies | Only remove copies proven to be bit/sample equivalent | Medium: pass-boundary changes can alter limiter input and output |
 | Final `output_loudnorm` | Keep as FFmpeg for now | High: replacing it weakens the delivery report and final TP/LUFS validation |
 
-`apply_accomp_vocal_duck.py --profile-timing` records internal read, filter, envelope,
-smoothing, gain, and write timings in `<output>.accomp_duck.json`. Recent `阴天`
-timing showed the main costs are roughly:
+Legacy note: `apply_accomp_vocal_duck.py --profile-timing` still records internal read,
+filter, envelope, smoothing, gain, and write timings when run manually. Recent `阴天`
+timing before the final-fusion refactor showed the main costs were roughly:
 
 | Duck sub-step | Approx. cost |
 |---|---:|
@@ -1156,8 +1156,8 @@ make build/vocal_group_fx
 | Template strategy | `scripts/plan_mix_template.py` | Spectral analysis → template → residual EQ plan |
 | Residual EQ | `scripts/apply_residual_vocal_eq.py` | Apply plan-driven EQ between template chain and group FX |
 | Spatial FX plan apply | `scripts/build_spatial_vocal_group.py` | Generate/cache per-song `vocal_group_fx` binaries from approved `spatial_fx` constants |
-| Accompaniment yielding | `scripts/apply_accomp_vocal_duck.py` | Template + dry-vocal-driven multiband ducking keyed by the post-FX vocal |
-| Bus balance | `scripts/compute_render_bus_balance.py` | Conservative active vocal/accomp ratio matching at render time (step 3a) |
+| Final fusion | `scripts/apply_final_fusion_pass.py` | Render-time final vocal/accompaniment fusion: duck budget, active gap, section reference, width trim |
+| Legacy/manual balance tools | `scripts/apply_accomp_vocal_duck.py`, `scripts/compute_render_bus_balance.py`, `scripts/apply_section_balance_guard.py` | Kept for comparison and debugging, no longer chained by default render |
 | Master loudness | `scripts/master_loudness_finalize.py` | Safe master-bus pregain → L2 → post-trim / controlled makeup → soft true-peak ceiling → global de-click |
 | Render orchestration | `scripts/render_template_mix.sh` | Runs the full DSP pipeline in order |
 | Full auto pipeline | `scripts/auto_template_mix.py` | End-to-end: analyze → plan → render → report |
