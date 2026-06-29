@@ -187,6 +187,7 @@ def main() -> None:
     parser.add_argument("--min-high-db", type=float, default=-39.0)
     parser.add_argument("--min-high-to-full-db", type=float, default=-21.0)
     parser.add_argument("--max-event-ms", type=float, default=160.0)
+    parser.add_argument("--output-subtype", choices=("FLOAT", "PCM_16", "PCM_24"), default="PCM_16")
     args = parser.parse_args()
 
     audio, sr = sf.read(args.input_wav, always_2d=True, dtype="float64")
@@ -202,7 +203,7 @@ def main() -> None:
     )
     args.output_wav.parent.mkdir(parents=True, exist_ok=True)
     if report.get("triggered"):
-        sf.write(args.output_wav, out, sr, subtype="PCM_16")
+        sf.write(args.output_wav, out, sr, subtype=args.output_subtype)
     else:
         shutil.copyfile(args.input_wav, args.output_wav)
     if args.metadata:

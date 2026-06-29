@@ -1094,6 +1094,132 @@ def build_vocal_processing_context(
         "policy": "音色差异给方向，原曲人声效果给纵深/动态边界，原曲人声/伴奏比例给总线边界，干声瑕疵给最低限度修复。"
     }
 
+def build_fusion_intent(
+    analysis: dict[str, Any],
+    ref_features: dict[str, Any] | None,
+    template_id: str,
+    vocal_processing_context: dict[str, Any],
+) -> dict[str, Any]:
+    """渲染前的融合意图。
+
+    这里只声明目标和模块边界，不改变任何处理参数。后续 bus/duck/section/spatial
+    如果要消费它，需要单独接入并逐项验证。
+    """
+    group_ratios = analysis.get("group_ratios") or {}
+    ratios = analysis.get("ratios") or {}
+    body = float(group_ratios.get("body") or 0.0)
+    presence = float(group_ratios.get("presence") or 0.0)
+    lowmid = float(ratios.get("lowmid") or 0.0)
+    body_to_presence = float(analysis.get("body_to_presence") or 0.0)
+    ref_gap = active_balance_value(ref_features)
+    spatial = (ref_features or {}).get("vocal_spatial_profile") or {}
+    near_mono = bool(spatial.get("near_mono_center_led"))
+    side_mid = float(spatial.get("active_side_minus_mid_db") or 0.0)
+
+    profile = "reference_balanced"
+    reasons: list[str] = []
+    if near_mono and side_mid <= -29.0 and ref_gap is not None and ref_gap >= -0.6:
+        profile = "intimate_light"
+        reasons.append("原曲人声接近持平且非常居中/窄，优先保持近、小、贴。")
+    elif template_id == "template_a" and ref_gap is not None and ref_gap >= -1.6:
+        profile = "front_pop"
+        reasons.append("原曲 active 人声靠前，模板为强情绪/前置型。")
+        if presence <= 0.03:
+            reasons.append("干声 presence 极低，清晰度不能只靠伴奏大幅让位。")
+    elif body >= 0.93 and body_to_presence >= 20.0 and ref_gap is not None and ref_gap >= -1.9:
+        profile = "warm_mid_embedded"
+        reasons.append("人声主体厚、presence 少，但原曲不是深埋型，重点是包裹和灰度。")
+    elif lowmid >= 0.70 and body >= 0.85:
+        profile = "dense_male"
+        reasons.append("低中频/主体占比高，重点是男声厚度和伴奏低中频分工。")
+    elif body_to_presence >= 16.0:
+        profile = "warm_mid_embedded"
+        reasons.append("主体对 presence 比例很高，按温暖嵌入型处理。")
+    else:
+        reasons.append("没有命中强特征，先按通用参考融合型处理。")
+
+    targets = {
+        "front_pop": {
+            "frontness": "人声可前置，但伴奏 presence 不能被挖空。",
+            "duck": "只解决遮挡；presence duck 需要和 bus/section 共用预算。",
+            "space": "中心稳定，宽度/湿度不能让人声浮到伴奏外。",
+        },
+        "warm_mid_embedded": {
+            "frontness": "人声应贴在伴奏里，清晰度来自频段分工和空间，不来自硬推。",
+            "duck": "少做高频洞，优先保护灰暗包裹感。",
+            "space": "控制湿度和高频 return，避免变亮变宽。",
+        },
+        "dense_male": {
+            "frontness": "男声可略靠后，厚度不能被 bus/duck 改成贴脸。",
+            "duck": "重点低中频错位，避免全频压伴奏。",
+            "space": "保持中心厚度，空间只做贴合。",
+        },
+        "intimate_light": {
+            "frontness": "近、小、自然，不要做成大流行前景人声。",
+            "duck": "极轻，只处理明显遮挡。",
+            "space": "窄、干、居中，side/wet 是首要约束。",
+        },
+        "reference_balanced": {
+            "frontness": "跟随参考 active gap，但必须避免多模块重复修正。",
+            "duck": "按遮挡证据使用。",
+            "space": "跟随原曲人声 stem 审计。",
+        },
+    }
+
+    return {
+        "version": 1,
+        "enabled": True,
+        "profile": profile,
+        "profile_usage": "explain_only_not_decision_core",
+        "target_source": "pre_render_plan_features",
+        "decision_core": {
+            "mode": "reference_target_error_correction",
+            "policy": "最终融合应按每首自己的原曲 reference.features 计算目标和误差；profile 只解释当前画像，不直接决定参数。",
+        },
+        "targets": targets[profile],
+        "reasons": reasons,
+        "evidence": {
+            "selected_template": template_id,
+            "reference_active_vocal_minus_accomp_db": round(ref_gap, 2) if ref_gap is not None else None,
+            "reference_near_mono_center_led": near_mono,
+            "reference_active_side_minus_mid_db": round(side_mid, 3),
+            "body_ratio": round(body, 4),
+            "presence_ratio": round(presence, 4),
+            "lowmid_ratio": round(lowmid, 4),
+            "body_to_presence": round(body_to_presence, 3),
+        },
+        "module_contracts": {
+            "timbre": {
+                "role": "只追音色筛选片段的人声音色目标。",
+                "must_not": "不决定人声前后、不通过削 presence 间接改变融合。",
+            },
+            "bus_balance": {
+                "role": "只决定全局前后关系。",
+                "must_not": "不能独立把 active gap 补满；需要扣除 duck/section 预算。",
+            },
+            "accomp_duck": {
+                "role": "只解决伴奏遮挡。",
+                "must_not": "不能承担弱人声整体抬出任务。",
+            },
+            "section_balance": {
+                "role": "只修段落级明显偏差。",
+                "must_not": "触发大量窗口时继续改变整首融合关系。",
+            },
+            "spatial_fx": {
+                "role": "匹配原曲人声 stem 的宽度、湿度、纵深。",
+                "must_not": "不能为了质感把人声做宽/做湿到脱离伴奏。",
+            },
+        },
+        "links": {
+            "vocal_processing_context_version": vocal_processing_context.get("version"),
+            "presence_policy": (vocal_processing_context.get("presence_band_policy") or {}).get("mode"),
+        },
+        "render_consumption": {
+            "active": False,
+            "policy": "当前只写入 plan 供审计/讨论；渲染脚本尚不消费此块，因此不会改变声音。",
+        },
+    }
+
 
 def reference_presence_hf_policy(ref_features: dict[str, Any] | None) -> dict[str, Any]:
     """旧接口兼容：高频保护现在应优先读取 vocal_processing_context。"""
@@ -2561,6 +2687,12 @@ def build_plan(
         analysis,
         template_id,
     )
+    fusion_intent = build_fusion_intent(
+        analysis,
+        ref_features,
+        template_id,
+        vocal_processing_context,
+    )
 
     reference_block: dict[str, Any] | None = None
     if ref_features is not None:
@@ -2569,6 +2701,7 @@ def build_plan(
             "input_features": input_features,
             "timbre_features": timbre_features,
             "vocal_processing_context": vocal_processing_context,
+            "fusion_intent": fusion_intent,
             "overrides": build_reference_overrides(
                 ref_features,
                 input_features,
@@ -2599,6 +2732,7 @@ def build_plan(
                 processing_context=vocal_processing_context,
             ),
             "vocal_processing_context": vocal_processing_context,
+            "fusion_intent": fusion_intent,
             "vocal_sibilance_profile": vocal_sibilance_profile,
             "notes": [
                 "Template D uses the older current project chain.",
@@ -2627,6 +2761,7 @@ def build_plan(
             processing_context=vocal_processing_context,
         ),
         "vocal_processing_context": vocal_processing_context,
+        "fusion_intent": fusion_intent,
         "vocal_sibilance_profile": vocal_sibilance_profile,
         "residual_vocal_eq": build_residual_vocal_eq(analysis, template_id, ref_features, input_features),
         "vocal_track": {

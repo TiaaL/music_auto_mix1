@@ -683,13 +683,16 @@ def normalize_song_token(text: str) -> str:
     return text
 
 
-def extract_song_name(vocal_path: Path) -> str:
-    """`hjf中文歌曲-黄昏_干声.wav` -> `黄昏`."""
-    stem = vocal_path.stem
+def strip_vocal_input_suffix(stem: str) -> str:
     for suffix in ("_干声", "_vocal", "-干声", "-vocal"):
         if stem.endswith(suffix):
-            stem = stem[: -len(suffix)]
-            break
+            return stem[: -len(suffix)]
+    return stem
+
+
+def extract_song_name(vocal_path: Path) -> str:
+    """`hjf中文歌曲-黄昏_干声.wav` -> `黄昏`."""
+    stem = strip_vocal_input_suffix(vocal_path.stem)
     if "-" in stem:
         stem = stem.rsplit("-", 1)[-1]
     return stem.strip()
@@ -708,6 +711,26 @@ def fuzzy_find(folder: Path, song: str, extensions: tuple[str, ...]) -> Path | N
         if needle in normalize_song_token(path.stem):
             return path
     return None
+
+
+def find_timbre_reference(folder: Path, vocal_input: Path, extensions: tuple[str, ...]) -> Path | None:
+    if not folder.exists():
+        return None
+    case_name = strip_vocal_input_suffix(vocal_input.stem).strip()
+    case_token = normalize_song_token(case_name)
+    candidates: list[Path] = []
+    for ext in extensions:
+        candidates.extend(folder.glob(f"*{ext}"))
+    candidates = sorted(candidates, key=lambda path: normalize_song_token(path.stem))
+    if case_token:
+        for path in candidates:
+            stem_token = normalize_song_token(path.stem)
+            if stem_token == case_token or stem_token.startswith(case_token):
+                return path
+        for path in candidates:
+            if case_token in normalize_song_token(path.stem):
+                return path
+    return fuzzy_find(folder, extract_song_name(vocal_input), extensions)
 
 
 def resolve_downloads_root(downloads_root: Path | None = None) -> Path:
@@ -760,10 +783,13 @@ def resolve_timbre_reference_file(
     vocal_input: Path,
     downloads_root: Path | None = None,
 ) -> Path | None:
-    """按干声歌名解析同一行的“音色筛选片段”参考素材。"""
+    """按完整干声名优先解析同一行的“音色筛选片段”参考素材。"""
     downloads_root = resolve_downloads_root(downloads_root)
-    song = extract_song_name(vocal_input)
-    return fuzzy_find(downloads_root / "音色筛选片段", song, (".wav", ".mp3", ".flac", ".m4a"))
+    return find_timbre_reference(
+        downloads_root / "音色筛选片段",
+        vocal_input,
+        (".wav", ".mp3", ".flac", ".m4a"),
+    )
 
 
 def analyse(full_mix: Path, vocal: Path, accomp: Path) -> dict[str, Any]:

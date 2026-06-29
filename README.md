@@ -135,6 +135,61 @@ Known issues / next checks:
 
 ---
 
+## Current sync note — 2026-06-29
+
+本次更新开始把“融合度”从多个分散模块里抽出来，先做成只读的最终融合决策层。
+
+核心原则：
+
+- **每首歌只对齐自己的原曲。** 勇气只对齐梁静茹《勇气》，阴天只对齐莫文蔚《阴天》，黄昏只对齐周传雄《黄昏》，小步舞曲只对齐陈绮贞《小步舞曲》。
+- **不按歌名、风格标签或四首测试 case 硬套参数。** `fusion_intent.profile` 只用于解释当前画像，不作为核心决策。
+- **真正的决策核心是 reference target error correction。** 也就是先读原曲 reference.features，再读当前渲染报告，最后输出“参考目标 → 当前误差 → 建议修正”。
+
+新增脚本：
+
+- `scripts/diagnose_fusion_intent.py`：只读聚合已有报告，解释当前融合画像和冲突点。
+- `scripts/plan_final_fusion_pass.py`：只读生成 final fusion pass 决策 JSON，不写音频、不接渲染链。
+
+典型用法：
+
+```bash
+python3 scripts/plan_final_fusion_pass.py \
+  --render-dir calibration_outputs/flow_refactor_listen_20260626 \
+  --out-json calibration_outputs/flow_refactor_listen_20260626/final_fusion_decisions.json \
+  --out-md calibration_outputs/flow_refactor_listen_20260626/final_fusion_decisions.md
+```
+
+输出结构：
+
+```json
+{
+  "reference_targets": {
+    "global_active_gap_db": -1.05,
+    "vocal_width": {},
+    "vocal_reverb": {},
+    "vocal_dynamics": {}
+  },
+  "current_errors": {
+    "global_gap_error_db": -8.73,
+    "width_error_db": 7.11,
+    "reverb_rt60_error_ms": 616.3
+  },
+  "corrections": {
+    "global_gain": {},
+    "section": {},
+    "duck_budget": {},
+    "spatial": {}
+  },
+  "render_consumption": {
+    "active": false
+  }
+}
+```
+
+注意：`render_consumption.active=false` 表示这一步不会改变声音。后续如果要真正应用，需要再写/接入 `apply_final_fusion_pass.py`，并用四首固定验证集一起跑听感回归。
+
+---
+
 ## Requirements
 
 ### Toolchain

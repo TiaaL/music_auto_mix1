@@ -71,6 +71,8 @@ def main() -> None:
         str(args.input_wav),
         "-af",
         ",".join(filters),
+        "-c:a",
+        "pcm_f32le",
         str(args.output_wav),
     ]
     proc = subprocess.run(cmd, text=True, encoding="utf-8", errors="replace", capture_output=True, check=False)

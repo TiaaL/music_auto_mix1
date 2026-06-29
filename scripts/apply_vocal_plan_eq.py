@@ -99,9 +99,9 @@ def main() -> None:
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument(
         "--eq-stage",
-        choices=("all", "timbre", "post_timbre"),
+        choices=("all", "cleanup", "timbre", "post_timbre"),
         default="all",
-        help="all=兼容旧流程；timbre=只做音色参考；post_timbre=音色之后的清理/保护。",
+        help="all=兼容旧流程；cleanup=音色前源人声清理；timbre=只做音色参考；post_timbre=音色之后的清理/保护。",
     )
     parser.add_argument("--ffmpeg", default="ffmpeg")
     args = parser.parse_args()
@@ -123,8 +123,11 @@ def main() -> None:
     hf_actions = hf_guard.get("actions", []) if hf_guard.get("enabled") else []
 
     skipped_by_budget: list[dict[str, Any]] = []
-    if args.eq_stage == "timbre":
-        # 音色相似度先进入模板链，让后续压缩/模板 EQ 基于更接近筛选片段的干声工作。
+    if args.eq_stage == "cleanup":
+        # 音色塑形前先处理源人声问题；这里不追音色参考。
+        ordered_actions = [*residual_actions, *source_actions, *hf_actions]
+    elif args.eq_stage == "timbre":
+        # 音色相似度只吃音色筛选片段动作；不混入瑕疵修复/HF guard。
         ordered_actions = [*timbre_actions]
     elif args.eq_stage == "post_timbre":
         # 后置阶段只做瑕疵修正和高频兜底，不再追音色，避免把相似度目标反复改写。
@@ -164,6 +167,8 @@ def main() -> None:
         str(args.input_wav),
         "-af",
         ",".join(filters),
+        "-c:a",
+        "pcm_f32le",
         str(args.output_wav),
     ]
     proc = subprocess.run(cmd, text=True, encoding="utf-8", errors="replace", capture_output=True, check=False)

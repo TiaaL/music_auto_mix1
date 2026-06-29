@@ -219,8 +219,8 @@ def main() -> None:
         if sr2 != sr:
             raise SystemExit(f"sample-rate mismatch: vocal={sr}, accomp={sr2}")
         args.vocal_out.parent.mkdir(parents=True, exist_ok=True)
-        sf.write(args.vocal_out, vocal, sr, subtype="PCM_16")
-        sf.write(args.accomp_out, accomp, sr, subtype="PCM_16")
+        sf.write(args.vocal_out, vocal, sr, subtype="FLOAT")
+        sf.write(args.accomp_out, accomp, sr, subtype="FLOAT")
         report = {
             "enabled": False,
             "triggered": False,
@@ -262,8 +262,8 @@ def main() -> None:
     )
     report["target_gap_lift_reasons"] = lift_reasons
     args.vocal_out.parent.mkdir(parents=True, exist_ok=True)
-    sf.write(args.vocal_out, out_vocal, sr, subtype="PCM_16")
-    sf.write(args.accomp_out, out_accomp, sr, subtype="PCM_16")
+    sf.write(args.vocal_out, out_vocal, sr, subtype="FLOAT")
+    sf.write(args.accomp_out, out_accomp, sr, subtype="FLOAT")
     if args.metadata:
         args.metadata.parent.mkdir(parents=True, exist_ok=True)
         args.metadata.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

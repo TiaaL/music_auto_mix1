@@ -353,7 +353,7 @@ def main() -> None:
 
     args.output_wav.parent.mkdir(parents=True, exist_ok=True)
     write_start = time.perf_counter()
-    sf.write(args.output_wav, out, sr, subtype="PCM_16")
+    sf.write(args.output_wav, out, sr, subtype="FLOAT")
     if args.profile_timing:
         report.setdefault("timings_sec", {})["write_wav"] = round(time.perf_counter() - write_start, 4)
     if args.metadata:
