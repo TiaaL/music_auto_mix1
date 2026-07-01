@@ -677,13 +677,6 @@ HF_GUARD_REFERENCE_SLIGHT_BACK_CAP_DB = {
     "sib": 0.85,
 }
 PRESENCE_BANDS = {"upper", "harsh", "sib"}
-CLARITY_GUARD_BANDS = {"upper", "harsh", "sib", "air"}
-CLARITY_GUARD_REF_DELTA_DB = {
-    "upper": 2.5,
-    "harsh": 1.8,
-    "sib": 5.0,
-    "air": 10.0,
-}
 VOCAL_CONTEXT_VERSION = 1
 VOCAL_PRESENCE_POLICY = {
     "reference_vocal_forward_or_even": {
@@ -753,221 +746,6 @@ SPATIAL_LIMITS = {
     "shimmer_send_pre_db": (-24.0, -16.0),
     "shimmer_gain_db": (-24.0, -16.0),
 }
-
-
-def build_spatial_decision(
-    stem_spatial: dict[str, Any],
-    reverb: dict[str, Any],
-    delay: dict[str, Any],
-    analysis: dict[str, Any],
-) -> dict[str, Any]:
-    """把原曲人声空间拆成 width/depth/wet/tail/early/delay 契约。
-
-    这里不按歌名或 profile 分支，也不直接照搬 center-led=干/无 delay。
-    下游 `build_spatial_fx_plan()` 只消费这个契约生成一次 vocal_group_fx 参数，
-    避免新增 post pass 或 render 后反复重跑。
-    """
-    side_mid = float(stem_spatial.get("active_side_minus_mid_db") or 0.0)
-    center_led = bool(stem_spatial.get("near_mono_center_led"))
-    strict_center = center_led and side_mid <= -30.0
-
-    group_ratios = (analysis or {}).get("group_ratios") or {}
-    presence_ratio = float(group_ratios.get("presence") or 0.0)
-    body_to_presence = float((analysis or {}).get("body_to_presence") or 0.0)
-    missing_presence = presence_ratio <= 0.03 and body_to_presence >= 16.0
-    clarity_risk = "high" if missing_presence else ("medium" if presence_ratio <= 0.05 and body_to_presence >= 12.0 else "normal")
-
-    tail_ratio = float(reverb.get("tail_to_onset_ratio_db") or -60.0)
-    rt60_ms = float(reverb.get("est_rt60_ms") or 0.0)
-    reverb_conf = float(reverb.get("confidence") or 0.0)
-    long_rt_proxy = rt60_ms >= 12000.0
-    dense_tail = tail_ratio >= -2.0
-    if long_rt_proxy and dense_tail:
-        tail_state = "dense_tail_long_rt_proxy"
-    elif long_rt_proxy:
-        tail_state = "dry_tail_long_rt_proxy"
-    elif dense_tail:
-        tail_state = "dense_tail_short_rt"
-    else:
-        tail_state = "dry_or_short_tail"
-
-    delay_corr = float(delay.get("peak_corr") or 0.0)
-    delay_lag = float(delay.get("peak_lag_ms") or 0.0)
-    delay_conf = float(delay.get("confidence") or 0.0)
-    stable_depth_delay = delay_corr >= 0.70 and 45.0 <= delay_lag <= 130.0
-
-    if strict_center:
-        width_mode = "near_mono_center_strict"
-        side_trim_db = -8.0
-        delay_width = 0.20
-    elif center_led:
-        width_mode = "center_led_depth_allowed"
-        side_trim_db = -6.0
-        delay_width = 0.30
-    else:
-        width_mode = "reference_width_open"
-        side_trim_db = 0.0
-        delay_width = 0.48
-
-    # 1.1 的空间修正遵守 0.1 vocal_group_fx 的接口/发送方式契约：
-    # - mono in -> dry/early/reverb/shimmer/delay 并联 -> stereo out 的进出声道不改。
-    # - “发送方式”只指 dry 与各效果 return 的并联连接方式；不代表 send 电平锁死。
-    # - reference 可以动态调 send level 和效果器内部参数，但不能改成另一套路由/多 pass。
-    # - 所有效果强度上限以 189f4a7/v0.1 预制为准：不能比 0.1 更湿、更长、更宽或更亮。
-    # 这样不会把“融合”和“空间”混成同一个 fader 问题，也避免每首歌变成不同 rack。
-    if strict_center:
-        classic_rverb_send_db = -13.25
-        classic_rverb_time_s = 1.52
-        classic_predelay_ms = 11.0
-        classic_delay_send_db = -30.0
-        classic_delay_gain_db = -20.5
-        classic_delay_width = 0.22
-    elif center_led:
-        classic_rverb_send_db = -12.85
-        classic_rverb_time_s = 1.65
-        classic_predelay_ms = 12.0
-        classic_delay_send_db = -28.5
-        classic_delay_gain_db = -19.4
-        classic_delay_width = 0.32
-    else:
-        classic_rverb_send_db = SPATIAL_BASELINE["rverb_send_pre_db"]
-        classic_rverb_time_s = SPATIAL_BASELINE["rverb_time_s"]
-        classic_predelay_ms = SPATIAL_BASELINE["rverb_predelay_ms"]
-        classic_delay_send_db = SPATIAL_BASELINE["supertap_send_pre_db"]
-        classic_delay_gain_db = SPATIAL_BASELINE["supertap_gain_db"]
-        classic_delay_width = SPATIAL_BASELINE["supertap_width"]
-
-    classic_early_ref_db = SPATIAL_BASELINE["rverb_early_ref_db"]
-    classic_return_hi_db = -4.45 if center_led else -4.15
-    classic_delay_feedback = SPATIAL_BASELINE["supertap_feedback"]
-
-    # 纵深不再靠“加宽”解决：center-led 保持窄声像，但允许早反射和窄 delay 提供前后距离。
-    if center_led and long_rt_proxy and dense_tail:
-        depth_state = "early_wrap_short_tail"
-        time_target_s = 1.52 if strict_center else 1.65
-        predelay_target_ms = 18.0 if strict_center else 17.0
-        wet_scale = 0.52 if strict_center else 0.62
-        wet_delta_cap_db = 1.65 if strict_center else 1.85
-        early_ref_db = -1.15 if strict_center else -1.05
-    elif center_led and long_rt_proxy:
-        depth_state = "early_wrap_controlled_tail"
-        time_target_s = 1.70 if strict_center else 1.82
-        predelay_target_ms = 19.0 if strict_center else 18.0
-        wet_scale = 0.58 if strict_center else 0.72
-        wet_delta_cap_db = 1.75 if strict_center else 2.05
-        early_ref_db = -1.20 if strict_center else -1.10
-    elif center_led:
-        depth_state = "center_depth_balanced"
-        time_target_s = 1.75
-        predelay_target_ms = 16.0
-        wet_scale = 0.70
-        wet_delta_cap_db = 2.0
-        early_ref_db = -1.25
-    else:
-        depth_state = "open_reference_depth"
-        time_target_s = reverb_time_target(rt60_ms)
-        predelay_target_ms = clamp(12.0 + max(0.0, tail_ratio + 10.0) * 0.8, 10.0, 26.0)
-        wet_scale = 1.0
-        wet_delta_cap_db = 3.6
-        early_ref_db = -1.7
-
-    if clarity_risk == "high":
-        # 缺咬字时不能用亮尾巴补空间；改用短尾、早反射和窄 delay 保留深度。
-        wet_scale *= 0.74
-        wet_delta_cap_db = min(wet_delta_cap_db, 1.25)
-        time_target_s = min(time_target_s, 1.58)
-        predelay_target_ms = max(predelay_target_ms, 19.0)
-        early_ref_db = min(early_ref_db, -1.35)
-        delay_width = min(delay_width, 0.22)
-        # Faust 底座也只做“护栏式”收敛：空间仍然存在，但尾巴更暗、更窄，
-        # 不用过量湿度去弥补原始干声缺咬字。
-        classic_rverb_send_db -= 0.45
-        classic_rverb_time_s = min(classic_rverb_time_s, 1.82)
-        classic_predelay_ms = min(classic_predelay_ms, SPATIAL_BASELINE["rverb_predelay_ms"])
-        classic_delay_send_db -= 0.7
-        classic_delay_gain_db -= 0.7
-        classic_delay_width = min(classic_delay_width, 0.24)
-        classic_delay_feedback = 0.085
-        classic_return_hi_db = -4.75
-
-    if stable_depth_delay:
-        if clarity_risk == "high":
-            delay_state = "narrow_depth_delay_clarity_guard"
-            delay_send_delta_db = -3.7
-            delay_feedback = 0.065
-        elif strict_center:
-            delay_state = "narrow_depth_delay_strict_center"
-            delay_send_delta_db = -3.1
-            delay_feedback = 0.070
-        elif center_led:
-            delay_state = "narrow_depth_delay_center_led"
-            delay_send_delta_db = -2.2
-            delay_feedback = 0.078
-        else:
-            delay_state = "reference_depth_delay_open"
-            delay_send_delta_db = min(2.0, delay_conf * 2.2)
-            delay_feedback = 0.10 + min(0.06, delay_conf * 0.08)
-    else:
-        delay_state = "weak_or_unstable_delay"
-        delay_send_delta_db = -5.2 if center_led else min(0.5, max(0.0, delay_conf * 0.8))
-        delay_feedback = 0.060 if center_led else 0.10
-
-    return_hi = -4.85 if clarity_risk == "high" else (-4.65 if center_led else -4.20)
-
-    return {
-        "version": 1,
-        "width_state": width_mode,
-        "depth_state": depth_state,
-        "wet_state": "short_wet_wrap" if center_led and long_rt_proxy else "reference_wet",
-        "tail_state": tail_state,
-        "early_state": "front_wrap_early_reflection",
-        "delay_state": delay_state,
-        "clarity_risk": clarity_risk,
-        "evidence": {
-            "active_side_minus_mid_db": round(side_mid, 3),
-            "center_led": center_led,
-            "tail_to_onset_ratio_db": round(tail_ratio, 3),
-            "est_rt60_ms": round(rt60_ms, 1),
-            "reverb_confidence": round(reverb_conf, 3),
-            "delay_peak_corr": round(delay_corr, 3),
-            "delay_peak_lag_ms": round(delay_lag, 1),
-            "presence_ratio": round(presence_ratio, 5),
-            "body_to_presence": round(body_to_presence, 3),
-        },
-        "mapping": {
-            "classic_faust_anchor": True,
-            "side_trim_db": round(side_trim_db, 3),
-            "wet_scale": round(wet_scale, 3),
-            "wet_delta_cap_db": round(wet_delta_cap_db, 3),
-            "time_target_s": round(time_target_s, 3),
-            "time_scale": 1.0,
-            "predelay_target_ms": round(predelay_target_ms, 3),
-            "early_ref_db": round(early_ref_db, 3),
-            "reverb_eq_hi_gain_db": round(return_hi, 3),
-            "delay_send_delta_db": round(delay_send_delta_db, 3),
-            "delay_feedback": round(delay_feedback, 3),
-            "delay_width": round(delay_width, 3),
-            "v0_1_io_send_path_lock": True,
-            "v0_1_effect_ceiling": True,
-            "classic_rverb_send_pre_db": round(classic_rverb_send_db, 3),
-            "classic_rverb_time_s": round(classic_rverb_time_s, 3),
-            "classic_rverb_predelay_ms": round(classic_predelay_ms, 3),
-            "classic_rverb_early_ref_db": round(classic_early_ref_db, 3),
-            "classic_rverb_eq_hi_gain_db": round(classic_return_hi_db, 3),
-            "classic_supertap_send_pre_db": round(classic_delay_send_db, 3),
-            "classic_supertap_gain_db": round(classic_delay_gain_db, 3),
-            "classic_supertap_feedback": round(classic_delay_feedback, 3),
-            "classic_supertap_width": round(classic_delay_width, 3),
-        },
-        "allowed_moves": [
-            "keep_reference_width",
-            "shorten_long_rt_proxy",
-            "use_early_reflection_for_depth",
-            "use_narrow_delay_for_depth" if stable_depth_delay else "keep_delay_near_floor",
-            "protect_clarity_from_bright_return" if clarity_risk == "high" else "moderate_return_tone",
-        ],
-        "policy": "空间保持 0.1 Faust 输入/输出和发送路径；reference 在 0.1 上限内动态调白名单参数。",
-    }
 
 
 def build_dry_vocal_strategy(
@@ -1139,20 +917,36 @@ def build_vocal_effect_context(
     delay = (ref_features or {}).get("delay_proxy") or {}
     ref_dyn = (ref_features or {}).get("vocal_dynamics") or {}
     input_dyn = (input_features or {}).get("vocal_dynamics") or {}
-    spatial_decision = build_spatial_decision(stem_spatial, reverb, delay, analysis)
-    spatial_mapping = spatial_decision.get("mapping") or {}
     side_mid = float(stem_spatial.get("active_side_minus_mid_db") or 0.0)
     center_led = bool(stem_spatial.get("near_mono_center_led"))
-    width_mode = str(spatial_decision.get("width_state") or "reference_width_open")
-    side_trim_db = float(spatial_mapping.get("side_trim_db") or 0.0)
-    wet_scale = float(spatial_mapping.get("wet_scale") or 1.0)
-    time_scale = float(spatial_mapping.get("time_scale") or 1.0)
-    delay_width = spatial_mapping.get("delay_width")
+    if center_led and side_mid <= -30.0:
+        width_mode = "near_mono_center_strict"
+        side_trim_db = -8.0
+        wet_scale = 0.22
+        time_scale = 0.34
+        delay_width = 0.16
+    elif center_led:
+        width_mode = "center_led"
+        side_trim_db = -6.0
+        wet_scale = 0.34
+        time_scale = 0.50
+        delay_width = 0.28
+    else:
+        width_mode = "reference_width_open"
+        side_trim_db = 0.0
+        wet_scale = 1.0
+        time_scale = 1.0
+        delay_width = None
 
     group_ratios = (analysis or {}).get("group_ratios") or {}
     presence_ratio = float(group_ratios.get("presence") or 0.0)
     body_to_presence = float((analysis or {}).get("body_to_presence") or 0.0)
     preserve_missing_presence = presence_ratio <= 0.03 and body_to_presence >= 16.0
+    if preserve_missing_presence:
+        # 干声缺咬字时，空间策略再收一次，但触发仍来自通用干声特征。
+        side_trim_db = min(side_trim_db, -7.5)
+        wet_scale = min(wet_scale, 0.45)
+        delay_width = min(delay_width if delay_width is not None else 0.20, 0.20)
 
     range_gap = float(ref_dyn.get("frame_range_p90_p10_db") or 0.0) - float(
         input_dyn.get("frame_range_p90_p10_db") or 0.0
@@ -1176,10 +970,9 @@ def build_vocal_effect_context(
             "side_trim_db": round(side_trim_db, 3),
             "reverb_wet_scale": round(wet_scale, 3),
             "reverb_time_scale": round(time_scale, 3),
-            "delay_width_cap": round(float(delay_width), 3) if isinstance(delay_width, (int, float)) else None,
+            "delay_width_cap": round(delay_width, 3) if delay_width is not None else None,
             "preserve_missing_presence": bool(preserve_missing_presence),
         },
-        "spatial_decision": spatial_decision,
         "reverb": {
             "tail_to_onset_ratio_db": reverb.get("tail_to_onset_ratio_db"),
             "est_rt60_ms": reverb.get("est_rt60_ms"),
@@ -1225,32 +1018,6 @@ def build_vocal_processing_context(
         for band in SOURCE_VOCAL_EQ_BANDS
         if isinstance(timbre_tone.get(band), (int, float)) and isinstance(input_tone.get(band), (int, float))
     }
-    ref_vocal_tone = (ref_features or {}).get("vocal_tonal_balance") or {}
-    clarity_guard: dict[str, Any] = {
-        "protected_bands": [],
-        "by_band": {},
-        "policy": (
-            "音色筛选片段可以决定人声颜色，但不能把原曲 stem 证明需要保留的咬字/"
-            "空气感继续削掉；这是通用清晰度边界，不按歌曲名分支。"
-        ),
-    }
-    for band in CLARITY_GUARD_BANDS:
-        ref_value = ref_vocal_tone.get(band)
-        current_value = input_tone.get(band)
-        if not isinstance(ref_value, (int, float)) or not isinstance(current_value, (int, float)):
-            continue
-        ref_minus_current = float(ref_value) - float(current_value)
-        threshold = CLARITY_GUARD_REF_DELTA_DB[band]
-        protected = ref_minus_current >= threshold
-        clarity_guard["by_band"][band] = {
-            "reference_db": round(float(ref_value), 2),
-            "input_db": round(float(current_value), 2),
-            "ref_minus_input_db": round(ref_minus_current, 2),
-            "threshold_db": threshold,
-            "protected": protected,
-        }
-        if protected:
-            clarity_guard["protected_bands"].append(band)
     peakiness = {
         "upper": float(analysis.get("peakiness_upper") or 0.0),
         "harsh": float(analysis.get("peakiness_harsh") or 0.0),
@@ -1273,7 +1040,6 @@ def build_vocal_processing_context(
             "has_reference": bool(timbre_tone),
             "delta_db": timbre_delta,
         },
-        "reference_clarity_guard": clarity_guard,
         "artifact_profile": {
             "native_sample_rate": analysis.get("native_sample_rate"),
             "effective_nyquist_hz": analysis.get("effective_nyquist_hz"),
@@ -1743,7 +1509,6 @@ def build_timbre_envelope_actions(
     target_tone: dict[str, Any],
     presence_policy: dict[str, Any],
     safety: dict[str, Any],
-    processing_context: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """用细分频谱包络补足 8-band 音色匹配听感不明显的问题。"""
     target_env = envelope_band_map((timbre_features or {}).get("vocal_spectral_envelope") or {})
@@ -1755,8 +1520,6 @@ def build_timbre_envelope_actions(
 
     pre_presence_scale = float(presence_policy.get("pre_timbre_cut_scale") or 1.0)
     pre_presence_caps = presence_policy.get("pre_timbre_cut_caps_db") or {}
-    clarity_guard = (processing_context or {}).get("reference_clarity_guard") or {}
-    clarity_protected = set(clarity_guard.get("protected_bands") or [])
     ranked: list[tuple[float, dict[str, Any]]] = []
     skipped: list[dict[str, Any]] = []
     for band_id, target_item in target_env.items():
@@ -1770,19 +1533,6 @@ def build_timbre_envelope_actions(
         budget_band = envelope_budget_band(freq_hz)
 
         if delta < 0.0:
-            if budget_band in clarity_protected:
-                skipped.append({
-                    "envelope_band": band_id,
-                    "budget_band": budget_band,
-                    "freq_hz": round(freq_hz, 1),
-                    "delta_db": round(delta, 2),
-                    "reason": (
-                        "原曲人声 stem 显示该清晰度频段已经比当前更亮；"
-                        "跳过音色筛选片段驱动的高频 cut，避免把好干声做闷"
-                    ),
-                    "reference_clarity_guard": (clarity_guard.get("by_band") or {}).get(budget_band),
-                })
-                continue
             cap = TIMBRE_ENVELOPE_MAX_CUT_DB.get(budget_band, 0.6)
             amount = abs(delta) * TIMBRE_ENVELOPE_GAIN_FRACTION
             if budget_band in PRESENCE_BANDS:
@@ -1890,8 +1640,6 @@ def build_timbre_reference_vocal_eq(
     _ = cleanup_actions
     safety = high_frequency_safety(analysis, current)
     presence_policy = (processing_context or {}).get("presence_band_policy") or {}
-    clarity_guard = (processing_context or {}).get("reference_clarity_guard") or {}
-    clarity_protected = set(clarity_guard.get("protected_bands") or [])
     pre_presence_scale = float(presence_policy.get("pre_timbre_cut_scale") or 1.0)
     pre_presence_caps = presence_policy.get("pre_timbre_cut_caps_db") or {}
     total_cut_budget = ((processing_context or {}).get("band_budget") or {}).get("max_total_cut_db") or {}
@@ -1907,17 +1655,6 @@ def build_timbre_reference_vocal_eq(
         if delta < 0.0:
             # 目标片段该频段更少时，只轻削一部分；这类动作比 boost 更安全。
             if "cut" not in rule["actions"]:
-                continue
-            if band in clarity_protected:
-                skipped.append({
-                    "band": band,
-                    "delta_db": round(delta, 2),
-                    "reason": (
-                        "原曲人声 stem 显示该清晰度频段已经比当前更亮；"
-                        "跳过音色筛选片段驱动的高频 cut，避免把好干声做闷"
-                    ),
-                    "reference_clarity_guard": (clarity_guard.get("by_band") or {}).get(band),
-                })
                 continue
             cap = TIMBRE_EQ_MAX_CUT_DB.get(band, VOCAL_SOURCE_EQ_MAX_CUT_DB)
             cut_fraction = TIMBRE_EQ_CUT_FRACTION
@@ -2020,7 +1757,6 @@ def build_timbre_reference_vocal_eq(
         target,
         presence_policy,
         safety,
-        processing_context,
     )
     actions = [*broad_actions, *envelope_actions][:TIMBRE_EQ_TOTAL_MAX_ACTIONS]
     return {
@@ -2209,8 +1945,6 @@ def build_spatial_fx_plan(
     stem_quality = ref_features.get("vocal_stem_quality") or {}
     stem_spatial = ref_features.get("vocal_spatial_profile") or {}
     effect_spatial = (effect_context or {}).get("spatial") or {}
-    spatial_decision = (effect_context or {}).get("spatial_decision") or {}
-    spatial_mapping = spatial_decision.get("mapping") or {}
     reasons: list[str] = []
     center_led_reference = bool(effect_spatial.get("center_led", stem_spatial.get("near_mono_center_led")))
     group_ratios = (analysis or {}).get("group_ratios") or {}
@@ -2254,14 +1988,21 @@ def build_spatial_fx_plan(
         "vocal_stem_quality": stem_quality,
         "vocal_spatial_profile": stem_spatial,
         "vocal_effect_target": effect_context,
-        "spatial_decision": spatial_decision,
     }
     rt60_ms = float(reverb.get("est_rt60_ms") or 0.0)
     if center_led_reference or rt60_ms > 8000.0:
-        # 1.1 先注释掉旧的“center-led / RT60 高就直接禁用 spatial_fx”硬 guard。
-        # 这些情况仍然应该进入下面的有界映射：center-led 会自动降低 wet/width/delay，
-        # RT60 proxy 不可信时也只通过上限收窄，而不是回退到 neutral stereo 或固定 rack。
-        reasons.append("legacy_spatial_disable_guard_bypassed_in_1_1")
+        # 0.1 之前的 vocal_group_fx 是固定空间 rack。当前回归显示 center-led
+        # 原曲人声的 reverb proxy 容易把尾音/抽取残留当成长混响，导致更湿、更靠前。
+        # 因此居中或 RT60 明显不可信时回到旧固定 rack；不再动态改 reverb/delay/side。
+        reasons.append("legacy_fixed_vocal_group_fx_for_center_led_or_unreliable_reverb")
+        return {
+            "enabled": False,
+            "applied_to_render": False,
+            "reason": ",".join(reasons),
+            "baseline": baseline,
+            "evidence": evidence,
+            "policy": "legacy_0_1_pre_spatial_rack_default_when_reverb_proxy_is_unreliable",
+        }
     if not enabled:
         return {
             "enabled": False,
@@ -2272,161 +2013,30 @@ def build_spatial_fx_plan(
         }
 
     tail_ratio = float(reverb.get("tail_to_onset_ratio_db") or -60.0)
-    if bool(spatial_mapping.get("classic_faust_anchor")):
-        # 1.1 空间链回到旧 Faust/Cubase rack 的稳定人格：
-        # reference proxy 只能调白名单参数；0.1 的输入/输出和发送路径不改。
-        # send level 可以按 reference 收窄/收干，但不能超过 0.1 预制上限，
-        # 避免空间修正变成另一套隐形 bus balance。
-        reasons.append("classic_faust_space_anchor")
-        reasons.append("v0_1_io_send_path_lock")
-        reasons.append("v0_1_effect_ceiling")
-        reasons.append(f"spatial_guard_{spatial_decision.get('width_state', 'width_mapped')}")
-        reasons.append(f"spatial_guard_{spatial_decision.get('clarity_risk', 'clarity_normal')}")
-        if center_led_reference or rt60_ms > 8000.0:
-            reasons.append("legacy_guard_replaced_by_classic_faust_anchor")
-
-        rverb_send_pre_db = min(
-            float(spatial_mapping.get("classic_rverb_send_pre_db", baseline["rverb_send_pre_db"])),
-            baseline["rverb_send_pre_db"],
-        )
-        rverb = {
-            "send_pre_db": round(clamp(
-                rverb_send_pre_db,
-                *SPATIAL_LIMITS["rverb_send_pre_db"],
-            ), 3),
-            "time_s": round(clamp(
-                min(float(spatial_mapping.get("classic_rverb_time_s", baseline["rverb_time_s"])), baseline["rverb_time_s"]),
-                *SPATIAL_LIMITS["rverb_time_s"],
-            ), 3),
-            "predelay_ms": round(clamp(
-                min(float(spatial_mapping.get("classic_rverb_predelay_ms", baseline["rverb_predelay_ms"])), baseline["rverb_predelay_ms"]),
-                *SPATIAL_LIMITS["rverb_predelay_ms"],
-            ), 3),
-            "early_ref_db": round(min(
-                float(spatial_mapping.get("classic_rverb_early_ref_db", baseline["rverb_early_ref_db"])),
-                baseline["rverb_early_ref_db"],
-            ), 3),
-            "damp": round(baseline["rverb_damp"], 3),
-            "eq_hi_gain_db": round(clamp(
-                min(
-                    float(spatial_mapping.get("classic_rverb_eq_hi_gain_db", baseline["rverb_eq_hi_gain_db"])),
-                    baseline["rverb_eq_hi_gain_db"],
-                ),
-                *SPATIAL_LIMITS["rverb_eq_hi_gain_db"],
-            ), 3),
-            "wet_delta_db": round(rverb_send_pre_db - baseline["rverb_send_pre_db"], 3),
-            "confidence": round(reverb_conf, 3),
-            "policy": "v0_1_send_path_locked_reference_params_with_ceiling",
-        }
-
-        output = {
-            "side_trim_db": 0.0,
-            "policy": "v0_1_output_path_locked_no_post_side_trim",
-        }
-
-        delay_conf = float(delay.get("confidence") or 0.0)
-        supertap_send_pre_db = min(
-            float(spatial_mapping.get("classic_supertap_send_pre_db", baseline["supertap_send_pre_db"])),
-            baseline["supertap_send_pre_db"],
-        )
-        supertap_gain_db = min(
-            float(spatial_mapping.get("classic_supertap_gain_db", baseline["supertap_gain_db"])),
-            baseline["supertap_gain_db"],
-        )
-        supertap = {
-            "send_pre_db": round(clamp(
-                supertap_send_pre_db,
-                *SPATIAL_LIMITS["supertap_send_pre_db"],
-            ), 3),
-            "gain_db": round(clamp(
-                supertap_gain_db,
-                *SPATIAL_LIMITS["supertap_gain_db"],
-            ), 3),
-            "feedback": round(clamp(
-                min(
-                    float(spatial_mapping.get("classic_supertap_feedback", baseline["supertap_feedback"])),
-                    baseline["supertap_feedback"],
-                ),
-                *SPATIAL_LIMITS["supertap_feedback"],
-            ), 3),
-            "width": round(clamp(
-                min(
-                    float(spatial_mapping.get("classic_supertap_width", baseline["supertap_width"])),
-                    baseline["supertap_width"],
-                ),
-                *SPATIAL_LIMITS["supertap_width"],
-            ), 3),
-            "color_hz": round(baseline["supertap_color_hz"], 1),
-            "send_delta_db": round(supertap_send_pre_db - baseline["supertap_send_pre_db"], 3),
-            "confidence": round(delay_conf, 3),
-            "policy": "v0_1_send_path_locked_reference_params_with_ceiling",
-        }
-
-        shimmer = {
-            "send_pre_db": round(baseline["shimmer_send_pre_db"], 3),
-            "gain_db": round(baseline["shimmer_gain_db"], 3),
-            "enabled": False,
-            "confidence": 0.0,
-            "policy": "hidden_by_default_first_rollout",
-        }
-
-        return {
-            "enabled": True,
-            "applied_to_render": True,
-            "version": 2,
-            "confidence": round(reverb_conf, 3),
-            "baseline": baseline,
-            "reverb": rverb,
-            "output": output,
-            "delay": supertap,
-            "shimmer": shimmer,
-            "limits": SPATIAL_LIMITS,
-            "evidence": evidence,
-            "guards": reasons,
-            "policy": "v0_1_faust_io_send_path_locked_reference_params_with_ceiling",
-        }
-
     wet_delta_target = clamp((tail_ratio + 12.0) / 12.0 * 4.0, 0.0, 4.0)
     wet_delta = wet_delta_target * reverb_conf
-    time_target = float(spatial_mapping.get("time_target_s") or reverb_time_target(rt60_ms))
+    time_target = reverb_time_target(rt60_ms)
     predelay_target = clamp(12.0 + wet_delta_target * 4.0, 8.0, 28.0)
-    if spatial_mapping:
-        # 新空间契约直接控制 wet/time/predelay/early/delay：
-        # center-led 只限制宽度，不再把纵深线索一并压没。
-        wet_scale = float(spatial_mapping.get("wet_scale") or 1.0)
-        wet_cap = float(spatial_mapping.get("wet_delta_cap_db") or 3.6)
-        wet_delta = min(wet_delta * wet_scale, wet_cap)
-        predelay_target = float(spatial_mapping.get("predelay_target_ms") or predelay_target)
-        reasons.append(f"spatial_contract_{spatial_decision.get('depth_state', 'mapped')}")
-        reasons.append(f"spatial_contract_{spatial_decision.get('delay_state', 'delay_mapped')}")
-        if spatial_decision.get("clarity_risk") == "high":
-            reasons.append("spatial_contract_clarity_guard")
-    elif center_led_reference:
+    if center_led_reference:
+        # 居中型参考人声通常是“有深度但不糊前景”；
+        # tail proxy 容易把原曲尾音/压缩延音估得过湿，所以 wet 增量必须有硬上限。
         wet_scale = float(effect_spatial.get("reverb_wet_scale") or 0.34)
         wet_delta = min(wet_delta * wet_scale, 1.35 * wet_scale)
         predelay_target = clamp(predelay_target + 4.0, 16.0, 32.0)
         reasons.append("center_led_reference_keep_depth_dry_front")
-    if preserve_missing_presence and not spatial_mapping:
+    if preserve_missing_presence:
+        # presence 极低且 body 明显偏重时，宽空间和长尾会进一步糊掉可懂度。
+        # 仍参考原曲居中/深度倾向，但把 wet 和时间收窄，让人声站稳。
         wet_delta = min(wet_delta * 0.45, 0.75)
         time_target = min(time_target, 1.9)
         predelay_target = clamp(predelay_target + 2.0, 18.0, 32.0)
         reasons.append("missing_presence_keep_vocal_narrow_and_dry")
-    reverb_eq_hi_gain = float(
-        spatial_mapping.get(
-            "reverb_eq_hi_gain_db",
-            baseline["rverb_eq_hi_gain_db"] + reverb_conf * 0.30,
-        )
-    )
-    if center_led_reference and not spatial_mapping:
+    reverb_eq_hi_gain = baseline["rverb_eq_hi_gain_db"] + reverb_conf * 0.30
+    if center_led_reference:
+        # 混响 return 不再随参考置信度自动变亮；高频空气感交给干声音色阶段处理。
         reverb_eq_hi_gain = min(reverb_eq_hi_gain, baseline["rverb_eq_hi_gain_db"] - 0.85)
-    if preserve_missing_presence and not spatial_mapping:
+    if preserve_missing_presence:
         reverb_eq_hi_gain = min(reverb_eq_hi_gain, baseline["rverb_eq_hi_gain_db"] - 0.55)
-    early_ref_db = float(
-        spatial_mapping.get(
-            "early_ref_db",
-            baseline["rverb_early_ref_db"] - (1.5 if center_led_reference else 0.0),
-        )
-    )
 
     rverb = {
         "send_pre_db": round(clamp(
@@ -2436,7 +2046,7 @@ def build_spatial_fx_plan(
         "time_s": round(clamp(
             baseline["rverb_time_s"]
             + reverb_conf
-            * float(spatial_mapping.get("time_scale") or effect_spatial.get("reverb_time_scale") or (0.50 if center_led_reference else 1.0))
+            * float(effect_spatial.get("reverb_time_scale") or (0.50 if center_led_reference else 1.0))
             * (time_target - baseline["rverb_time_s"]),
             *SPATIAL_LIMITS["rverb_time_s"],
         ), 3),
@@ -2444,26 +2054,21 @@ def build_spatial_fx_plan(
             baseline["rverb_predelay_ms"] + reverb_conf * (predelay_target - baseline["rverb_predelay_ms"]),
             *SPATIAL_LIMITS["rverb_predelay_ms"],
         ), 3),
-        "early_ref_db": round(early_ref_db, 3),
+        "early_ref_db": round(baseline["rverb_early_ref_db"] - (1.5 if center_led_reference else 0.0), 3),
         "damp": round(baseline["rverb_damp"], 3),
         "eq_hi_gain_db": round(clamp(reverb_eq_hi_gain, *SPATIAL_LIMITS["rverb_eq_hi_gain_db"]), 3),
         "wet_delta_db": round(wet_delta, 3),
         "confidence": round(reverb_conf, 3),
     }
 
-    output_side_trim_db = float(spatial_mapping.get("side_trim_db", effect_spatial.get("side_trim_db") or 0.0))
+    output_side_trim_db = float(effect_spatial.get("side_trim_db") or 0.0)
     output = {
         "side_trim_db": round(clamp(output_side_trim_db, *SPATIAL_LIMITS["output_side_trim_db"]), 3),
         "policy": "reference_vocal_center_led_side_trim",
     }
 
     delay_conf = float(delay.get("confidence") or 0.0)
-    if spatial_mapping:
-        delay_send_delta = float(spatial_mapping.get("delay_send_delta_db") or 0.0)
-        feedback = float(spatial_mapping.get("delay_feedback") or baseline["supertap_feedback"])
-        delay_width = float(spatial_mapping.get("delay_width") or baseline["supertap_width"])
-        delay_policy = str(spatial_decision.get("delay_state") or "spatial_contract_delay")
-    elif preserve_missing_presence:
+    if preserve_missing_presence:
         delay_send_delta = -7.0
         feedback = baseline["supertap_feedback"] * 0.45
         delay_width = 0.20
@@ -2916,15 +2521,6 @@ def build_vocal_hf_guard(
         for band in HF_GUARD_ELECTRIC_BANDS
         if isinstance(timbre_tone.get(band), (int, float)) and isinstance(input_tone.get(band), (int, float))
     }
-    clarity_guard = (processing_context or {}).get("reference_clarity_guard") or {}
-    clarity_protected = set(clarity_guard.get("protected_bands") or [])
-    peakiness = {
-        "upper": float(analysis.get("peakiness_upper") or 0.0),
-        "harsh": float(analysis.get("peakiness_harsh") or 0.0),
-        "sib": float(analysis.get("peakiness_sib") or 0.0),
-    }
-    hits = [b for b in HF_GUARD_ELECTRIC_BANDS if peakiness[b] >= HF_GUARD_PEAK_HARD_DB]
-    electric = len(hits) >= HF_GUARD_ELECTRIC_MIN_HITS
 
     # 1) 低通真实 Nyquist 墙以上的编码/重采样颗粒。
     lowpass_hz: float | None = None
@@ -2933,10 +2529,7 @@ def build_vocal_hf_guard(
             if native_nyquist <= limit_hz + 1.0:
                 lowpass_hz = lp_hz
                 break
-    # 不能只因为原生 24k/32k 就低通；好干声可能本来已经处理干净。
-    # 当原曲 stem 明确需要保留 sib/air，且没有整体电/金属感时，低通会把清晰度做闷。
-    lowpass_blocked_by_clarity = bool({"sib", "air"} & clarity_protected) and not electric
-    if lowpass_hz is not None and not lowpass_blocked_by_clarity:
+    if lowpass_hz is not None:
         tags.append("nyquist_grain_lowpass")
         actions.append({
             "band": "air",
@@ -2949,14 +2542,19 @@ def build_vocal_hf_guard(
                 f"above {lowpass_hz:.0f} Hz"
             ),
         })
-    elif lowpass_hz is not None and lowpass_blocked_by_clarity:
-        tags.append("clarity_guard_skip_nyquist_lowpass")
 
     # 2) 处理“电/金属感”分离噪声：upper/harsh/sib 整体都尖时，轻削窄带共振。
+    peakiness = {
+        "upper": float(analysis.get("peakiness_upper") or 0.0),
+        "harsh": float(analysis.get("peakiness_harsh") or 0.0),
+        "sib": float(analysis.get("peakiness_sib") or 0.0),
+    }
     group_ratios = analysis.get("group_ratios") or {}
     presence_ratio = float(group_ratios.get("presence") or 0.0)
     body_to_presence = float(analysis.get("body_to_presence") or 0.0)
     preserve_missing_presence = presence_ratio <= 0.03 and body_to_presence >= 16.0
+    hits = [b for b in HF_GUARD_ELECTRIC_BANDS if peakiness[b] >= HF_GUARD_PEAK_HARD_DB]
+    electric = len(hits) >= HF_GUARD_ELECTRIC_MIN_HITS
     if electric and not preserve_missing_presence:
         tags.append("electric_separation_noise")
     for band in HF_GUARD_ELECTRIC_BANDS:
@@ -2968,9 +2566,6 @@ def build_vocal_hf_guard(
             continue
         # 非整体电/金属感时，只轻削独立的 upper 硬峰。
         if not electric and band != "upper":
-            continue
-        if band in clarity_protected and not electric:
-            tags.append(f"clarity_guard_skip_{band}_hf_cut")
             continue
         excess = peak - HF_GUARD_PEAK_HARD_DB
         cut = clamp(HF_GUARD_TAME_PER_PEAK_DB * (1.0 + excess), 0.5, HF_GUARD_TAME_MAX_CUT_DB)

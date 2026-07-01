@@ -21,80 +21,6 @@ def lin(gain_db: np.ndarray) -> np.ndarray:
     return np.power(10.0, gain_db / 20.0)
 
 
-def repair_isolated_samples(
-    audio: np.ndarray,
-    sr: int,
-    threshold: float,
-    max_click_samples: int,
-    max_events: int,
-) -> tuple[np.ndarray, dict[str, object]]:
-    """修最终母带上的单点/极短点击，不改变持续高频或整体响度。"""
-    if threshold <= 0.0 or max_click_samples <= 0 or max_events <= 0 or audio.shape[0] < 4:
-        return audio, {
-            "enabled": False,
-            "events": 0,
-            "samples_repaired": 0,
-            "threshold": threshold,
-            "max_click_samples": max_click_samples,
-            "examples": [],
-        }
-
-    out = np.array(audio, copy=True)
-    examples: list[dict[str, object]] = []
-    total_events = 0
-    samples_repaired = 0
-    per_channel_events = [0 for _ in range(out.shape[1])]
-    residual = np.abs(out[1:-1] - 0.5 * (out[:-2] + out[2:]))
-    for ch in range(out.shape[1]):
-        hits = np.flatnonzero(residual[:, ch] >= threshold) + 1
-        if hits.size == 0:
-            continue
-        start = int(hits[0])
-        prev = int(hits[0])
-        groups: list[tuple[int, int]] = []
-        for idx in hits[1:]:
-            cur = int(idx)
-            if cur - prev > 1:
-                groups.append((start, prev))
-                start = cur
-            prev = cur
-        groups.append((start, prev))
-
-        for start, end in groups:
-            if total_events >= max_events:
-                break
-            width = end - start + 1
-            if width > max_click_samples or start <= 0 or end >= out.shape[0] - 1:
-                continue
-            left = out[start - 1, ch]
-            right = out[end + 1, ch]
-            out[start : end + 1, ch] = np.linspace(left, right, width + 2)[1:-1]
-            total_events += 1
-            samples_repaired += width
-            per_channel_events[ch] += 1
-            if len(examples) < 24:
-                examples.append({
-                    "time_sec": round(float(start) / float(sr), 6),
-                    "channel": ch,
-                    "samples": width,
-                    "max_residual": round(float(np.max(residual[start - 1 : end, ch])), 6),
-                })
-
-    return out, {
-        "enabled": True,
-        "triggered": samples_repaired > 0,
-        "events": total_events,
-        "samples_repaired": samples_repaired,
-        "per_channel_events": per_channel_events,
-        "threshold": threshold,
-        "max_click_samples": max_click_samples,
-        "max_events": max_events,
-        "examples": examples,
-        "truncated": total_events >= max_events,
-        "policy": "只线性修复最终母带里的 isolated sample click，不做降噪、不改变持续音色。",
-    }
-
-
 def frame_rms(samples: np.ndarray, sr: int, frame_ms: float, hop_ms: float) -> tuple[np.ndarray, np.ndarray]:
     frame = max(128, int(round(sr * frame_ms * 0.001)))
     hop = max(32, int(round(sr * hop_ms * 0.001)))
@@ -133,9 +59,6 @@ def process(
     min_high_db: float,
     min_high_to_full_db: float,
     max_event_ms: float,
-    sample_declick_threshold: float,
-    max_sample_declick_samples: int,
-    max_sample_declick_events: int,
 ) -> tuple[np.ndarray, dict[str, object]]:
     if audio.shape[0] < sr // 2:
         return audio, {"enabled": True, "triggered": False, "reason": "too_short"}
@@ -199,13 +122,6 @@ def process(
     gain_db = np.interp(sample_times, times, atten, left=0.0, right=0.0)
     gain_db = smooth_gain(gain_db, sr)
     out = body + high * lin(gain_db)[:, None]
-    out, sample_declick = repair_isolated_samples(
-        out,
-        sr=sr,
-        threshold=sample_declick_threshold,
-        max_click_samples=max_sample_declick_samples,
-        max_events=max_sample_declick_events,
-    )
     out = np.clip(out, -0.999, 0.999)
 
     groups: list[dict[str, float]] = []
@@ -255,7 +171,6 @@ def process(
         "suppressed_long_groups": suppressed_long_groups,
         "peak_atten_db": round(float(np.min(gain_db)), 3),
         "events": groups,
-        "sample_declick": sample_declick,
         "policy": "attenuate only short high-frequency excess after loudness compensation; leave body/mid/low untouched",
     }
     return out, report
@@ -272,9 +187,6 @@ def main() -> None:
     parser.add_argument("--min-high-db", type=float, default=-39.0)
     parser.add_argument("--min-high-to-full-db", type=float, default=-21.0)
     parser.add_argument("--max-event-ms", type=float, default=160.0)
-    parser.add_argument("--sample-declick-threshold", type=float, default=0.0)
-    parser.add_argument("--max-sample-declick-samples", type=int, default=8)
-    parser.add_argument("--max-sample-declick-events", type=int, default=4000)
     parser.add_argument("--output-subtype", choices=("FLOAT", "PCM_16", "PCM_24"), default="PCM_16")
     args = parser.parse_args()
 
@@ -288,9 +200,6 @@ def main() -> None:
         min_high_db=args.min_high_db,
         min_high_to_full_db=args.min_high_to_full_db,
         max_event_ms=args.max_event_ms,
-        sample_declick_threshold=args.sample_declick_threshold,
-        max_sample_declick_samples=args.max_sample_declick_samples,
-        max_sample_declick_events=args.max_sample_declick_events,
     )
     args.output_wav.parent.mkdir(parents=True, exist_ok=True)
     if report.get("triggered"):

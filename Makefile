@@ -24,16 +24,13 @@ SRC_DIR     := src
 BUILD_DIR   := build
 DSPS        := l2_limiter l2_arc mixer req6 c1_comp rdeesser vocal_group_fx accomp_proq3 accomp_c6_sc accomp_l2_stereo master_proq3 master_softclipper master_l2_stereo c1_gate rbass_mono f6_rta_mono sibilance_mono l1_limiter_mono vocal_rider_mono oneknob_brighter_mono gw_mixcentric_stereo template_a_vocal_proq3 template_c_vocal_proq3 template_music_proq3_ab template_music_proq3_c template_bus_proq3_ab template_bus_proq3_c
 
-.PHONY: all test smoke svg vocal-group-runtime clean
+.PHONY: all test smoke svg clean
 
 # ----------------------------------------------------------------
 # Default: compile both DSPs to sndfile CLI binaries
 # ----------------------------------------------------------------
 
 all: $(addprefix $(BUILD_DIR)/, $(DSPS))
-
-vocal-group-runtime:
-	python3 scripts/build_vocal_group_runtime.py
 
 $(BUILD_DIR)/%: $(SRC_DIR)/%.dsp | $(BUILD_DIR)
 	@echo "[faust] $< → $@"

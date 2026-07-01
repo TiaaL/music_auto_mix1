@@ -122,12 +122,6 @@ def main() -> None:
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--metadata", type=Path)
     parser.add_argument("--mode", choices=("auto", "off"), default="auto")
-    parser.add_argument(
-        "--disabled-output",
-        choices=("default", "neutral"),
-        default="default",
-        help="default prints the fixed vocal_group_fx binary; neutral prints __neutral_stereo__.",
-    )
     args = parser.parse_args()
 
     default_binary = BUILD_DIR / "vocal_group_fx"
@@ -135,19 +129,15 @@ def main() -> None:
     spatial = spatial_plan(plan)
     enabled = args.mode != "off" and bool(spatial.get("enabled")) and bool(spatial.get("applied_to_render"))
     if not enabled:
-        # 历史兼容 fallback：旧 plan 没有 spatial 参数时默认回固定 vocal_group_fx。
-        # neutral 只保留给手动 A/B 或旧实验；1.1 默认应让 plan 生成有界 spatial_fx。
-        fallback = "__neutral_stereo__" if args.disabled_output == "neutral" else str(default_binary)
         report = {
             "enabled": False,
-            "binary": fallback,
-            "fallback": args.disabled_output,
+            "binary": str(default_binary),
             "reason": spatial.get("reason") or ("disabled_by_cli" if args.mode == "off" else "missing_or_disabled_plan"),
             "spatial_fx": spatial,
         }
         if args.metadata:
             write_json(args.metadata, report)
-        print(fallback)
+        print(default_binary)
         return
 
     params = extract_params(spatial)

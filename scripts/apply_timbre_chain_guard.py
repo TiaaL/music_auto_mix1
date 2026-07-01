@@ -242,13 +242,11 @@ def envelope_guard_actions(
     target_env: dict[str, dict[str, float]],
     current_env: dict[str, dict[str, float]],
     presence_policy: dict[str, Any],
-    clarity_guard: dict[str, Any],
     stage: str,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """模板链后用细分包络再轻校一次，避免相似度只停留在粗 band。"""
     if not target_env or not current_env:
         return [], [{"reason": "missing spectral envelope target/current for timbre guard"}]
-    clarity_protected = set(clarity_guard.get("protected_bands") or [])
     ranked: list[tuple[float, dict[str, Any]]] = []
     skipped: list[dict[str, Any]] = []
     for band_id, target_item in target_env.items():
@@ -261,18 +259,6 @@ def envelope_guard_actions(
             continue
         budget_band = envelope_budget_band(freq)
         if delta < 0.0:
-            if budget_band in clarity_protected:
-                skipped.append({
-                    "envelope_band": band_id,
-                    "budget_band": budget_band,
-                    "delta_db": round(delta, 2),
-                    "reason": (
-                        "原曲人声 stem 显示该清晰度频段已经比当前更亮；"
-                        "跳过链后高频 cut，避免把好干声做闷"
-                    ),
-                    "reference_clarity_guard": (clarity_guard.get("by_band") or {}).get(budget_band),
-                })
-                continue
             amount = abs(delta) * ENVELOPE_GAIN_FRACTION
             cap = ENVELOPE_CUT_CAP_DB.get(budget_band, 0.45)
             if budget_band in {"upper", "harsh", "sib"}:
@@ -340,8 +326,6 @@ def build_actions(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     ranked: list[tuple[float, dict[str, Any]]] = []
     skipped: list[dict[str, Any]] = []
-    clarity_guard = (plan.get("vocal_processing_context") or {}).get("reference_clarity_guard") or {}
-    clarity_protected = set(clarity_guard.get("protected_bands") or [])
     for band, rule in BANDS.items():
         if band not in target or band not in current:
             continue
@@ -350,17 +334,6 @@ def build_actions(
             continue
         if delta < 0.0:
             if "cut" not in rule["actions"]:
-                continue
-            if band in clarity_protected:
-                skipped.append({
-                    "band": band,
-                    "delta_db": round(delta, 2),
-                    "reason": (
-                        "原曲人声 stem 显示该清晰度频段已经比当前更亮；"
-                        "跳过链后高频 cut，避免把好干声做闷"
-                    ),
-                    "reference_clarity_guard": (clarity_guard.get("by_band") or {}).get(band),
-                })
                 continue
             cut_fraction = CUT_FRACTION
             cap = (POST_GROUP_MAX_CUT_DB if stage == "post_group" else MAX_CUT_DB).get(band, 1.0)
@@ -431,13 +404,7 @@ def build_actions(
         ))
     ranked.sort(key=lambda pair: pair[0], reverse=True)
     broad_actions = [action for _, action in ranked[:MAX_ACTIONS]]
-    envelope_actions, envelope_skipped = envelope_guard_actions(
-        target_env,
-        current_env,
-        presence_policy,
-        clarity_guard,
-        stage,
-    )
+    envelope_actions, envelope_skipped = envelope_guard_actions(target_env, current_env, presence_policy, stage)
     actions = [*broad_actions, *envelope_actions][: MAX_ACTIONS + ENVELOPE_MAX_ACTIONS]
     return actions, [*skipped, *envelope_skipped], presence_policy
 

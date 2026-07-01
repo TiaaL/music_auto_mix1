@@ -60,7 +60,7 @@ What changed:
 
 - `analyze_reference.py` now reports reverb confidence, delay-repeat evidence, tail stability, and a vocal-stem leakage guard.
 - `plan_mix_template.py` now writes `reference.overrides.spatial_fx`, with bounded RVerb/SuperTap parameters blended from the Faust baseline by confidence.
-- `render_template_mix.sh` now applies that plan through `libvocal_group_fx_runtime.dylib`; metadata is written to `<output>.spatial_fx.json`. The older per-song binary builder remains as fallback.
+- `render_template_mix.sh` can build a cached per-song `vocal_group_fx` binary from that plan via `build_spatial_vocal_group.py`; metadata is written to `<output>.spatial_fx.json`.
 - `auto_template_mix.py` forwards `--spatial-fx auto|off` and records the selected mode in the summary JSON.
 
 Why this shape:
@@ -71,7 +71,7 @@ Why this shape:
 
 Known issues / next checks:
 
-- The default 1.1 path now uses `libvocal_group_fx_runtime.dylib`: the 0.1 mono-in/stereo-out and dry/early/reverb/shimmer/delay send path are fixed, while only whitelisted effect parameters are set from the resolved plan. Generated per-song DSP binaries remain as a fallback.
+- This is a conservative first rollout using generated DSP binaries; the longer-term architecture should make `vocal_group_fx` runtime-parameterized.
 - Accuracy still depends on reference stem quality. Check `<output>.spatial_fx.json` for `reason`, `guards`, and confidence before trusting an unexpected wet/dry result.
 - Validate baseline vs. spatial render on the target songs before widening limits, especially `炳超 - 黄昏` and `佳菲 - 阴天`.
 - If a render becomes too distant, first compare with `--spatial-fx off`; do not compensate by changing vocal/accompaniment bus balance or master loudness.
@@ -117,35 +117,17 @@ Known issues / next checks:
 9. **审计复用已算好的参考特征**
    `auto_template_mix.py` 调用 `audit_vocal_effect_match.py` 时会传入 `resolved_mix_plan.json`。审计脚本优先复用 plan 里的 `reference.features` 和活动人声区间，只重新分析最终人声贡献轨，避免重复跑原曲人声的动态、混响、delay 和频谱包络。
 
-10. **禁止爆音，人声/伴奏关系只按原曲指标修**
-   `apply_final_fusion_pass.py` 把原曲 active vocal/accomp gap、局部 section gap、宽度和伴奏 masking 当作核心目标，并在同一个 pass 内输出 `reference_targets -> current_errors -> corrections`。1.1 只在超过 8 dB 的全局差异上做软膝盖补偿，不做 residual gap 追满；section 只做诊断和极端救急，不再按窗口切人声或抬伴奏；duck/global 后如果 presence/air 仍比原曲更遮挡人声，只对伴奏做全曲静态小幅 residual masking trim。pass 结束后通过 `post_fusion_measure` 复测最终入 stereo sum 的关系，供排查听感/指标冲突。默认链路不再额外叠加 `compute_render_bus_balance.py` 和 `apply_section_balance_guard.py`。最终 `apply_final_transient_guard.py` 只做 loudness finalizer 后的短促高频安全闸。
+10. **禁止爆音，人声不能比原曲更靠前**
+   `apply_final_fusion_pass.py` 把原曲 active vocal/accomp gap 当作核心目标，并在同一个 pass 内处理伴奏让位、全局比例和参考窗口局部比例；默认链路不再额外叠加 `compute_render_bus_balance.py` 和 `apply_section_balance_guard.py`。最终 `apply_final_transient_guard.py` 只做 loudness finalizer 后的短促高频安全闸。
 
-11. **center-led 也进入有界 spatial 映射**
-   1.1 已先注释掉旧的“center-led / RT60 高就直接禁用 spatial_fx”硬 guard。`plan_mix_template.py` 仍会把这些风险写进 `guards`，但会继续生成有上限的 per-song `vocal_group_fx` 参数；center-led 参考会自动降低 wet、width 和 delay，而不是退成 `__neutral_stereo__` 或固定 rack。
-
-### no-template1.1 分支说明
-
-`no-template1.1` 分支不改模板分类代码：`plan_mix_template.py` 仍负责把外部分频分类结果映射到 template A/B/C，并继续生成原来的 plan。1.1 的变化只发生在 `render_template_mix.sh` 的渲染阶段：当传入的 plan 同时包含 `reference` 和 `timbre_features` 时，渲染器把模板当作历史分类/兼容信息，不再让模板 rack 预先决定声音。
-
-中性链的阶段顺序是：
-
-1. **源人声清理**：`apply_vocal_plan_eq.py --eq-stage cleanup` 只吃 `source_cleanup.source_eq.vocal_eq` 和 `vocal_hf_guard`，修闷、刺、齿音、Nyquist 颗粒等素材瑕疵，不吃 `residual_vocal_eq`。
-2. **参考音色塑形**：`--eq-stage timbre` 只吃音色筛选片段生成的 `timbre_vocal_eq`，随后 `apply_timbre_chain_guard.py` 用当前音频重新测量并轻校。若原曲人声 stem 显示当前干声的 upper/harsh/sib/air 已经比原曲更暗，`reference_clarity_guard` 会保护这些清晰度频段，阻止音色筛选片段继续削高频；这是通用边界，不按歌名或 case 特判。
-3. **音色后安全兜底**：`--eq-stage post_timbre` 只允许高频安全保护，不重复源清理，也不把模板 residual correction 拉回来；cleanup 已做过的低通不会在 post_timbre 默认重复执行，避免参考音色的空气感被二次压暗。
-4. **常规模板链**：保留模板压缩、de-ess/limiter、vocal_group 空间和伴奏处理，但它们发生在源清理/参考音色之后；模板不再先决定人声颜色。
-5. **空间/纵深**：有可靠 `spatial_fx` 时通过 `libvocal_group_fx_runtime.dylib` 传入白名单参数；动态库失败时才回退到 per-song `vocal_group_fx` binary，否则回到常规 `vocal_group_fx`。
-6. **伴奏让位/融合**：模板伴奏处理先提供常规基底；`apply_final_fusion_pass.py` 最后统一按原曲 active gap、原曲局部窗口和原曲伴奏 masking 目标处理人声/伴奏关系。局部窗口默认只写诊断，只有连续窗口显示当前人声明显比原曲更被埋时才极轻压伴奏；不会按窗口降低人声或抬高伴奏。
-7. **母带**：跳过模板 bus EQ / GW MixCentric，只保留 loudness finalizer、L2、安全去爆点等最终保护。
-
-这个分支的目标是把模板从“音色起点”降级为“常规处理基底”：人声颜色先由音色筛选片段决定，模板链只提供压缩、空间和伴奏常规处理；最终融合来自原曲 active vocal/accomp gap、局部窗口和 masking 误差。不同 case 会因为指标误差不同触发不同修正，但实现上不能写歌名、歌手、风格或 profile 的点对点规则；母带只做响度和安全。
-
-2026-07-01 听感标记：`no_template_1_1_clarity_guard_20260701_v1` 这一版混响和动态听感已通过，尤其小步舞曲的空间/动态比较稳定。已知问题是阴天 1:18-1:28 附近伴奏/limiter 后会冒出 isolated sample click；它不是人声链或 spatial/fusion 自动化造成的，当前在 final transient guard 末端用极短 sample-level de-click 兜底，只修 1-8 samples 的点状毛刺，不改混响、动态或人声/伴奏比例。
+11. **混响默认回到 0.1 之前固定 rack**
+   `plan_mix_template.py` 对 center-led / near-mono 原曲人声，或 RT60 proxy 明显不可信的参考，默认不再编译 per-song spatial vocal_group，而是使用 0.1 之前的固定 `vocal_group_fx`。只有原曲人声空间更开放且 reverb proxy 可靠时，才允许有上限的 adaptive spatial。
 
 排查入口：
 
-- `<output>.final_fusion_pass.json`：确认 `reference_targets`、`current_errors`、`corrections` 是否都来自对应原曲；`section.diagnostic_event_count` 只是诊断窗口，真正改音频看 `section.audio_event_count/audio_applied`；`residual_masking_trim` 只按 presence/air 等 masking 残差做伴奏静态小修；`post_fusion_measure` 只复测最终结果，不再二次追满；`debug_profile` 只能解释，不能作为决策核心。
+- `<output>.final_fusion_pass.json`：确认最终 duck budget、active gap、section events 和 safety trim 是否来自原曲参考目标。
 - `<output>.vocal_dynamic_lift.json`：查看微动态触发条件、实际增益范围和 `hard_caps`。
-- `<output>.timbre_chain_guard.json` / `<output>.post_group_timbre_guard.json`：查看 8-band 与细分包络的音色回正动作；若 `skipped` 里出现 `reference_clarity_guard`，说明原曲人声 stem 要求保留清晰度，所以跳过了音色参考驱动的高频 cut。
+- `<output>.timbre_chain_guard.json` / `<output>.post_group_timbre_guard.json`：查看 8-band 与细分包络的音色回正动作。
 - `<output>.vocal_group_transient_guard.json` / `<output>.final_transient_guard.json`：查看短促高频爆点是否在来源层或最终层被衰减。
 - `<output>.vocal_effect_audit.json`：查看最终人声贡献轨相对原曲人声 stem 的纵深、动态、混响、宽度和效果高频误差。
 - `resolved_mix_plan.json` 里的 `vocal_processing_context.vocal_effect_target`：查看效果目标来源和每个动作的通用触发证据。
@@ -392,29 +374,18 @@ Template vocal plugin chains:
 Templates A/B/C share:
 
 ```
-legacy/no-reference mode:
-  vocal insert chain
-    → timbre/source plan stages if --mix-plan is passed
-    → vocal_group_fx (baseline or reference spatial plan)
-  accompaniment
-    → template_music_proq3_{ab|c}
-    → final fusion pass
-    → amix stereo sum
-    → template_bus_proq3_{ab|c} → gw_mixcentric_stereo
-    → loudness finalizer
-
-no-template1.1 reference+timbre mode:
-  source vocal cleanup
-    → screened timbre shaping
-    → post-timbre HF safety
-    → reference vocal dynamics/event guard
-    → template compression / de-ess / limiter
-    → reference spatial FX or regular vocal_group_fx
-  accompaniment
-    → template music processing
-    → final fusion pass
-    → amix stereo sum
-    → loudness finalizer / L2 / transient safety
+vocal insert chain
+  → [step 1b] residual vocal EQ (from mix plan, if --mix-plan is passed)
+  → [step 1c] reference vocal source EQ (plan-driven, optional)
+  → vocal_group_fx (baseline or reference spatial plan)
+accompaniment
+  → template_music_proq3_{ab|c}
+  → [step 2b] reference accomp carve EQ (plan-driven, optional)
+  → [step 2c] final fusion pass (duck budget + active gap + section reference)
+  → amix stereo sum
+  → [step 3b] master tilt EQ (reference-driven, optional)
+  → template_bus_proq3_{ab|c} → gw_mixcentric_stereo
+  → loudness finalizer (master_loudness_finalize.py; includes L2 + soft true-peak ceiling + global de-click)
 ```
 
 When `--no-loudness-finalizer` is passed, the render script applies `master_l2_stereo`
@@ -515,7 +486,7 @@ When a reference full-mix, vocal stem, and accompaniment stem are provided (auto
 - **`source_eq.accomp_eq`** — cut-only accompaniment carve EQ after the music template EQ, focused on bands where the current accompaniment masks the current vocal and the vocal sits behind the reference balance. One problem region should only be carved once, and carve decisions are coordinated with dynamic ducking so the same upper/mid issue is not cut twice.
 - **`dry_vocal_strategy`** — current dry-vocal tags and a ducking profile. Low-mid-heavy, dark, or presence-masked vocals ask the accompaniment to yield more in body/presence/air bands while voiced sections are active.
 - **`master_tilt_eq`** — up to 4 EQ moves between amix and master Pro-Q3, applied by `apply_master_tilt_eq.py`. Pushes the mix's 8-band tonal shape toward the reference's.
-- **`spatial_fx`** — bounded vocal-group RVerb/SuperTap parameters derived from reference reverb/delay evidence. The render path only disables this for quality guards such as severe stem leakage, too few stable tails, or very low reverb confidence. In the 1.1 branch, center-led references or very large RT60 proxies are no longer hard-disabled; they keep generating per-song parameters with tighter wet/width/delay limits, and the bypassed legacy guard is recorded for debugging.
+- **`spatial_fx`** — bounded vocal-group RVerb/SuperTap parameters derived from reference reverb/delay evidence. The render path applies this only when confidence and stem-quality guards pass; otherwise it records the reason and uses the baseline `vocal_group_fx`.
 
 Master tilt safety rules (in `plan_mix_template.MASTER_TILT_*`):
 
@@ -527,16 +498,12 @@ Master tilt safety rules (in `plan_mix_template.MASTER_TILT_*`):
 | `MASTER_TILT_MAX_ACTIONS` | 4 | Take only the 4 worst deltas |
 | `harsh` (6.2 kHz), `sib` (9.5 kHz) | **cut-only** | Boosting these on a complete mix amplifies sibilance and cymbal hash. Brightness deficit must be accepted, not boosted. |
 
-Reverb characteristics from the reference (`reverb_proxy`) now feed a reference-split
+Reverb characteristics from the reference (`reverb_proxy`) now feed a conservative
 `spatial_fx` plan when reference stems are available. Rendering defaults to
-`--spatial-fx auto`: if stem-quality and stability guards pass, the renderer loads
-`build/libvocal_group_fx_runtime.dylib` and passes the whitelisted parameters at
-runtime. If the dylib path fails, it falls back to the older generated per-song
-`vocal_group_fx` binary under `build/spatial/`; otherwise it falls back to the fixed
-built-in `vocal_group_fx.dsp` baseline. Center-led and suspiciously large RT60
-readings are treated as mapping inputs in 1.1, not as reasons to fall back to
-`__neutral_stereo__` or the fixed rack. External `delayverb` is not wired into this
-pipeline yet.
+`--spatial-fx auto`: if confidence and leakage guards pass, the renderer builds or
+reuses a per-song `vocal_group_fx` binary under `build/spatial/`; otherwise it falls
+back to the fixed built-in `vocal_group_fx.dsp` baseline. External `delayverb` is not
+wired into this pipeline yet.
 
 ### Reference spatial FX
 
@@ -550,42 +517,16 @@ is not fader level, but fixed vocal-group spatial constants. Baseline values are
 | SuperTap | send `-27 dB`, return `-18.5 dB`, dark repeats, low feedback |
 | Shimmer | send `-18 dB` plus return `-18 dB`, intentionally very hidden |
 
-The design is **v0.1 Faust I/O/send-path locked, reference-parameter spatial
-planning**, not simply "more reverb". Reference analysis still produces a
-`spatial_decision` contract, but 1.1 keeps the 0.1 vocal-group rack contract
-fixed: mono input, stereo output, and the dry/early/reverb/shimmer/delay parallel
-send path are not changed by the plan. Here “send path” only means how the dry
-signal and effect returns are connected; it does **not** mean the send level is
-fixed. The reference may change whitelisted
-effect parameters, including send level, reverb time, predelay, early reflections,
-return tone, delay feedback, and delay width. Those parameters are capped by the
-`189f4a7` / v0.1 preset. In other words, the renderer can make space shorter,
-narrower, darker, drier, or more controlled than v0.1, but it cannot become
-wetter, wider, longer, or brighter than that preset. This keeps runtime cheap:
-no second spatial pass, no segment automation, no render-audit-rerender loop.
-
-`spatial_decision` splits the problem into separate axes:
-
-| Axis | Meaning | Downstream control |
-|---|---|---|
-| `width` | center-led / near-mono / open width | delay width only, capped by v0.1; output path stays v0.1 |
-| `depth` | front/back placement | predelay and early reflections, capped by v0.1 |
-| `wet` | wet amount | send level can move drier, never wetter than v0.1 |
-| `tail` | decay length | Used as evidence only; plugin time cannot exceed v0.1 |
-| `early` | wrap/room cue | early reflection level cannot exceed v0.1 |
-| `delay` | repeat/depth cue | SuperTap send/return, feedback, and width can move down, never exceed v0.1 |
-| `clarity_risk` | whether space may blur diction | darker return tone, shorter time, narrower delay |
-
+The design is **reference-driven spatial planning**, not simply "more reverb".
 Reference analysis produces a bounded `spatial_fx` plan that drives only the vocal
-group space. Current 1.1 policy prefers
-`v0_1_faust_io_send_path_locked_reference_params_with_ceiling`:
+group space:
 
 | Evidence | Intended control | Safety rule |
 |---|---|---|
-| `tail_to_onset_ratio_db` | Reverb evidence / audit context | Can reduce send/time for dry or risky references; cannot exceed v0.1 |
-| `est_rt60_ms` | Tail-risk evidence | Do not map directly to seconds; plugin time is capped at v0.1 `1.75 s` |
-| `confidence`, `valid_tail_count`, `tail_iqr_db` | Whether to apply the reverb plan | Disable only when evidence is truly too weak; otherwise penalize/limit unstable tail evidence |
-| `delay_proxy` | Delay evidence / guard context | Stable center-led delay can change send/return, feedback, and width within v0.1 ceilings |
+| `tail_to_onset_ratio_db` | Reverb wet amount / send delta | Use as a wetness trend only; require multi-phrase stability |
+| `est_rt60_ms` | Reverb length class | Do not map directly to seconds; clamp plugin time to a musical range such as `1.4-3.8 s` |
+| `confidence`, `valid_tail_count`, `tail_iqr_db` | Whether to apply the reverb plan | Disable or penalize unstable tail evidence |
+| `delay_proxy` | Delay send, feedback, tap feel | Do not infer delay from `reverb_proxy` alone; low-confidence delay stays near baseline |
 | `vocal_stem_quality` | Leakage guard | Do not apply spatial mapping when inactive vocal-stem energy suggests bleed/residual |
 
 Accuracy remains the main risk. Stem leakage, long sung notes, pad/room spill, and
@@ -597,20 +538,17 @@ values and confidence:
   "spatial_fx": {
     "enabled": true,
     "applied_to_render": true,
-    "policy": "v0_1_faust_io_send_path_locked_reference_params_with_ceiling",
     "confidence": 0.72,
     "reverb": {
-      "send_pre_db": -12.85,
-      "time_s": 1.65,
-      "predelay_ms": 12.0,
+      "send_delta_db": 2.5,
+      "time_s": 2.6,
+      "predelay_ms": 18,
       "damp": 0.32,
       "confidence": 0.78
     },
     "delay": {
-      "send_pre_db": -28.5,
-      "gain_db": -19.4,
-      "feedback": 0.1,
-      "width": 0.32,
+      "send_delta_db": 1.5,
+      "feedback": 0.14,
       "confidence": 0.52
     },
     "shimmer": {
@@ -621,21 +559,21 @@ values and confidence:
 }
 ```
 
-Renderer policy should stay one-pass and parameter-only:
+Renderer policy should blend from the Cubase/Faust baseline rather than fully
+replace it:
 
 ```text
-reference.features -> spatial_decision -> v0.1-I/O/send-path-locked Faust params -> runtime dylib -> one vocal_group_fx render
+final_param = baseline + confidence * bounded_delta
 ```
 
 Current rollout policy:
 
-1. RVerb keeps the 0.1 input/output and send path, and can reduce send below `-12.5 dB`; it cannot exceed `-12.5 dB`, `1.75 s`, `12 ms`, stronger-than-`-2 dB` early reflection, or brighter-than-`-4 dB` return tone.
-2. SuperTap keeps the 0.1 input/output and send path, and can reduce send/return below `-27 dB` / `-18.5 dB`; feedback cannot exceed `0.10` and width cannot exceed `0.45`.
+1. Reverb can change send, time, predelay, and high-shelf color, all within `SPATIAL_LIMITS`.
+2. Delay records evidence; low confidence applies only a very small send lift near baseline.
 3. Shimmer remains hidden by default (`policy: hidden_by_default_first_rollout`).
-4. Center-led references keep the dry/output path identical to 0.1; width is guarded through delay width and effect tone, not a post side-trim.
-5. The runtime library path and applied parameters are recorded in `<output>.spatial_fx.json`; generated per-song binaries are fallback only.
-6. The post-FX vocal bus can be exported as `<output>.vocal_group.wav` and audited against the reference vocal stem before judging vocal width.
-7. Faust can later be compiled into a code-hosted plugin/dynamic component, but DAW hosting is not part of the render path.
+4. The generated binary and applied parameters are recorded in `<output>.spatial_fx.json`.
+5. The post-FX vocal bus can be exported as `<output>.vocal_group.wav` and audited against the reference vocal stem before judging vocal width.
+6. Validate on multiple songs with baseline vs. spatial-plan renders before widening limits.
 
 Active vocal-width decisions use a two-stage workflow:
 
@@ -669,20 +607,11 @@ Spatial work must not change:
 - source EQ decisions;
 - final global de-click behavior.
 
-The current implementation uses a runtime-parameter dynamic library:
-
-```text
-src/vocal_group_fx.dsp
-  -> build/runtime/vocal_group_fx_runtime.dsp
-  -> build/libvocal_group_fx_runtime.dylib
-  -> scripts/apply_vocal_group_runtime.py
-```
-
-The generated runtime DSP only converts approved constants into Faust controls.
-Input/output and routing stay fixed: mono vocal in, stereo vocal group out, with
-dry/early/reverb/shimmer/delay summed in the same 0.1 send path. The old
-`scripts/build_spatial_vocal_group.py` per-song binary path remains as a guarded
-fallback for local recovery, not the default online path.
+The current implementation is the short-term proof of concept: generate a per-song
+DSP copy from `src/vocal_group_fx.dsp`, replace only approved constants, and cache
+the compiled binary by parameter hash. The medium-term online path is still to make
+`vocal_group_fx` runtime parameterized and pass `spatial_fx` from
+`resolved_mix_plan.json` without per-song compilation.
 
 ---
 
@@ -775,81 +704,29 @@ reasonable in isolation, but together they made it easy to change the same vocal
 relationship more than once.
 
 The current render path measures the **actual post-FX vocal group** and **post-carve
-accompaniment**, then applies fusion once. The decision shape is deliberately data-first:
-
-```json
-{
-  "reference_targets": {
-    "global_active_gap_db": "...",
-    "section_gap_curve": "...",
-    "vocal_width": "...",
-    "vocal_reverb": "...",
-    "vocal_dynamics": "...",
-    "accomp_masking_bands": "..."
-  },
-  "current_errors": {
-    "global_gap_error_db": "...",
-    "post_fusion_gap_error_db": "...",
-    "section_gap_error": "...",
-    "width_error_db": "...",
-    "duck_error": "..."
-  },
-  "corrections": {
-    "global_gain": "...",
-    "section_moves": "...",
-    "duck_budget": "...",
-    "residual_masking_trim": "...",
-    "spatial_trim": "..."
-  },
-  "debug_profile": {
-    "profile_usage": "debug/explain only"
-  },
-  "post_fusion_measure": {
-    "final_active_gap_db": "...",
-    "final_gap_error_db": "...",
-    "final_masking_error_db": "...",
-    "final_width": "..."
-  }
-}
-```
-
-`debug_profile.profile` can explain why a render feels “front”, “embedded”, or “narrow”,
-but it is not allowed to choose the correction. The correction comes from:
-
-```text
-对应原曲目标 → 当前渲染误差 → 往对应原曲修
-```
+accompaniment**, then applies fusion once:
 
 1. Render vocal through insert chain → `vocal_group_fx` → `VOCAL_GROUP`
 2. Render accompaniment through music EQ / carve EQ → `ACCOMP_CHAIN_OUT`
 3. Apply `apply_final_fusion_pass.py` once:
    - necessary vocal side trim against reference width
-   - reference-masking-error-driven multiband accompaniment yielding
-   - global active vocal/accomp gap correction with a soft knee above `8.0 dB`
-   - reference-window section diagnostics, with only sustained buried-vocal rescue duck allowed
-   - static residual masking trim when presence/air still mask vocal more than the original
-   - final post-fusion measurement for audit only
+   - vocal-aware multiband accompaniment yielding
+   - global active vocal/accomp gap correction
+   - reference-window local section correction
 4. Feed the resulting `VOCAL_BALANCED` and `ACCOMP_BALANCED` into `amix` at `0.0 dB`
 
 When the vocal is behind, correction is split between vocal lift and accompaniment
-attenuation. Local section windows no longer pull the vocal back or raise the
-accompaniment, because those moves can make phrase-by-phrase tone and depth unstable
-when a cover performance is not sample-aligned to the original. Different renders can
-still receive different corrections, but only because their measured reference errors
-are different, never because of hand-written song/profile branches.
+attenuation; when the vocal is too far forward, the pass can also pull the vocal back.
+The important part is that this happens once, after tone/space decisions are already
+settled.
 
 | Limit | Value |
 |---|---|
-| Global ratio hard knee | `8.0 dB` |
-| Positive soft ceiling | `9.0 dB` |
-| Section diagnostic frame / hop | `8.0 s` / `2.0 s` |
-| Section diagnostic deadband | `1.85 dB` |
-| Section audio action | sustained buried-vocal rescue only; no vocal cut, no accompaniment boost |
-| Residual masking trim | static accompaniment trim, mainly presence/air, capped per band |
+| Maximum global ratio correction | `8.0 dB` |
+| Section correction frame / hop | `4.0 s` / `1.0 s` |
 | Output subtype | `FLOAT` WAV |
 
-Output metadata: `<output>.final_fusion_pass.json`. The schema is
-`final_fusion_pass.v2_2.reference_error_correction_stable_sections`.
+Output metadata: `<output>.final_fusion_pass.json`.
 
 `apply_accomp_vocal_duck.py`, `compute_render_bus_balance.py`, and
 `apply_section_balance_guard.py` are retained for legacy comparison/manual debugging,
@@ -1253,7 +1130,7 @@ Do not take these shortcuts without a parity report:
 
 ## Modifying DSP parameters
 
-Most DSPs still use constants at the top of each `.dsp` file. Edit and rebuild:
+All parameters are constants at the top of each `.dsp` file. Edit and rebuild:
 
 ```bash
 # Example: tighten the reverb tail
@@ -1268,14 +1145,6 @@ source scripts/msys_template_env.sh
 make build/vocal_group_fx
 ```
 
-`vocal_group_fx` is the exception in the 1.1 reference path: approved spatial
-parameters are runtime controls in `build/libvocal_group_fx_runtime.dylib`.
-Build it explicitly with:
-
-```bash
-make vocal-group-runtime
-```
-
 ---
 
 ## Architecture
@@ -1286,8 +1155,7 @@ make vocal-group-runtime
 | Volume automation | `scripts/auto_volume_mix.py` | Rule-based level control; continuous FFmpeg gain automation with long-expression fallback |
 | Template strategy | `scripts/plan_mix_template.py` | Spectral analysis → template → residual EQ plan |
 | Residual EQ | `scripts/apply_residual_vocal_eq.py` | Apply plan-driven EQ between template chain and group FX |
-| Spatial FX plan apply | `scripts/apply_vocal_group_runtime.py`, `scripts/build_vocal_group_runtime.py` | Load `libvocal_group_fx_runtime.dylib` and pass approved `spatial_fx` parameters at runtime |
-| Spatial FX fallback | `scripts/build_spatial_vocal_group.py` | Generate/cache per-song `vocal_group_fx` binaries if the runtime dylib path fails |
+| Spatial FX plan apply | `scripts/build_spatial_vocal_group.py` | Generate/cache per-song `vocal_group_fx` binaries from approved `spatial_fx` constants |
 | Final fusion | `scripts/apply_final_fusion_pass.py` | Render-time final vocal/accompaniment fusion: duck budget, active gap, section reference, width trim |
 | Legacy/manual balance tools | `scripts/apply_accomp_vocal_duck.py`, `scripts/compute_render_bus_balance.py`, `scripts/apply_section_balance_guard.py` | Kept for comparison and debugging, no longer chained by default render |
 | Master loudness | `scripts/master_loudness_finalize.py` | Safe master-bus pregain → L2 → post-trim / controlled makeup → soft true-peak ceiling → global de-click |

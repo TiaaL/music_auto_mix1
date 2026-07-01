@@ -86,27 +86,11 @@ def build_recommendations(errors: dict[str, Any], spatial_rec: dict[str, Any]) -
     reverb = errors.get("reverb", {})
     tail_error = float(reverb.get("tail_to_onset_ratio_db_error", 0.0))
     rt_error = float(reverb.get("est_rt60_ms_error", 0.0))
-    if tail_error > 1.8 and rt_error > 220.0:
+    if tail_error > 1.8 or rt_error > 220.0:
         actions.append({
             "area": "reverb_depth",
             "action": "reduce_vocal_group_wet_time_or_high_return",
             "reason": "candidate_vocal_group_is_wetter_or_deeper_than_reference_vocal",
-            "tail_to_onset_ratio_db_error": round(tail_error, 3),
-            "est_rt60_ms_error": round(rt_error, 3),
-        })
-    elif tail_error <= 0.8 and rt_error > 600.0:
-        actions.append({
-            "area": "reverb_depth",
-            "action": "shorten_tail_and_use_early_reflection_for_depth",
-            "reason": "candidate_tail_is_not_wetter_but_decay_proxy_is_longer_than_reference",
-            "tail_to_onset_ratio_db_error": round(tail_error, 3),
-            "est_rt60_ms_error": round(rt_error, 3),
-        })
-    elif rt_error > 220.0:
-        actions.append({
-            "area": "reverb_depth",
-            "action": "shorten_vocal_group_time_without_changing_width",
-            "reason": "candidate_decay_proxy_is_longer_than_reference_while_width_may_still_be_correct",
             "tail_to_onset_ratio_db_error": round(tail_error, 3),
             "est_rt60_ms_error": round(rt_error, 3),
         })
