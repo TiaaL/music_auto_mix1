@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """按阶段应用 plan 里的人声 EQ。
 
-音色筛选片段 EQ 可以单独放在模板链前面；自清理和高频保护留在模板链后面兜底。
+cleanup 只修源人声瑕疵；timbre 只追音色筛选片段；post_timbre 只做安全兜底。
+旧 residual EQ 只保留给 all 兼容模式，避免中性链把模板纠偏当成前置音色决定。
 """
 
 from __future__ import annotations
@@ -101,7 +102,7 @@ def main() -> None:
         "--eq-stage",
         choices=("all", "cleanup", "timbre", "post_timbre"),
         default="all",
-        help="all=兼容旧流程；cleanup=音色前源人声清理；timbre=只做音色参考；post_timbre=音色之后的清理/保护。",
+        help="all=兼容旧流程；cleanup=音色前源人声清理；timbre=只做音色参考；post_timbre=音色之后只做高频安全兜底。",
     )
     parser.add_argument("--ffmpeg", default="ffmpeg")
     args = parser.parse_args()
@@ -121,17 +122,24 @@ def main() -> None:
 
     hf_guard = overrides.get("vocal_hf_guard") or {}
     hf_actions = hf_guard.get("actions", []) if hf_guard.get("enabled") else []
+    post_timbre_hf_actions = [
+        action for action in hf_actions
+        if action.get("type") != "lowpass" or action.get("force_post_timbre")
+    ]
 
     skipped_by_budget: list[dict[str, Any]] = []
     if args.eq_stage == "cleanup":
         # 音色塑形前先处理源人声问题；这里不追音色参考。
-        ordered_actions = [*residual_actions, *source_actions, *hf_actions]
+        # 注意：这里故意不吃 residual_vocal_eq，避免把模板分类后的纠偏当成源人声音色决定。
+        ordered_actions = [*source_actions, *hf_actions]
     elif args.eq_stage == "timbre":
         # 音色相似度只吃音色筛选片段动作；不混入瑕疵修复/HF guard。
         ordered_actions = [*timbre_actions]
     elif args.eq_stage == "post_timbre":
-        # 后置阶段只做瑕疵修正和高频兜底，不再追音色，避免把相似度目标反复改写。
-        ordered_actions = [*residual_actions, *source_actions, *hf_actions]
+        # 音色塑形后只允许高频安全兜底：
+        # 低通在 cleanup 已经处理过，post_timbre 不默认重复低通，避免把参考音色的空气感二次压暗；
+        # 这里只有明确 upper/harsh/sib cut 证据时才轻微收安全边。
+        ordered_actions = [*post_timbre_hf_actions]
         ordered_actions, skipped_by_budget = cap_cumulative_cuts(ordered_actions, timbre_actions, plan)
     else:
         # 兼容旧调用：音色动作优先，最后仍由高频保护削掉危险共振/颗粒。

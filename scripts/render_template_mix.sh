@@ -184,6 +184,24 @@ if [[ "$TEMPLATE_ID" == "template_d" ]]; then
     exec "$SCRIPT_DIR/full_fx_mix.sh" "$VOCAL_IN" "$ACCOMP_IN" "$FINAL_OUT"
 fi
 
+REFERENCE_NEUTRAL_CHAIN=0
+if [[ -n "$MIX_PLAN" ]]; then
+    # 1.1 分支只在渲染层识别“已有 reference + timbre 的 plan”并切换链路；
+    # 不改 plan_mix_template.py 的模板分类/模板选择逻辑。
+    REFERENCE_NEUTRAL_CHAIN="$("$PYTHON_BIN" -c 'import json, sys
+plan = json.load(open(sys.argv[1], encoding="utf-8-sig"))
+contract = plan.get("render_contract") or {}
+enabled = contract.get("reference_neutral_chain")
+if enabled is None:
+    enabled = bool(plan.get("reference") and plan.get("timbre_features"))
+print("1" if enabled else "0")' "$MIX_PLAN")"
+    if [[ "$REFERENCE_NEUTRAL_CHAIN" == "1" ]]; then
+        # 有 reference/timbre resolved plan 时，模板只作为历史分类/兼容信息；
+        # 实际声音按中性起点 -> 参考音色/动态/空间/融合 -> 响度安全来渲染。
+        echo "[mode] Reference-neutral render chain enabled by mix plan"
+    fi
+fi
+
 if [[ ! -f "$VOCAL_IN" ]]; then
     echo "Error: vocal input not found: $VOCAL_IN" >&2
     exit 1
@@ -391,52 +409,82 @@ if [[ -n "$MIX_PLAN" ]]; then
     VOCAL_TEMPLATE_IN="$VOCAL_ARTIFACT_REPAIRED"
 fi
 
-echo "[step 1] Vocal template tone/EQ before timbre shaping: $TEMPLATE_ID"
+echo "[step 1] Vocal neutral/template tone input: $TEMPLATE_ID"
 VOCAL_TEMPLATE_EQ_OUT=""
 VOCAL_CHAIN_IN="$VOCAL_TEMPLATE_IN"
 STAGE_START="$(now_ts)"
-case "$TEMPLATE_ID" in
-    template_a)
-        run_stage "c1_gate" "$VOCAL_TEMPLATE_IN" "$VOCAL_1"
-        run_stage "template_a_vocal_proq3" "$VOCAL_1" "$VOCAL_2"
-        VOCAL_TEMPLATE_EQ_OUT="$VOCAL_2"
-        ;;
-    template_b)
-        run_stage "rbass_mono" "$VOCAL_TEMPLATE_IN" "$VOCAL_1"
-        run_stage "f6_rta_mono" "$VOCAL_1" "$VOCAL_2"
-        VOCAL_TEMPLATE_EQ_OUT="$VOCAL_2"
-        ;;
-    template_c)
-        run_stage "template_c_vocal_proq3" "$VOCAL_TEMPLATE_IN" "$VOCAL_1"
-        if [[ "$SKIP_ONEKNOB_BRIGHTER" == "1" ]]; then
-            echo ""
-            echo "[skip] oneknob_brighter_mono (timbre target is darker than template C brighter)"
-            cp "$VOCAL_1" "$VOCAL_4"
-        else
-            run_stage "oneknob_brighter_mono" "$VOCAL_1" "$VOCAL_4"
-        fi
-        VOCAL_TEMPLATE_EQ_OUT="$VOCAL_4"
-        ;;
-esac
-record_stage "vocal_template_eq_chain" "$STAGE_START" \
+if [[ "$REFERENCE_NEUTRAL_CHAIN" == "1" ]]; then
+    echo "[skip] template vocal tone/EQ rack (neutral plan owns timbre)"
+    # 1.1 的中性起点只跳过“模板音色/EQ 增色”：
+    # 源清理和参考音色先确定人声颜色，后面仍保留常规模板链的压缩/空间/伴奏处理。
+    cp "$VOCAL_TEMPLATE_IN" "$VOCAL_1"
+    VOCAL_TEMPLATE_EQ_OUT="$VOCAL_1"
+else
+    case "$TEMPLATE_ID" in
+        template_a)
+            run_stage "c1_gate" "$VOCAL_TEMPLATE_IN" "$VOCAL_1"
+            run_stage "template_a_vocal_proq3" "$VOCAL_1" "$VOCAL_2"
+            VOCAL_TEMPLATE_EQ_OUT="$VOCAL_2"
+            ;;
+        template_b)
+            run_stage "rbass_mono" "$VOCAL_TEMPLATE_IN" "$VOCAL_1"
+            run_stage "f6_rta_mono" "$VOCAL_1" "$VOCAL_2"
+            VOCAL_TEMPLATE_EQ_OUT="$VOCAL_2"
+            ;;
+        template_c)
+            run_stage "template_c_vocal_proq3" "$VOCAL_TEMPLATE_IN" "$VOCAL_1"
+            if [[ "$SKIP_ONEKNOB_BRIGHTER" == "1" ]]; then
+                echo ""
+                echo "[skip] oneknob_brighter_mono (timbre target is darker than template C brighter)"
+                cp "$VOCAL_1" "$VOCAL_4"
+            else
+                run_stage "oneknob_brighter_mono" "$VOCAL_1" "$VOCAL_4"
+            fi
+            VOCAL_TEMPLATE_EQ_OUT="$VOCAL_4"
+            ;;
+    esac
+fi
+record_stage "vocal_neutral_or_template_tone" "$STAGE_START" \
     --input "vocal=$VOCAL_CHAIN_IN" \
     --output "vocal=$VOCAL_TEMPLATE_EQ_OUT"
 
 VOCAL_COMP_IN="$VOCAL_TEMPLATE_EQ_OUT"
 if [[ -n "$MIX_PLAN" ]]; then
-    # 模板基础音色之后，再按正确的音色筛选片段做主音色塑形。
-    echo "[step 1a] Timbre similarity shaping"
+    # 按正确的音色筛选片段做主音色塑形；先吃 plan 里的主动作，再用实时测量 guard 轻校。
+    echo "[step 1a] Timbre similarity shaping from screened clip"
+    STAGE_START="$(now_ts)"
+    "$PYTHON_BIN" "$SCRIPT_DIR/apply_vocal_plan_eq.py" \
+        "$VOCAL_TEMPLATE_EQ_OUT" \
+        "$VOCAL_TIMBRE_PRE" \
+        --plan "$MIX_PLAN" \
+        --eq-stage timbre
+    record_stage "vocal_timbre_plan_eq" "$STAGE_START" \
+        --input "vocal=$VOCAL_TEMPLATE_EQ_OUT" \
+        --output "vocal=$VOCAL_TIMBRE_PRE"
+
     STAGE_START="$(now_ts)"
     VOCAL_TIMBRE_GUARD_META="${FINAL_OUT%.*}.timbre_chain_guard.json"
     "$PYTHON_BIN" "$SCRIPT_DIR/apply_timbre_chain_guard.py" \
-        "$VOCAL_TEMPLATE_EQ_OUT" \
+        "$VOCAL_TIMBRE_PRE" \
         "$VOCAL_TIMBRE_GUARDED" \
         --plan "$MIX_PLAN" \
         --metadata "$VOCAL_TIMBRE_GUARD_META"
     record_stage "vocal_timbre_chain_guard" "$STAGE_START" \
-        --input "vocal=$VOCAL_TEMPLATE_EQ_OUT" \
+        --input "vocal=$VOCAL_TIMBRE_PRE" \
         --output "vocal=$VOCAL_TIMBRE_GUARDED"
     VOCAL_COMP_IN="$VOCAL_TIMBRE_GUARDED"
+
+    echo "[step 1a.2] Post-timbre vocal HF safety"
+    STAGE_START="$(now_ts)"
+    "$PYTHON_BIN" "$SCRIPT_DIR/apply_vocal_plan_eq.py" \
+        "$VOCAL_COMP_IN" \
+        "$VOCAL_SOURCE_EQ" \
+        --plan "$MIX_PLAN" \
+        --eq-stage post_timbre
+    record_stage "vocal_post_timbre_hf_safety" "$STAGE_START" \
+        --input "vocal=$VOCAL_COMP_IN" \
+        --output "vocal=$VOCAL_SOURCE_EQ"
+    VOCAL_COMP_IN="$VOCAL_SOURCE_EQ"
 
     # 非 EQ 的微动态/质感处理放在压缩前，避免压缩后再大改总线站位。
     echo "[step 1b] Vocal texture/dynamic shaping before compression"
@@ -453,7 +501,7 @@ if [[ -n "$MIX_PLAN" ]]; then
     VOCAL_COMP_IN="$VOCAL_DYNAMIC"
 fi
 
-echo "[step 1c] Vocal template compression/de-ess chain: $TEMPLATE_ID"
+echo "[step 1c] Vocal dynamic/intelligibility chain: $TEMPLATE_ID"
 VOCAL_CHAIN_OUT=""
 VOCAL_CHAIN_IN="$VOCAL_COMP_IN"
 STAGE_START="$(now_ts)"
@@ -475,7 +523,7 @@ case "$TEMPLATE_ID" in
         VOCAL_CHAIN_OUT="$VOCAL_3"
         ;;
 esac
-record_stage "vocal_dynamics_chain" "$STAGE_START" \
+record_stage "vocal_dynamic_intelligibility_chain" "$STAGE_START" \
     --input "vocal=$VOCAL_CHAIN_IN" \
     --output "vocal=$VOCAL_CHAIN_OUT"
 
@@ -499,15 +547,40 @@ fi
 STAGE_START="$(now_ts)"
 VOCAL_GROUP_FX_BIN="$BUILD_DIR/vocal_group_fx"
 ensure_binary "vocal_group_fx"
+VOCAL_GROUP_RENDERED=0
 if [[ -n "$MIX_PLAN" && "$SPATIAL_FX" != "off" ]]; then
     echo "[step 1e] Reference spatial vocal group FX"
     SPATIAL_META="${FINAL_OUT%.*}.spatial_fx.json"
-    VOCAL_GROUP_FX_BIN="$("$PYTHON_BIN" "$SCRIPT_DIR/build_spatial_vocal_group.py" \
+    # 1.1 优先使用 runtime-param 动态库：I/O 和并联发送路径固定为 0.1，
+    # 每首歌只把 reference 生成的白名单效果参数传给 dylib。
+    if "$PYTHON_BIN" "$SCRIPT_DIR/apply_vocal_group_runtime.py" \
+        "$VOCAL_CHAIN_OUT" \
+        "$VOCAL_GROUP" \
         --plan "$MIX_PLAN" \
-        --metadata "$SPATIAL_META" \
-        --mode "$SPATIAL_FX")"
+        --metadata "$SPATIAL_META"; then
+        VOCAL_GROUP_RENDERED=1
+    else
+        echo "[warn] vocal_group_fx runtime dylib failed; falling back to generated sndfile binary" >&2
+        VOCAL_GROUP_FX_BIN="$("$PYTHON_BIN" "$SCRIPT_DIR/build_spatial_vocal_group.py" \
+            --plan "$MIX_PLAN" \
+            --metadata "$SPATIAL_META" \
+            --mode "$SPATIAL_FX")"
+    fi
 fi
-run_binary_stage "vocal_group_fx" "$VOCAL_GROUP_FX_BIN" "$VOCAL_CHAIN_OUT" "$VOCAL_GROUP"
+if [[ "$VOCAL_GROUP_RENDERED" != "1" && "$VOCAL_GROUP_FX_BIN" == "__neutral_stereo__" ]]; then
+    echo ""
+    echo "[run] neutral vocal stereo center"
+    echo "      in : $VOCAL_CHAIN_OUT"
+    echo "      out: $VOCAL_GROUP"
+    # 仅供显式 neutral fallback 使用；当前 1.1 默认仍保留常规模板空间链。
+    ffmpeg -y -hide_banner \
+        -i "$VOCAL_CHAIN_OUT" \
+        -filter:a "pan=stereo|c0=c0|c1=c0" \
+        -c:a pcm_f32le \
+        "$VOCAL_GROUP" >/dev/null 2>&1
+elif [[ "$VOCAL_GROUP_RENDERED" != "1" ]]; then
+    run_binary_stage "vocal_group_fx" "$VOCAL_GROUP_FX_BIN" "$VOCAL_CHAIN_OUT" "$VOCAL_GROUP"
+fi
 record_stage "vocal_group_fx" "$STAGE_START" \
     --input "vocal=$VOCAL_CHAIN_OUT" \
     --output "vocal=$VOCAL_GROUP"
@@ -539,7 +612,7 @@ case "$TEMPLATE_ID" in
         ;;
 esac
 ACCOMP_CHAIN_OUT="$ACCOMP_1"
-record_stage "accomp_insert_chain" "$STAGE_START" \
+record_stage "accomp_neutral_or_template_insert_chain" "$STAGE_START" \
     --input "accomp=$ACCOMP_CHAIN_IN" \
     --output "accomp=$ACCOMP_CHAIN_OUT"
 if [[ -n "$MIX_PLAN" ]]; then
@@ -628,19 +701,25 @@ else
     MIX_INPUT_TO_MASTER="$MIX_TMP"
 fi
 
-echo "[step 4] Master bus chain: Pro-Q3 -> GW MixCentric -> L2 -> loudness finalizer"
+echo "[step 4] Master loudness/safety chain"
 MASTER_CHAIN_IN="$MIX_INPUT_TO_MASTER"
 STAGE_START="$(now_ts)"
-case "$TEMPLATE_ID" in
-    template_a|template_b)
-        run_stage "template_bus_proq3_ab" "$MIX_INPUT_TO_MASTER" "$MASTER_1"
-        ;;
-    template_c)
-        run_stage "template_bus_proq3_c" "$MIX_INPUT_TO_MASTER" "$MASTER_1"
-        ;;
-esac
-run_stage "gw_mixcentric_stereo" "$MASTER_1" "$MASTER_2"
-record_stage "master_bus_chain" "$STAGE_START" \
+if [[ "$REFERENCE_NEUTRAL_CHAIN" == "1" ]]; then
+    echo "[skip] template master EQ/glue rack (master only loudness and safety)"
+    # 母带阶段只做响度和安全保护，不再用模板 bus EQ / GW 改人声伴奏关系。
+    cp "$MIX_INPUT_TO_MASTER" "$MASTER_2"
+else
+    case "$TEMPLATE_ID" in
+        template_a|template_b)
+            run_stage "template_bus_proq3_ab" "$MIX_INPUT_TO_MASTER" "$MASTER_1"
+            ;;
+        template_c)
+            run_stage "template_bus_proq3_c" "$MIX_INPUT_TO_MASTER" "$MASTER_1"
+            ;;
+    esac
+    run_stage "gw_mixcentric_stereo" "$MASTER_1" "$MASTER_2"
+fi
+record_stage "master_loudness_safety_input" "$STAGE_START" \
     --input "mix=$MASTER_CHAIN_IN" \
     --output "mix=$MASTER_2"
 ensure_binary "master_l2_stereo"
@@ -677,7 +756,10 @@ if [[ "$WITH_LOUDNESS_FINALIZER" == "1" ]]; then
         --max-atten-db 2.0 \
         --excess-threshold-db 14.0 \
         --min-high-db -38.0 \
-        --max-event-ms 120.0
+        --max-event-ms 120.0 \
+        --sample-declick-threshold 0.35 \
+        --max-sample-declick-samples 8 \
+        --max-sample-declick-events 4000
     cp "$FINAL_GUARDED" "$FINAL_OUT"
     record_stage "final_transient_guard" "$STAGE_START" \
         --input "mix=$FINAL_OUT" \
