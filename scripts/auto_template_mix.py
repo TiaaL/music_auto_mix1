@@ -178,6 +178,7 @@ def run_renderer(
     spatial_fx: str = "auto",
     export_vocal_group: Path | None = None,
     direct_vocal_side_layer: str = "off",
+    vocal_texture_mode: str = "current",
 ) -> dict:
     if legacy_current_renderer:
         script = ROOT / "scripts" / "full_fx_mix.sh"
@@ -226,6 +227,8 @@ def run_renderer(
             cmd += ["--export-vocal-group", export_arg]
         if direct_vocal_side_layer != "off":
             cmd += ["--direct-vocal-side-layer", direct_vocal_side_layer]
+        if vocal_texture_mode != "current":
+            cmd += ["--vocal-texture-mode", vocal_texture_mode]
         if stage_report:
             cmd.append("--stage-report")
         if stage_report_loudness:
@@ -367,7 +370,7 @@ def main() -> None:
     parser.add_argument(
         "--spatial-audit",
         choices=("auto", "off"),
-        default="auto",
+        default="off",
         help="Export and audit the final vocal contribution effects against the reference vocal stem when references are available.",
     )
     parser.add_argument(
@@ -386,6 +389,12 @@ def main() -> None:
         choices=("off", "light"),
         default="off",
         help="Experimental second-stage direct side layer. Keep off unless the vocal_group spatial audit recommends it.",
+    )
+    parser.add_argument(
+        "--vocal-texture-mode",
+        choices=("current", "v0_1"),
+        default="v0_1",
+        help="人声质感模式：v0_1 只接管人声 insert/EQ，空间、动态、贴脸融合和比例仍走当前主流程。",
     )
     parser.add_argument(
         "--legacy-current-renderer",
@@ -580,10 +589,7 @@ def main() -> None:
     write_json(plan_path, plan)
 
     template_id = str(plan.get("selected_template") or "template_d")
-    should_export_vocal_group = (
-        args.export_vocal_group
-        or (args.spatial_audit == "auto" and ref_vocal is not None and template_id != "template_d")
-    )
+    should_export_vocal_group = bool(args.export_vocal_group)
     # 效果审计需要最终人声贡献轨；只有有参考人声且不是 legacy 模板时才默认导出。
     vocal_group_output = (
         resolve_path(args.vocal_group_output)
@@ -612,6 +618,7 @@ def main() -> None:
         spatial_fx="off" if args.no_spatial_fx else args.spatial_fx,
         export_vocal_group=vocal_group_output,
         direct_vocal_side_layer=args.direct_vocal_side_layer,
+        vocal_texture_mode=args.vocal_texture_mode,
     )
     spatial_audit = None
     if (
@@ -705,6 +712,7 @@ def main() -> None:
         "compare_fast_loudness": args.compare_fast_loudness,
         "spatial_fx": "off" if args.no_spatial_fx else args.spatial_fx,
         "direct_vocal_side_layer": args.direct_vocal_side_layer,
+        "vocal_texture_mode": args.vocal_texture_mode,
         "spatial_audit": spatial_audit,
         "vocal_effect_audit": vocal_effect_audit,
         "vocal_group_output": str(vocal_group_output) if vocal_group_output else None,
@@ -717,9 +725,10 @@ def main() -> None:
         "stage_report": str(output_wav.with_suffix(".stage_report.json")) if (args.stage_report or args.stage_report_loudness) else None,
         "stage_report_loudness": args.stage_report_loudness,
         "important_note": (
-            "A/B/C now render through template-specific Faust approximation chains. "
-            "Default backend is native Faust shell rendering. Use --render-backend wasm only for "
-            "development smoke checks, or --legacy-current-renderer to force the older full_fx_mix.sh path."
+            "Branch 1.2 trial: A/B/C still use template classification. "
+            "When --vocal-texture-mode v0_1 is active, only the vocal insert/EQ texture segment "
+            "uses the v0.1-style path; spatial FX, vocal/accompaniment fusion, dynamics and balance "
+            "remain on the current 1.1 pipeline. Final transient guard is not run by default."
         ),
     }
     write_json(summary_path, summary)

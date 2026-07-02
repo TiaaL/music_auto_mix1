@@ -1427,9 +1427,111 @@ def build_reference_vocal_eq(
     analysis: dict[str, Any],
     template_id: str,
 ) -> dict[str, Any]:
-    """兼容旧 plan 读取逻辑：实际仍走自驱动干声清理。"""
-    _ = ref_features
-    return build_source_vocal_cleanup_eq(input_features, analysis, template_id)
+    """v0.1 reference vocal EQ: residual/source correction only, before vocal group FX."""
+    ref_vocal = ref_features.get("vocal_tonal_balance") or {}
+    input_vocal = (input_features or {}).get("vocal_tonal_balance") or {}
+    if not ref_vocal or not input_vocal:
+        return {
+            "enabled": False,
+            "actions": [],
+            "reason": "missing reference/input vocal tonal features",
+        }
+
+    legacy_rules = {
+        "low":    {"freq_hz": 130.0,   "q": 0.8, "actions": ("cut",)},
+        "lowmid": {"freq_hz": 320.0,   "q": 0.9, "actions": ("cut", "boost")},
+        "mid":    {"freq_hz": 800.0,   "q": 0.8, "actions": ("cut", "boost")},
+        "upper":  {"freq_hz": 2800.0,  "q": 0.9, "actions": ("cut", "boost")},
+        "harsh":  {"freq_hz": 6200.0,  "q": 1.2, "actions": ("cut",)},
+        "sib":    {"freq_hz": 9500.0,  "q": 1.4, "actions": ("cut",)},
+        "air":    {"freq_hz": 14000.0, "q": 0.7, "actions": ("cut", "boost")},
+    }
+    legacy_max_cut_db = 2.5
+    legacy_high_cut_cap_db = {
+        # 0.1 质感优先保留高频毛边、气口和齿音颗粒；高频只轻削，不做清理式重削。
+        "upper": 0.8,
+        "harsh": 0.75,
+        "sib": 0.65,
+        "air": 0.0,
+    }
+    legacy_max_actions = 4
+
+    ranked: list[tuple[float, dict[str, Any]]] = []
+    skipped: list[dict[str, Any]] = []
+    high_safety = high_frequency_safety(analysis, input_vocal)
+    for band, rule in legacy_rules.items():
+        if band not in ref_vocal or band not in input_vocal:
+            continue
+        delta = float(ref_vocal[band]) - float(input_vocal[band])
+        if abs(delta) < VOCAL_SOURCE_EQ_DEAD_BAND_DB:
+            continue
+        if delta > 0:
+            if "boost" not in rule["actions"]:
+                continue
+            cap, skip_reason = vocal_high_boost_cap(
+                band, template_id, delta, ref_vocal, input_vocal, analysis, high_safety
+            )
+            if cap <= 0.0:
+                skipped.append({
+                    "band": band,
+                    "type": "boost",
+                    "delta_db": round(delta, 2),
+                    "reason": skip_reason or "boost cap is zero",
+                    "safety": high_safety if band in {"upper", "air"} else None,
+                })
+                continue
+            amount = clamp(delta * 0.45, 0.5, cap)
+            action_type = "boost"
+            gain = round(amount, 2)
+        else:
+            if "cut" not in rule["actions"]:
+                continue
+            cap = legacy_high_cut_cap_db.get(band, legacy_max_cut_db)
+            if cap <= 0.0:
+                skipped.append({
+                    "band": band,
+                    "type": "cut",
+                    "delta_db": round(delta, 2),
+                    "reason": "v0.1 texture high-band whitelist skips this cut",
+                })
+                continue
+            amount = clamp(abs(delta) * 0.55, 0.5, cap)
+            action_type = "cut"
+            gain = -round(amount, 2)
+        ranked.append(
+            (
+                abs(delta),
+                {
+                    "band": band,
+                    "type": action_type,
+                    "freq_hz": rule["freq_hz"],
+                    "q": rule["q"],
+                    "gain_db": gain,
+                    "source": "reference_vocal_tonal_delta",
+                    "reason": (
+                        f"reference vocal {band} {ref_vocal[band]:+.1f} dB vs input vocal "
+                        f"{input_vocal[band]:+.1f} dB (delta {delta:+.1f} dB)"
+                    ),
+                    "evidence": (
+                        {"high_frequency_safety": high_safety}
+                        if band in {"upper", "air"} and action_type == "boost"
+                        else None
+                    ),
+                },
+            )
+        )
+    ranked.sort(key=lambda pair: pair[0], reverse=True)
+    actions = [action for _, action in ranked[:legacy_max_actions]]
+    return {
+        "enabled": bool(actions),
+        "mode": "post_template_pre_group_fx",
+        "actions": actions,
+        "skipped": skipped,
+        "policy": (
+            "v0.1 legacy: match current dry vocal tonal shape toward the reference, "
+            "gate upper/air boosts by template and harsh/sibilance safety evidence; 14k air is conservative"
+        ),
+    }
 
 
 def timbre_boost_allowed(
@@ -1991,9 +2093,9 @@ def build_spatial_fx_plan(
     }
     rt60_ms = float(reverb.get("est_rt60_ms") or 0.0)
     if center_led_reference or rt60_ms > 8000.0:
-        # 0.1 之前的 vocal_group_fx 是固定空间 rack。当前回归显示 center-led
-        # 原曲人声的 reverb proxy 容易把尾音/抽取残留当成长混响，导致更湿、更靠前。
-        # 因此居中或 RT60 明显不可信时回到旧固定 rack；不再动态改 reverb/delay/side。
+        # 这条保护先回退到固定 rack：上一版 center-led depth-only 会让人声芯变散，
+        # 还会改变 final_fusion 的人声/伴奏 active gap。后续要做“按原曲算”的
+        # center-led 空间，需要先把直达声与效果声分开审计，不能只改 vocal_group 常量。
         reasons.append("legacy_fixed_vocal_group_fx_for_center_led_or_unreliable_reverb")
         return {
             "enabled": False,
@@ -2155,7 +2257,7 @@ def build_reference_overrides(
         "vocal_dynamics": vocal_dynamics,
     }
 
-    # 参考曲仍可用于响度、空间等非音色决策，但不能把成品拉向原曲 EQ 曲线。
+    # 1.2 只恢复 v0.1 的人声参考 EQ；整体 master tilt 仍禁用，避免整首成品追原曲 EQ 曲线。
     overrides["master_tilt_eq"] = {
         "enabled": False,
         "actions": [],
@@ -2183,15 +2285,15 @@ def build_reference_overrides(
             "Render-time bus gains align post-FX vocal/accomp active-region RMS to the reference stems."
         )
     overrides["bus_balance"] = bus
-    vocal_cleanup_eq = build_source_vocal_cleanup_eq(input_features, analysis, template_id)
+    legacy_vocal_eq = build_reference_vocal_eq(ref_features, input_features, analysis, template_id)
     overrides["source_eq"] = {
-        "vocal_eq": vocal_cleanup_eq,
+        "vocal_eq": legacy_vocal_eq,
         "timbre_vocal_eq": build_timbre_reference_vocal_eq(
             timbre_features,
             input_features,
             analysis,
             template_id,
-            cleanup_actions=vocal_cleanup_eq.get("actions", []),
+            cleanup_actions=legacy_vocal_eq.get("actions", []),
             processing_context=processing_context,
         ),
         "accomp_eq": {

@@ -118,9 +118,12 @@ Known issues / next checks:
    `auto_template_mix.py` 调用 `audit_vocal_effect_match.py` 时会传入 `resolved_mix_plan.json`。审计脚本优先复用 plan 里的 `reference.features` 和活动人声区间，只重新分析最终人声贡献轨，避免重复跑原曲人声的动态、混响、delay 和频谱包络。
 
 10. **禁止爆音，人声不能比原曲更靠前**
-   `apply_final_fusion_pass.py` 把原曲 active vocal/accomp gap 当作核心目标，并在同一个 pass 内处理伴奏让位、全局比例和参考窗口局部比例；默认链路不再额外叠加 `compute_render_bus_balance.py` 和 `apply_section_balance_guard.py`。最终 `apply_final_transient_guard.py` 只做 loudness finalizer 后的短促高频安全闸。
+   `apply_final_fusion_pass.py` 把原曲 active vocal/accomp gap 当作核心目标，并在同一个 pass 内处理伴奏让位、全局比例和参考窗口局部比例；默认链路不再额外叠加 `compute_render_bus_balance.py` 和 `apply_section_balance_guard.py`。成品层不再默认运行 `apply_final_transient_guard.py`，避免把高频毛边、气口和齿音颗粒误当短促瑕疵削掉。
 
-11. **混响默认回到 0.1 之前固定 rack**
+11. **1.2 人声质感模式**
+   `--vocal-texture-mode v0_1` 只接管人声 insert/EQ 质感段：使用 v0.1 的模板 insert 顺序和 legacy reference vocal EQ，但高频 `upper/harsh/sib/air` 只允许轻削或跳过。空间、贴脸融合、final fusion、动态和总线比例仍走 1.1 主流程，避免“质感修复”顺手改掉纵深和动态。
+
+12. **混响默认回到 0.1 之前固定 rack**
    `plan_mix_template.py` 对 center-led / near-mono 原曲人声，或 RT60 proxy 明显不可信的参考，默认不再编译 per-song spatial vocal_group，而是使用 0.1 之前的固定 `vocal_group_fx`。只有原曲人声空间更开放且 reverb proxy 可靠时，才允许有上限的 adaptive spatial。
 
 排查入口：
@@ -128,7 +131,7 @@ Known issues / next checks:
 - `<output>.final_fusion_pass.json`：确认最终 duck budget、active gap、section events 和 safety trim 是否来自原曲参考目标。
 - `<output>.vocal_dynamic_lift.json`：查看微动态触发条件、实际增益范围和 `hard_caps`。
 - `<output>.timbre_chain_guard.json` / `<output>.post_group_timbre_guard.json`：查看 8-band 与细分包络的音色回正动作。
-- `<output>.vocal_group_transient_guard.json` / `<output>.final_transient_guard.json`：查看短促高频爆点是否在来源层或最终层被衰减。
+- `<output>.vocal_group_transient_guard.json`：查看来源层短促高频爆点是否被衰减；成品层 `final_transient_guard` 默认不再运行。
 - `<output>.vocal_effect_audit.json`：查看最终人声贡献轨相对原曲人声 stem 的纵深、动态、混响、宽度和效果高频误差。
 - `resolved_mix_plan.json` 里的 `vocal_processing_context.vocal_effect_target`：查看效果目标来源和每个动作的通用触发证据。
 
@@ -366,17 +369,17 @@ Template vocal plugin chains:
 
 | Template | Vocal insert chain |
 |---|---|
-| `template_a` | `c1_gate → template_a_vocal_proq3 → c1_comp → sibilance_mono` |
-| `template_b` | `rbass_mono → f6_rta_mono → c1_comp → sibilance_mono → l1_limiter_mono` |
-| `template_c` | `template_c_vocal_proq3 → vocal_rider_mono → c1_comp → oneknob_brighter_mono` |
+| `template_a` | `c1_gate → template_a_vocal_proq3 → c1_comp_vocal_core → sibilance_mono` |
+| `template_b` | `rbass_mono → f6_rta_mono → c1_comp_vocal_core → sibilance_mono → l1_limiter_mono` |
+| `template_c` | `template_c_vocal_proq3 → vocal_rider_mono_core → c1_comp_vocal_core → oneknob_brighter_mono` |
 | `template_d` | legacy current chain: `rdeesser → req6 → c1_comp → vocal_group_fx` |
 
 Templates A/B/C share:
 
 ```
 vocal insert chain
-  → [step 1b] residual vocal EQ (from mix plan, if --mix-plan is passed)
-  → [step 1c] reference vocal source EQ (plan-driven, optional)
+  → optional `--vocal-texture-mode v0_1` legacy insert/EQ texture module
+  → [step 1b/1c] current cleanup, timbre, dynamic and event guards when texture mode is `current`
   → vocal_group_fx (baseline or reference spatial plan)
 accompaniment
   → template_music_proq3_{ab|c}
@@ -880,11 +883,13 @@ Applies `master_l2_stereo` once with no pregain or FFmpeg true-peak stage.
 | `rdeesser` | `src/rdeesser.dsp` | Waves Renaissance DeEsser |
 | `req6` | `src/req6.dsp` | Waves REQ6 Renaissance EQ (6-band) |
 | `c1_comp` | `src/c1_comp.dsp` | Waves C1 Compressor |
+| `c1_comp_vocal_core` | `src/c1_comp_vocal_core.dsp` | Lighter C1-style compressor for A/B/C lead core |
 | `sibilance_mono` | `src/sibilance_mono.dsp` | Waves Sibilance (mono) |
 | `f6_rta_mono` | `src/f6_rta_mono.dsp` | Waves F6 RTA (mono dynamic EQ) |
 | `l1_limiter_mono` | `src/l1_limiter_mono.dsp` | Waves L1 Limiter (mono) |
 | `rbass_mono` | `src/rbass_mono.dsp` | Waves RBass (mono) |
 | `vocal_rider_mono` | `src/vocal_rider_mono.dsp` | Waves Vocal Rider (mono) |
+| `vocal_rider_mono_core` | `src/vocal_rider_mono_core.dsp` | Lighter Vocal Rider for template C lead core |
 | `oneknob_brighter_mono` | `src/oneknob_brighter_mono.dsp` | Waves OneKnob Brighter (mono) |
 | `template_a_vocal_proq3` | `src/template_a_vocal_proq3.dsp` | Template A Pro-Q3 snapshot |
 | `template_c_vocal_proq3` | `src/template_c_vocal_proq3.dsp` | Template C Pro-Q3 snapshot |

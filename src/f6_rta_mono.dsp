@@ -6,6 +6,7 @@
 // anchors, but the exact Waves parameter index map is not confirmed;
 // this processor prioritizes the audible role: cleanup, body focus,
 // and controlled upper-mid harshness before compression.
+// 注意：不改 F6 的原动态质感，只去掉 24 kHz 渲染下会打没信号的无效 21 kHz lowpass。
 //
 // Input:  1 channel
 // Output: 1 channel
@@ -45,8 +46,7 @@ staticTone = fi.highpass(2, HP_HZ)
           : fi.peak_eq_cq(-1.2, F4, 0.9)
           : fi.peak_eq_cq(0.2, F5, 0.8)
           : fi.peak_eq_cq(0.0, F6, 0.8)
-          : fi.high_shelf(0.0, LP_HZ)
-          : fi.lowpass(2, 21357.44);
+          : fi.high_shelf(0.0, LP_HZ);
 
 process = staticTone
         : dynCut(244.1, 0.7, -14.0, -2.8)

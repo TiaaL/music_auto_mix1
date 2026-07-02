@@ -69,25 +69,25 @@ case "$TEMPLATE_ID" in
     template_a)
         run_stage "c1_gate" "$VOCAL_IN" "$OUT_DIR/01_c1_gate.wav"
         run_stage "template_a_vocal_proq3" "$OUT_DIR/01_c1_gate.wav" "$OUT_DIR/02_template_a_vocal_proq3.wav"
-        run_stage "c1_comp" "$OUT_DIR/02_template_a_vocal_proq3.wav" "$OUT_DIR/03_c1_comp.wav"
-        run_stage "sibilance_mono" "$OUT_DIR/03_c1_comp.wav" "$OUT_DIR/04_sibilance_mono.wav"
+        run_stage "c1_comp_vocal_core" "$OUT_DIR/02_template_a_vocal_proq3.wav" "$OUT_DIR/03_c1_comp_vocal_core.wav"
+        run_stage "sibilance_mono" "$OUT_DIR/03_c1_comp_vocal_core.wav" "$OUT_DIR/04_sibilance_mono.wav"
         cp "$OUT_DIR/04_sibilance_mono.wav" "$OUT_DIR/final_insert.wav"
         run_stage "vocal_group_fx" "$OUT_DIR/final_insert.wav" "$OUT_DIR/05_vocal_group_fx.wav"
         ;;
     template_b)
         run_stage "rbass_mono" "$VOCAL_IN" "$OUT_DIR/01_rbass_mono.wav"
         run_stage "f6_rta_mono" "$OUT_DIR/01_rbass_mono.wav" "$OUT_DIR/02_f6_rta_mono.wav"
-        run_stage "c1_comp" "$OUT_DIR/02_f6_rta_mono.wav" "$OUT_DIR/03_c1_comp.wav"
-        run_stage "sibilance_mono" "$OUT_DIR/03_c1_comp.wav" "$OUT_DIR/04_sibilance_mono.wav"
+        run_stage "c1_comp_vocal_core" "$OUT_DIR/02_f6_rta_mono.wav" "$OUT_DIR/03_c1_comp_vocal_core.wav"
+        run_stage "sibilance_mono" "$OUT_DIR/03_c1_comp_vocal_core.wav" "$OUT_DIR/04_sibilance_mono.wav"
         run_stage "l1_limiter_mono" "$OUT_DIR/04_sibilance_mono.wav" "$OUT_DIR/05_l1_limiter_mono.wav"
         cp "$OUT_DIR/05_l1_limiter_mono.wav" "$OUT_DIR/final_insert.wav"
         run_stage "vocal_group_fx" "$OUT_DIR/final_insert.wav" "$OUT_DIR/06_vocal_group_fx.wav"
         ;;
     template_c)
         run_stage "template_c_vocal_proq3" "$VOCAL_IN" "$OUT_DIR/01_template_c_vocal_proq3.wav"
-        run_stage "vocal_rider_mono" "$OUT_DIR/01_template_c_vocal_proq3.wav" "$OUT_DIR/02_vocal_rider_mono.wav"
-        run_stage "c1_comp" "$OUT_DIR/02_vocal_rider_mono.wav" "$OUT_DIR/03_c1_comp.wav"
-        run_stage "oneknob_brighter_mono" "$OUT_DIR/03_c1_comp.wav" "$OUT_DIR/04_oneknob_brighter_mono.wav"
+        run_stage "vocal_rider_mono_core" "$OUT_DIR/01_template_c_vocal_proq3.wav" "$OUT_DIR/02_vocal_rider_mono_core.wav"
+        run_stage "c1_comp_vocal_core" "$OUT_DIR/02_vocal_rider_mono_core.wav" "$OUT_DIR/03_c1_comp_vocal_core.wav"
+        run_stage "oneknob_brighter_mono" "$OUT_DIR/03_c1_comp_vocal_core.wav" "$OUT_DIR/04_oneknob_brighter_mono.wav"
         cp "$OUT_DIR/04_oneknob_brighter_mono.wav" "$OUT_DIR/final_insert.wav"
         run_stage "vocal_group_fx" "$OUT_DIR/final_insert.wav" "$OUT_DIR/05_vocal_group_fx.wav"
         ;;
